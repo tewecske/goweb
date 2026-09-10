@@ -16,7 +16,7 @@ func TestNewHandler(t *testing.T) {
 		expectedBody   string
 	}{
 		{name: "health check", method: http.MethodGet, path: "/healthz", expectedStatus: http.StatusOK, expectedBody: "ok\n"},
-		{name: "wrong method", method: http.MethodPost, path: "/healthz", expectedStatus: http.StatusMethodNotAllowed, expectedBody: "Method Not Allowed\n"},
+		{name: "state change without csrf", method: http.MethodPost, path: "/healthz", expectedStatus: http.StatusForbidden, expectedBody: "csrf validation failed\n"},
 		{name: "unknown route", method: http.MethodGet, path: "/missing", expectedStatus: http.StatusNotFound, expectedBody: "404 page not found\n"},
 	}
 

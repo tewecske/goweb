@@ -43,6 +43,7 @@ func newRouter(recoveryLogger *slog.Logger, requestLogger middleware.RequestLogg
 		middleware.WithRequestID(nil),
 		middleware.WithRequestInfo(),
 		middleware.Recover(recoveryLogger),
+		middleware.CSRF(),
 	}
 	if requestLogger != nil {
 		shared = append(shared, middleware.Log(requestLogger))
@@ -110,6 +111,7 @@ func home(renderer *PageRenderer) http.HandlerFunc {
 			Template:         "home",
 			FragmentTemplate: "home-fragment",
 		}
+		page.CSRFToken, _ = middleware.CSRFTokenFromContext(request.Context())
 		for _, item := range []struct {
 			label string
 			route string

@@ -41,6 +41,7 @@ type PageData struct {
 	Heading          string
 	Kind             string
 	Message          string
+	CSRFToken        string
 	Template         string
 	FragmentTemplate string
 	Navigation       []NavigationItem
