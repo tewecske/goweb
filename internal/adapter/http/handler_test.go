@@ -3,6 +3,7 @@ package httpadapter
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -46,5 +47,31 @@ func TestNewHandlerAddsRequestID(t *testing.T) {
 	}
 	if len(requestID) != 32 {
 		t.Errorf("request id length = %d, want 32", len(requestID))
+	}
+}
+
+func TestNewHandlerRendersHomeLayout(t *testing.T) {
+	response := httptest.NewRecorder()
+	NewHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if contentType := response.Header().Get("Content-Type"); contentType != "text/html; charset=utf-8" {
+		t.Errorf("content type = %q, want text/html; charset=utf-8", contentType)
+	}
+	body := response.Body.String()
+	for _, fragment := range []string{
+		"<!doctype html>",
+		`<html lang="en">`,
+		"<title>GoWeb</title>",
+		`<h1 id="page-heading"`,
+		"Welcome to GoWeb",
+		`aria-label="Primary navigation"`,
+		`id="alerts"`,
+	} {
+		if !strings.Contains(body, fragment) {
+			t.Errorf("home body missing %q", fragment)
+		}
 	}
 }

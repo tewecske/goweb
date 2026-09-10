@@ -28,6 +28,11 @@ func NewLoggedRouter(logger *Logger, extra ...middleware.Middleware) http.Handle
 
 func newRouter(recoveryLogger *slog.Logger, requestLogger middleware.RequestLogger, extra ...middleware.Middleware) http.Handler {
 	mux := http.NewServeMux()
+	renderer, err := NewPageRenderer()
+	if err != nil {
+		panic(err)
+	}
+	mux.HandleFunc("GET /", home(renderer))
 	mux.HandleFunc("GET /healthz", health)
 
 	shared := []middleware.Middleware{
@@ -44,6 +49,28 @@ func newRouter(recoveryLogger *slog.Logger, requestLogger middleware.RequestLogg
 		panic(err)
 	}
 	return handler
+}
+
+func home(renderer *PageRenderer) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/" {
+			http.NotFound(writer, request)
+			return
+		}
+		err := renderer.Render(writer, "home", PageData{
+			Language: "en",
+			Title:    "GoWeb",
+			Heading:  "Welcome to GoWeb",
+			Navigation: []NavigationItem{
+				{Label: "Home", URL: "/"},
+				{Label: "Sign in", URL: "/sign-in"},
+				{Label: "Create account", URL: "/sign-up"},
+			},
+		})
+		if err != nil {
+			http.Error(writer, "internal server error", http.StatusInternalServerError)
+		}
+	}
 }
 
 func health(w http.ResponseWriter, _ *http.Request) {

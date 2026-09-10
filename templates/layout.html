@@ -1,0 +1,49 @@
+{{define "layout"}}
+<!doctype html>
+<html lang="{{.Language}}">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{.Title}}</title>
+  </head>
+  <body data-theme="light" class="min-h-screen bg-base-100 text-base-content">
+    <header class="navbar border-b border-base-300 px-4" aria-label="Site header">
+      <div class="navbar-start">
+        <a class="btn btn-ghost text-xl" href="/">GoWeb</a>
+      </div>
+      <nav class="navbar-center hidden gap-2 md:flex" aria-label="Primary navigation">
+        {{range .Navigation}}
+          <a class="btn btn-ghost" href="{{.URL}}">{{.Label}}</a>
+        {{end}}
+      </nav>
+      <div class="navbar-end">
+        {{if .Account}}
+          <details class="dropdown dropdown-end">
+            <summary class="btn btn-ghost" aria-label="Account menu">{{.Account.Label}}</summary>
+            <ul class="menu dropdown-content z-10 mt-2 w-52 rounded-box bg-base-200 p-2 shadow" role="menu">
+              <li role="none"><a role="menuitem" href="{{.Account.SettingsURL}}">Account settings</a></li>
+              <li role="none"><a role="menuitem" href="{{.Account.SignOutURL}}">Sign out</a></li>
+            </ul>
+          </details>
+        {{else}}
+          <a class="btn btn-ghost" href="/sign-in">Sign in</a>
+        {{end}}
+      </div>
+    </header>
+
+    <main class="mx-auto w-full max-w-5xl px-4 py-8">
+      <section aria-labelledby="page-heading">
+        <div id="alerts" class="mb-6 space-y-2" role="status" aria-live="polite">
+          {{range .Alerts}}
+            <div class="alert {{if eq .Level "error"}}alert-error{{else if eq .Level "success"}}alert-success{{else if eq .Level "warning"}}alert-warning{{else}}alert-info{{end}}">
+              <span>{{.Message}}</span>
+            </div>
+          {{end}}
+        </div>
+        <h1 id="page-heading" class="text-3xl font-semibold tracking-tight">{{.Heading}}</h1>
+        {{block "content" .}}{{end}}
+      </section>
+    </main>
+  </body>
+</html>
+{{end}}
