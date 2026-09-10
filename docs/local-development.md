@@ -74,6 +74,13 @@ Migration files use sortable `NNNNNN_description.up.sql` names. Startup creates
 the migration ledger, acquires a PostgreSQL advisory lock, and applies pending
 migrations transactionally.
 
+Integration tests use a random PostgreSQL schema and skip when
+`GOWEB_DATABASE_URL` is unset:
+
+```sh
+GOWEB_DATABASE_URL='postgres://goweb:goweb@localhost:5432/goweb?sslmode=disable' go test -tags=integration ./...
+```
+
 ## Checks
 
 Run standard checks:
