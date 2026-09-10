@@ -49,3 +49,7 @@ make check
 - Package boundaries follow [hexagonal architecture](docs/architecture.md).
 
 The complete application requirements are in [gptsummary.md](gptsummary.md).
+
+See [local development setup](docs/local-development.md) for tool requirements,
+database status, development commands, and project conventions. Contributions
+follow [CONTRIBUTING.md](CONTRIBUTING.md).
