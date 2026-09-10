@@ -24,6 +24,10 @@ const (
 var (
 	// ErrInvalidPasswordResetConfig identifies unusable reset settings.
 	ErrInvalidPasswordResetConfig = errors.New("service: invalid password reset config")
+	// ErrInvalidPasswordResetToken is the uniform failure for unusable links.
+	ErrInvalidPasswordResetToken = errors.New("service: invalid password reset token")
+	// ErrPasswordResetTokenNotFound identifies a token that is not active.
+	ErrPasswordResetTokenNotFound = errors.New("service: password reset token not found")
 	// ErrPasswordResetTokenGeneration identifies unavailable secure randomness.
 	ErrPasswordResetTokenGeneration = errors.New("service: password reset token generation failed")
 )
@@ -38,9 +42,11 @@ type PasswordResetToken struct {
 	ConsumedAt *int64
 }
 
-// PasswordResetTokenRepository stores newly issued reset tokens.
+// PasswordResetTokenRepository stores and atomically consumes reset tokens.
+// Consume must return only an active, unexpired token.
 type PasswordResetTokenRepository interface {
 	CreatePasswordResetToken(context.Context, PasswordResetToken) error
+	ConsumePasswordResetToken(context.Context, string, int64) (PasswordResetToken, error)
 }
 
 // PasswordResetService handles public password-reset requests without account

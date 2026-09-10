@@ -124,9 +124,13 @@ func newPasswordResetServiceForTestWithLimiter(t *testing.T, users *confirmation
 }
 
 type passwordResetTokenRepositoryStub struct {
-	created PasswordResetToken
-	err     error
-	calls   int
+	created       PasswordResetToken
+	consumed      PasswordResetToken
+	consumedToken string
+	consumedAt    int64
+	consumeErr    error
+	err           error
+	calls         int
 }
 
 func (r *passwordResetTokenRepositoryStub) CreatePasswordResetToken(_ context.Context, token PasswordResetToken) error {
@@ -136,4 +140,13 @@ func (r *passwordResetTokenRepositoryStub) CreatePasswordResetToken(_ context.Co
 	}
 	r.created = token
 	return nil
+}
+
+func (r *passwordResetTokenRepositoryStub) ConsumePasswordResetToken(_ context.Context, token string, now int64) (PasswordResetToken, error) {
+	r.consumedToken = token
+	r.consumedAt = now
+	if r.consumeErr != nil {
+		return PasswordResetToken{}, r.consumeErr
+	}
+	return r.consumed, nil
 }
