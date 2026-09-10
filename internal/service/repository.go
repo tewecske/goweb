@@ -63,3 +63,10 @@ type GuestClaimCodeRepository interface {
 	FindActiveGuestClaimCode(context.Context, int64) (GuestClaimCode, error)
 	CreateGuestClaimCode(context.Context, GuestClaimCode) (GuestClaimCode, error)
 }
+
+// GuestClaimCodeRedeemer reads and records use of transfer codes. It remains a
+// separate port so issuing and redeeming adapters can evolve independently.
+type GuestClaimCodeRedeemer interface {
+	FindGuestClaimCodeByCode(context.Context, string) (GuestClaimCode, error)
+	MarkGuestClaimCodeUsed(context.Context, string, int64) error
+}
