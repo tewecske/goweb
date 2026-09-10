@@ -14,6 +14,7 @@ Package responsibilities:
 - `internal/adapter/http` owns routes and transport adapters.
 - `internal/adapter/http/middleware` owns request context, recovery, logging, tracing, and authentication boundaries.
 - `internal/server` owns listener lifecycle, graceful shutdown, and dependency closure.
+- `internal/store` owns database connection settings, migration execution, and persistence adapters.
 - `migrations/` stores ordered database schema changes.
 - `templates/` stores server-rendered HTML templates.
 - `static/` stores browser assets.
@@ -29,7 +30,7 @@ Use Go 1.26 language features only. Prefer standard-library packages. Add third-
 - Validate external values at server boundaries. Do not trust client-side validation.
 - Start HTTP through `internal/server` and handle `SIGINT` and `SIGTERM` with graceful draining.
 - Close registered dependencies after HTTP shutdown, even when startup fails.
-- M0 has no database connection or migration runner. Do not invent local database startup commands until persistence work adds them.
+- When `GOWEB_DATABASE_URL` is configured, startup opens PostgreSQL and applies migrations before serving requests. Local no-database startup remains supported until persistence-backed features require the store.
 
 ## HTTP and security
 

@@ -9,6 +9,7 @@ internal/service          application use-case services
 internal/adapter/http     HTTP transport adapter
 internal/adapter/http/middleware shared request boundaries
 internal/server           HTTP lifecycle and dependency shutdown
+internal/store            database connection and migration infrastructure
 migrations                ordered database schema changes
 templates                 server-rendered HTML templates
 static                    browser assets
@@ -22,5 +23,6 @@ Rules:
 - Ports belong to the consuming package and stay small.
 - Constructors receive dependencies explicitly and return concrete types.
 - `cmd/web` owns process lifecycle and does not contain business logic.
+- Configured database connections are opened and migrated before HTTP serving begins; the server closes them during shutdown.
 
 Foundation currently exposes only `GET /healthz`. Feature work adds domain behavior and ports as real use cases require them; empty abstraction packages are intentionally avoided.

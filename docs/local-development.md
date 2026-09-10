@@ -15,7 +15,9 @@ go version
 
 ## Start application
 
-No database is required for current M0 foundation behavior.
+No database is required for a no-persistence local run. When
+`GOWEB_DATABASE_URL` is configured, startup verifies PostgreSQL and applies
+pending migrations before serving requests.
 
 ```sh
 go run ./cmd/web
@@ -50,11 +52,27 @@ committed `.env` files.
 
 ## Database startup
 
-M0 does not open a database connection or run migrations. A database process is
-therefore not needed to start or test the current application. The
-`migrations/` directory is reserved for ordered schema changes; persistence
-work will document the engine, container, connection checks, and migration
-command when that implementation lands.
+M1 uses PostgreSQL through `GOWEB_DATABASE_URL`. Run a local PostgreSQL container
+when persistence work needs a database:
+
+```sh
+docker run --rm --name goweb-postgres \
+  -e POSTGRES_USER=goweb \
+  -e POSTGRES_PASSWORD=goweb \
+  -e POSTGRES_DB=goweb \
+  -p 5432:5432 postgres:17
+```
+
+Start the application against it in another shell. Do not commit the URL or
+password:
+
+```sh
+GOWEB_DATABASE_URL='postgres://goweb:goweb@localhost:5432/goweb?sslmode=disable' go run ./cmd/web
+```
+
+Migration files use sortable `NNNNNN_description.up.sql` names. Startup creates
+the migration ledger, acquires a PostgreSQL advisory lock, and applies pending
+migrations transactionally.
 
 ## Checks
 
