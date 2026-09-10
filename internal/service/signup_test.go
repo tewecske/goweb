@@ -40,8 +40,11 @@ func TestSignUpCreatesUserAndSession(t *testing.T) {
 	if result.User.DisplayName == nil || *result.User.DisplayName != "Alice Example" {
 		t.Errorf("created display name = %v, want trimmed display name", result.User.DisplayName)
 	}
-	if result.User.PasswordHash == nil || *result.User.PasswordHash != "hashed-password" {
-		t.Error("created password hash missing or unexpected")
+	if result.User.PasswordHash != nil {
+		t.Error("signup result exposes password hash")
+	}
+	if users.created.PasswordHash == nil || *users.created.PasswordHash != "hashed-password" {
+		t.Error("stored password hash missing or unexpected")
 	}
 	if !result.ConfirmationRequired {
 		t.Error("ConfirmationRequired = false, want true")

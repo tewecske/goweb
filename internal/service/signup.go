@@ -157,6 +157,7 @@ func (s *SignUpService) SignUp(ctx context.Context, input SignUpInput) (SignUpRe
 	if err != nil {
 		return SignUpResult{}, fmt.Errorf("create signup session: %w", err)
 	}
+	created.PasswordHash = nil
 	return SignUpResult{
 		User:                 created,
 		Session:              session,

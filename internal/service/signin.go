@@ -113,6 +113,7 @@ func (s *SignInService) SignIn(ctx context.Context, input SignInInput) (SignInRe
 	if err != nil {
 		return SignInResult{}, fmt.Errorf("create signin session: %w", err)
 	}
+	user.PasswordHash = nil
 	return SignInResult{User: user, Session: session}, nil
 }
 
