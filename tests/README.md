@@ -10,6 +10,10 @@ credentials, tokens, or other secret fixtures.
 using `postgres.New(t)` require `GOWEB_DATABASE_URL`; they skip when it is not
 configured.
 
+`fixtures` inserts explicit users, groups, and memberships. Fixture helpers
+accept a database or caller-owned transaction and never create transactions
+implicitly.
+
 Run integration tests with:
 
 ```sh
