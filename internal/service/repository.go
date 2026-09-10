@@ -29,6 +29,16 @@ type Session struct {
 	RevokedAt *int64
 }
 
+// GuestClaimCode is the active transfer credential for one guest account.
+// Code is returned only to the explicit transfer-code flow.
+type GuestClaimCode struct {
+	UserID     int64
+	Code       string
+	CreatedAt  int64
+	LastUsedAt *int64
+	RevokedAt  *int64
+}
+
 // UserRepository persists account records. Update and Delete require the
 // revision read by the caller so stale writes can be reported as conflicts.
 type UserRepository interface {
@@ -46,4 +56,10 @@ type SessionRepository interface {
 	FindSession(context.Context, string) (Session, error)
 	RevokeSession(context.Context, string, int64) error
 	RevokeUserSessions(context.Context, int64) error
+}
+
+// GuestClaimCodeRepository persists one active transfer code per guest.
+type GuestClaimCodeRepository interface {
+	FindActiveGuestClaimCode(context.Context, int64) (GuestClaimCode, error)
+	CreateGuestClaimCode(context.Context, GuestClaimCode) (GuestClaimCode, error)
 }
