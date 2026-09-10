@@ -126,6 +126,24 @@ func (s *SessionService) Revoke(ctx context.Context, id string) error {
 	return nil
 }
 
+// SignOut revokes the current session. Missing, malformed, or already absent
+// sessions are harmless so repeated sign-out remains idempotent.
+func (s *SessionService) SignOut(ctx context.Context, id string) error {
+	if err := validateSessionService(s, ctx); err != nil {
+		return err
+	}
+	if strings.TrimSpace(id) == "" {
+		return nil
+	}
+	if err := s.Revoke(ctx, id); err != nil {
+		if errors.Is(err, ErrSessionNotFound) || errors.Is(err, ErrInvalidSessionID) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 // RevokeUser invalidates every session belonging to userID.
 func (s *SessionService) RevokeUser(ctx context.Context, userID int64) error {
 	if err := validateSessionService(s, ctx); err != nil {
