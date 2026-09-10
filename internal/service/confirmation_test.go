@@ -179,6 +179,98 @@ func TestEmailConfirmationServiceIssueRejectsNilContext(t *testing.T) {
 	}
 }
 
+func TestEmailConfirmationServiceConfirmMarksEmailVerified(t *testing.T) {
+	const token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	users := &confirmationUserRepositoryStub{user: User{ID: 42, Email: stringPointer("user@example.com"), Version: 3}}
+	tokens := &confirmationTokenRepositoryStub{consumed: EmailConfirmationToken{
+		UserID: 42, Token: token, CreatedAt: 90, ExpiresAt: 200,
+	}}
+	service, err := NewEmailConfirmationService(
+		users, tokens, &confirmationMailSenderStub{}, confirmationURL(t), time.Hour,
+	)
+	if err != nil {
+		t.Fatalf("NewEmailConfirmationService() error = %v, want nil", err)
+	}
+	service.now = func() time.Time { return time.Unix(100, 0) }
+
+	if err := service.Confirm(context.Background(), token); err != nil {
+		t.Fatalf("Confirm() error = %v, want nil", err)
+	}
+	if tokens.consumedToken != token || tokens.consumedAt != 100 {
+		t.Errorf("consumed token/time = %q/%d, want %q/100", tokens.consumedToken, tokens.consumedAt, token)
+	}
+	if users.updated.EmailVerifiedAt == nil || *users.updated.EmailVerifiedAt != 100 {
+		t.Errorf("verified at = %v, want 100", users.updated.EmailVerifiedAt)
+	}
+	if users.updateExpectedVersion != 3 {
+		t.Errorf("expected user version = %d, want 3", users.updateExpectedVersion)
+	}
+}
+
+func TestEmailConfirmationServiceConfirmUsesUniformTokenFailure(t *testing.T) {
+	const token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	tests := []struct {
+		name       string
+		rawToken   string
+		consumeErr error
+		consumed   EmailConfirmationToken
+	}{
+		{name: "malformed", rawToken: "not-a-token"},
+		{name: "unknown", rawToken: token, consumeErr: ErrEmailConfirmationTokenNotFound},
+		{name: "expired", rawToken: token, consumed: EmailConfirmationToken{UserID: 42, Token: token, ExpiresAt: 100}},
+		{name: "already used", rawToken: token, consumed: EmailConfirmationToken{UserID: 42, Token: token, ExpiresAt: 200, ConsumedAt: int64Pointer(90)}},
+		{name: "wrong token returned", rawToken: token, consumed: EmailConfirmationToken{UserID: 42, Token: "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd", ExpiresAt: 200}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			users := &confirmationUserRepositoryStub{user: User{ID: 42, Email: stringPointer("user@example.com")}}
+			tokens := &confirmationTokenRepositoryStub{consumeErr: test.consumeErr, consumed: test.consumed}
+			service, err := NewEmailConfirmationService(
+				users, tokens, &confirmationMailSenderStub{}, confirmationURL(t), time.Hour,
+			)
+			if err != nil {
+				t.Fatalf("NewEmailConfirmationService() error = %v, want nil", err)
+			}
+			service.now = func() time.Time { return time.Unix(100, 0) }
+			if err := service.Confirm(context.Background(), test.rawToken); !errors.Is(err, ErrInvalidConfirmationToken) {
+				t.Fatalf("Confirm() error = %v, want ErrInvalidConfirmationToken", err)
+			}
+			if users.updateCalls != 0 {
+				t.Error("invalid confirmation updated user")
+			}
+		})
+	}
+}
+
+func TestEmailConfirmationServiceConfirmPropagatesOperationalFailures(t *testing.T) {
+	const token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	repositoryErr := errors.New("confirmation store unavailable")
+	userErr := errors.New("user store unavailable")
+	updateErr := errors.New("user update unavailable")
+	tests := []struct {
+		name     string
+		tokens   *confirmationTokenRepositoryStub
+		users    *confirmationUserRepositoryStub
+		expected error
+	}{
+		{name: "token store", tokens: &confirmationTokenRepositoryStub{consumeErr: repositoryErr}, users: &confirmationUserRepositoryStub{}, expected: repositoryErr},
+		{name: "user lookup", tokens: &confirmationTokenRepositoryStub{consumed: EmailConfirmationToken{UserID: 42, Token: token, ExpiresAt: 200}}, users: &confirmationUserRepositoryStub{findErr: userErr}, expected: userErr},
+		{name: "user update", tokens: &confirmationTokenRepositoryStub{consumed: EmailConfirmationToken{UserID: 42, Token: token, ExpiresAt: 200}}, users: &confirmationUserRepositoryStub{user: User{ID: 42, Email: stringPointer("user@example.com"), Version: 1}, updateErr: updateErr}, expected: updateErr},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			service, err := NewEmailConfirmationService(test.users, test.tokens, &confirmationMailSenderStub{}, confirmationURL(t), time.Hour)
+			if err != nil {
+				t.Fatalf("NewEmailConfirmationService() error = %v, want nil", err)
+			}
+			service.now = func() time.Time { return time.Unix(100, 0) }
+			if err := service.Confirm(context.Background(), token); !errors.Is(err, test.expected) {
+				t.Fatalf("Confirm() error = %v, want errors.Is(_, %v)", err, test.expected)
+			}
+		})
+	}
+}
+
 func confirmationURL(t *testing.T) url.URL {
 	t.Helper()
 	parsed, err := url.Parse("https://example.test/app")
@@ -189,7 +281,12 @@ func confirmationURL(t *testing.T) url.URL {
 }
 
 type confirmationUserRepositoryStub struct {
-	user User
+	user                  User
+	findErr               error
+	updated               User
+	updateExpectedVersion int64
+	updateErr             error
+	updateCalls           int
 }
 
 func (r *confirmationUserRepositoryStub) CreateUser(context.Context, User) (User, error) {
@@ -197,6 +294,9 @@ func (r *confirmationUserRepositoryStub) CreateUser(context.Context, User) (User
 }
 
 func (r *confirmationUserRepositoryStub) FindUserByID(context.Context, int64) (User, error) {
+	if r.findErr != nil {
+		return User{}, r.findErr
+	}
 	return r.user, nil
 }
 
@@ -208,8 +308,15 @@ func (r *confirmationUserRepositoryStub) FindUserByUsername(context.Context, str
 	return User{}, ErrUserNotFound
 }
 
-func (r *confirmationUserRepositoryStub) UpdateUser(context.Context, User, int64) (User, error) {
-	return User{}, ErrUserNotFound
+func (r *confirmationUserRepositoryStub) UpdateUser(_ context.Context, user User, expectedVersion int64) (User, error) {
+	r.updateCalls++
+	r.updateExpectedVersion = expectedVersion
+	if r.updateErr != nil {
+		return User{}, r.updateErr
+	}
+	r.updated = user
+	r.updated.Version++
+	return r.updated, nil
 }
 
 func (r *confirmationUserRepositoryStub) DeleteUser(context.Context, int64, int64) error {
@@ -217,10 +324,14 @@ func (r *confirmationUserRepositoryStub) DeleteUser(context.Context, int64, int6
 }
 
 type confirmationTokenRepositoryStub struct {
-	created  EmailConfirmationToken
-	previous EmailConfirmationToken
-	err      error
-	calls    int
+	created       EmailConfirmationToken
+	previous      EmailConfirmationToken
+	consumed      EmailConfirmationToken
+	consumedToken string
+	consumedAt    int64
+	consumeErr    error
+	err           error
+	calls         int
 }
 
 func (r *confirmationTokenRepositoryStub) CreateEmailConfirmationToken(_ context.Context, token EmailConfirmationToken) error {
@@ -231,6 +342,15 @@ func (r *confirmationTokenRepositoryStub) CreateEmailConfirmationToken(_ context
 	r.previous = r.created
 	r.created = token
 	return nil
+}
+
+func (r *confirmationTokenRepositoryStub) ConsumeEmailConfirmationToken(_ context.Context, token string, now int64) (EmailConfirmationToken, error) {
+	r.consumedToken = token
+	r.consumedAt = now
+	if r.consumeErr != nil {
+		return EmailConfirmationToken{}, r.consumeErr
+	}
+	return r.consumed, nil
 }
 
 type confirmationMailSenderStub struct {
@@ -244,4 +364,8 @@ func (s *confirmationMailSenderStub) Send(_ context.Context, message Mail) error
 	}
 	s.messages = append(s.messages, message)
 	return nil
+}
+
+func int64Pointer(value int64) *int64 {
+	return &value
 }
