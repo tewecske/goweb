@@ -112,6 +112,35 @@ func TestNewHandlerRedirectsToDefaultLocale(t *testing.T) {
 	}
 }
 
+func TestNewHandlerRedirectsUsingLanguagePreferences(t *testing.T) {
+	tests := []struct {
+		name           string
+		acceptLanguage string
+		cookie         string
+		wantLocation   string
+	}{
+		{name: "browser language", acceptLanguage: "hu-HU, en;q=0.8", wantLocation: "/hu/"},
+		{name: "browser preference wins", acceptLanguage: "en", cookie: "hu", wantLocation: "/hu/"},
+		{name: "invalid preference defaults", acceptLanguage: "fr", cookie: "de", wantLocation: "/en/"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "/", nil)
+			request.Header.Set("Accept-Language", test.acceptLanguage)
+			if test.cookie != "" {
+				request.AddCookie(&http.Cookie{Name: localeCookieName, Value: test.cookie})
+			}
+			response := httptest.NewRecorder()
+			NewHandler().ServeHTTP(response, request)
+
+			if location := response.Header().Get("Location"); location != test.wantLocation {
+				t.Errorf("location = %q, want %q", location, test.wantLocation)
+			}
+		})
+	}
+}
+
 func TestNewHandlerCanonicalizesLocalePath(t *testing.T) {
 	response := httptest.NewRecorder()
 	NewHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/hu", nil))

@@ -56,12 +56,33 @@ func newRouter(recoveryLogger *slog.Logger, requestLogger middleware.RequestLogg
 }
 
 func defaultLocale(writer http.ResponseWriter, request *http.Request) {
-	path, err := locale.Path(locale.Default, "/")
+	language := resolveRequestLanguage(request, "")
+	path, err := locale.Path(language, "/")
 	if err != nil {
 		http.Error(writer, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	http.Redirect(writer, request, path, http.StatusFound)
+}
+
+const localeCookieName = "goweb_locale"
+
+func resolveRequestLanguage(request *http.Request, accountLanguage locale.Code) locale.Code {
+	var browserLanguage locale.Code
+	if cookie, err := request.Cookie(localeCookieName); err == nil {
+		browserLanguage = locale.Code(cookie.Value)
+	}
+	var urlLanguage locale.Code
+	if language, _, ok := locale.ParsePath(request.URL.Path); ok {
+		urlLanguage = language
+	}
+	language, _ := locale.Resolve(locale.Preferences{
+		URL:            urlLanguage,
+		Account:        accountLanguage,
+		Browser:        browserLanguage,
+		AcceptLanguage: request.Header.Get("Accept-Language"),
+	})
+	return language
 }
 
 func home(renderer *PageRenderer) http.HandlerFunc {

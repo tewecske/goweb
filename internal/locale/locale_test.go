@@ -58,3 +58,52 @@ func TestPath(t *testing.T) {
 		})
 	}
 }
+
+func TestResolve(t *testing.T) {
+	tests := []struct {
+		name        string
+		preferences Preferences
+		wantCode    Code
+		wantSource  Source
+	}{
+		{
+			name:        "url wins",
+			preferences: Preferences{URL: Hungarian, Account: English, Browser: English, AcceptLanguage: "en"},
+			wantCode:    Hungarian,
+			wantSource:  SourceURL,
+		},
+		{
+			name:        "account wins over browser",
+			preferences: Preferences{Account: Hungarian, Browser: English, AcceptLanguage: "en"},
+			wantCode:    Hungarian,
+			wantSource:  SourceAccount,
+		},
+		{
+			name:        "browser wins over header",
+			preferences: Preferences{Browser: Hungarian, AcceptLanguage: "en"},
+			wantCode:    Hungarian,
+			wantSource:  SourceBrowser,
+		},
+		{
+			name:        "header quality and region",
+			preferences: Preferences{AcceptLanguage: "en;q=0.4, hu-HU;q=0.9"},
+			wantCode:    Hungarian,
+			wantSource:  SourceBrowserLanguage,
+		},
+		{
+			name:        "invalid values fall back",
+			preferences: Preferences{URL: "fr", Account: "de", Browser: "es", AcceptLanguage: "fr,de"},
+			wantCode:    Default,
+			wantSource:  SourceDefault,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			code, source := Resolve(test.preferences)
+			if code != test.wantCode || source != test.wantSource {
+				t.Errorf("Resolve() = %q, %q; want %q, %q", code, source, test.wantCode, test.wantSource)
+			}
+		})
+	}
+}
