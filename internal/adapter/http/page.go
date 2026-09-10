@@ -42,6 +42,7 @@ type PageData struct {
 	Kind             string
 	Message          string
 	CSRFToken        string
+	Form             FormData
 	Template         string
 	FragmentTemplate string
 	Navigation       []NavigationItem
@@ -67,6 +68,45 @@ type AccountMenu struct {
 type Alert struct {
 	Level   string
 	Message string
+}
+
+// FormData contains submitted values and server-side field errors.
+type FormData struct {
+	Submitted bool
+	Values    map[string]string
+	Errors    []FieldError
+}
+
+// FieldError associates one safe validation message with a form field.
+type FieldError struct {
+	Field   string
+	Message string
+}
+
+// Value returns a submitted value after the form has been submitted.
+func (f FormData) Value(field string) string {
+	if !f.Submitted || f.Values == nil {
+		return ""
+	}
+	return f.Values[field]
+}
+
+// Error returns a field error after the form has been submitted.
+func (f FormData) Error(field string) string {
+	if !f.Submitted {
+		return ""
+	}
+	for _, fieldError := range f.Errors {
+		if fieldError.Field == field {
+			return fieldError.Message
+		}
+	}
+	return ""
+}
+
+// HasErrors reports whether submitted form data contains validation errors.
+func (f FormData) HasErrors() bool {
+	return f.Submitted && len(f.Errors) > 0
 }
 
 // PageRenderer executes embedded HTML templates after buffering the output.
