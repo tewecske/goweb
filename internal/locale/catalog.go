@@ -18,6 +18,8 @@ var (
 	ErrMissingMessage = errors.New("locale: missing message")
 	// ErrMissingValue identifies a placeholder without a render value.
 	ErrMissingValue = errors.New("locale: missing placeholder value")
+	// ErrIncompleteCatalog identifies missing IDs or cross-language shape differences.
+	ErrIncompleteCatalog = errors.New("locale: incomplete catalog")
 )
 
 // Message contains either one plain translation or one/other plural forms.
@@ -122,6 +124,37 @@ func (c *Catalogs) Keys(language Code) []string {
 	return keys
 }
 
+// ValidateCompleteness verifies that every supported language has the same
+// message IDs, plural shape, and placeholder names as the default catalog.
+func (c *Catalogs) ValidateCompleteness() error {
+	if c == nil || c.messages == nil {
+		return fmt.Errorf("%w: nil catalogs", ErrIncompleteCatalog)
+	}
+	defaultMessages, ok := c.messages[c.defaultLanguage]
+	if !ok {
+		return fmt.Errorf("%w: default language %q is missing", ErrIncompleteCatalog, c.defaultLanguage)
+	}
+	for _, language := range Codes() {
+		messages, ok := c.messages[language]
+		if !ok {
+			return fmt.Errorf("%w: language %q is missing", ErrIncompleteCatalog, language)
+		}
+		if len(messages) != len(defaultMessages) {
+			return fmt.Errorf("%w: language %q has different message count", ErrIncompleteCatalog, language)
+		}
+		for id, expected := range defaultMessages {
+			actual, ok := messages[id]
+			if !ok {
+				return fmt.Errorf("%w: language %q is missing message %q", ErrIncompleteCatalog, language, id)
+			}
+			if err := matchingMessageShape(expected, actual); err != nil {
+				return fmt.Errorf("%w: language %q message %q: %w", ErrIncompleteCatalog, language, id, err)
+			}
+		}
+	}
+	return nil
+}
+
 func readCatalog(fileSystem fs.FS, path string) (map[string]Message, error) {
 	file, err := fileSystem.Open(path)
 	if err != nil {
@@ -171,6 +204,49 @@ func validateMessage(id string, message Message) error {
 		if !sameStrings(one, other) {
 			return fmt.Errorf("%w: plural placeholders differ for %q", ErrInvalidCatalog, id)
 		}
+	}
+	return nil
+}
+
+func matchingMessageShape(expected, actual Message) error {
+	if (expected.Text == "") != (actual.Text == "") {
+		return errors.New("plain and plural forms differ")
+	}
+	if expected.Text != "" {
+		expectedPlaceholders, err := placeholders(expected.Text)
+		if err != nil {
+			return err
+		}
+		actualPlaceholders, err := placeholders(actual.Text)
+		if err != nil {
+			return err
+		}
+		if !sameStrings(expectedPlaceholders, actualPlaceholders) {
+			return errors.New("placeholders differ")
+		}
+		return nil
+	}
+	expectedOne, err := placeholders(expected.One)
+	if err != nil {
+		return err
+	}
+	actualOne, err := placeholders(actual.One)
+	if err != nil {
+		return err
+	}
+	if !sameStrings(expectedOne, actualOne) {
+		return errors.New("one-form placeholders differ")
+	}
+	expectedOther, err := placeholders(expected.Other)
+	if err != nil {
+		return err
+	}
+	actualOther, err := placeholders(actual.Other)
+	if err != nil {
+		return err
+	}
+	if !sameStrings(expectedOther, actualOther) {
+		return errors.New("other-form placeholders differ")
 	}
 	return nil
 }

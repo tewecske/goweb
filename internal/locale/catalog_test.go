@@ -50,6 +50,16 @@ func TestLoadEmbeddedCatalogs(t *testing.T) {
 	}
 }
 
+func TestEmbeddedCatalogsAreComplete(t *testing.T) {
+	catalogs, err := LoadEmbeddedCatalogs()
+	if err != nil {
+		t.Fatalf("LoadEmbeddedCatalogs() error = %v, want nil", err)
+	}
+	if err := catalogs.ValidateCompleteness(); err != nil {
+		t.Fatalf("ValidateCompleteness() error = %v, want nil", err)
+	}
+}
+
 func TestCatalogsRejectMissingPlaceholderValue(t *testing.T) {
 	catalogs, err := LoadEmbeddedCatalogs()
 	if err != nil {
@@ -87,6 +97,50 @@ func TestLoadCatalogsRejectsInvalidCatalog(t *testing.T) {
 			})
 			if !errors.Is(err, ErrInvalidCatalog) {
 				t.Fatalf("LoadCatalogs() error = %v, want errors.Is(_, %v)", err, ErrInvalidCatalog)
+			}
+		})
+	}
+}
+
+func TestValidateCompleteness(t *testing.T) {
+	tests := []struct {
+		name     string
+		messages map[Code]map[string]Message
+	}{
+		{
+			name: "missing language",
+			messages: map[Code]map[string]Message{
+				English: {"home.title": {Text: "Title"}},
+			},
+		},
+		{
+			name: "missing message",
+			messages: map[Code]map[string]Message{
+				English:   {"home.title": {Text: "Title"}, "home.body": {Text: "Body"}},
+				Hungarian: {"home.title": {Text: "Cím"}},
+			},
+		},
+		{
+			name: "placeholder mismatch",
+			messages: map[Code]map[string]Message{
+				English:   {"home.title": {Text: "Hello {name}"}},
+				Hungarian: {"home.title": {Text: "Szia {user}"}},
+			},
+		},
+		{
+			name: "plural shape mismatch",
+			messages: map[Code]map[string]Message{
+				English:   {"items.count": {One: "{count} item", Other: "{count} items"}},
+				Hungarian: {"items.count": {Text: "{count} elem"}},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			catalogs := &Catalogs{defaultLanguage: Default, messages: test.messages}
+			if err := catalogs.ValidateCompleteness(); !errors.Is(err, ErrIncompleteCatalog) {
+				t.Fatalf("ValidateCompleteness() error = %v, want errors.Is(_, %v)", err, ErrIncompleteCatalog)
 			}
 		})
 	}
