@@ -70,3 +70,9 @@ type GuestClaimCodeRedeemer interface {
 	FindGuestClaimCodeByCode(context.Context, string) (GuestClaimCode, error)
 	MarkGuestClaimCodeUsed(context.Context, string, int64) error
 }
+
+// GuestClaimCodeRevoker invalidates the active transfer credential during
+// guest upgrade. Missing active codes are a successful no-op for adapters.
+type GuestClaimCodeRevoker interface {
+	RevokeGuestClaimCode(context.Context, int64, int64) error
+}
