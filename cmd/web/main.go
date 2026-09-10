@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log"
 	"os"
 	"os/signal"
@@ -28,7 +27,7 @@ func main() {
 	defer stop()
 
 	log.Printf("listening on %s", appConfig.HTTPAddress)
-	if err := server.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+	if err := server.Run(ctx); err != nil {
 		log.Fatal(err)
 	}
 }

@@ -7,6 +7,7 @@ cmd/web                   process entry point and dependency wiring
 internal/config           validated deployment configuration
 internal/service          application use-case services
 internal/adapter/http     HTTP transport adapter
+internal/adapter/http/middleware shared request boundaries
 internal/server           HTTP lifecycle and dependency shutdown
 migrations                ordered database schema changes
 templates                 server-rendered HTML templates
