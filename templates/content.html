@@ -1,0 +1,7 @@
+{{define "content"}}
+  {{if eq .Kind "home"}}
+    {{template "home-content" .}}
+  {{else}}
+    {{template "state-content" .}}
+  {{end}}
+{{end}}

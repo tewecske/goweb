@@ -89,7 +89,7 @@ func home(renderer *PageRenderer) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		language, route, ok := locale.ParsePath(request.URL.Path)
 		if !ok || route != "/" {
-			localizedNotFound(writer, request)
+			renderNotFound(renderer, writer, request)
 			return
 		}
 		if !strings.HasSuffix(request.URL.Path, "/") {
@@ -106,6 +106,7 @@ func home(renderer *PageRenderer) http.HandlerFunc {
 			Language:         string(language),
 			Title:            "GoWeb",
 			Heading:          "Welcome to GoWeb",
+			Kind:             "home",
 			Template:         "home",
 			FragmentTemplate: "home-fragment",
 		}
@@ -137,12 +138,19 @@ func localized(renderer *PageRenderer) http.HandlerFunc {
 			home(renderer).ServeHTTP(writer, request)
 			return
 		}
-		localizedNotFound(writer, request)
+		renderNotFound(renderer, writer, request)
 	}
 }
 
-func localizedNotFound(writer http.ResponseWriter, request *http.Request) {
-	http.NotFound(writer, request)
+func renderNotFound(renderer *PageRenderer, writer http.ResponseWriter, request *http.Request) {
+	language, _, ok := locale.ParsePath(request.URL.Path)
+	if !ok {
+		http.NotFound(writer, request)
+		return
+	}
+	if err := renderer.RenderState(writer, request, language, PageStateNotFound); err != nil {
+		http.Error(writer, "internal server error", http.StatusInternalServerError)
+	}
 }
 
 func health(w http.ResponseWriter, _ *http.Request) {

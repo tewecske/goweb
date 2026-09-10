@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/tewecske/goweb/internal/locale"
 	"github.com/tewecske/goweb/templates"
 )
 
@@ -18,6 +19,19 @@ var (
 	ErrPageNotFound = errors.New("http: page template not found")
 	// ErrNilRequest identifies a missing request for response-mode selection.
 	ErrNilRequest = errors.New("http: nil request")
+	// ErrInvalidPageState identifies an unsupported localized state page.
+	ErrInvalidPageState = errors.New("http: invalid page state")
+)
+
+// PageState identifies a localized non-success page.
+type PageState string
+
+const (
+	PageStateNotFound       PageState = "not-found"
+	PageStateAccessDenied   PageState = "access-denied"
+	PageStateValidation     PageState = "validation"
+	PageStateConflict       PageState = "conflict"
+	PageStateSessionExpired PageState = "session-expired"
 )
 
 // PageData contains escaped, server-owned data for a full HTML document.
@@ -25,6 +39,8 @@ type PageData struct {
 	Language         string
 	Title            string
 	Heading          string
+	Kind             string
+	Message          string
 	Template         string
 	FragmentTemplate string
 	Navigation       []NavigationItem
@@ -55,6 +71,7 @@ type Alert struct {
 // PageRenderer executes embedded HTML templates after buffering the output.
 type PageRenderer struct {
 	templates *template.Template
+	catalogs  *locale.Catalogs
 }
 
 // NewPageRenderer parses the embedded application templates.
@@ -63,7 +80,50 @@ func NewPageRenderer() (*PageRenderer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse page templates: %w", err)
 	}
-	return &PageRenderer{templates: parsed}, nil
+	catalogs, err := locale.LoadEmbeddedCatalogs()
+	if err != nil {
+		return nil, fmt.Errorf("load page catalogs: %w", err)
+	}
+	if err := catalogs.ValidateCompleteness(); err != nil {
+		return nil, fmt.Errorf("validate page catalogs: %w", err)
+	}
+	return &PageRenderer{templates: parsed, catalogs: catalogs}, nil
+}
+
+// RenderState renders a localized error or recovery state in full-page or
+// fragment mode according to request headers.
+func (r *PageRenderer) RenderState(writer http.ResponseWriter, request *http.Request, language locale.Code, state PageState) error {
+	if r == nil || r.catalogs == nil {
+		return fmt.Errorf("%w: renderer is nil", ErrInvalidPageState)
+	}
+	if !locale.Supported(language) {
+		return fmt.Errorf("%w: unsupported language %q", ErrInvalidPageState, language)
+	}
+	ids, ok := pageStateMessages[state]
+	if !ok {
+		return fmt.Errorf("%w: %q", ErrInvalidPageState, state)
+	}
+	title, err := r.catalogs.Translate(language, ids.title, nil)
+	if err != nil {
+		return fmt.Errorf("translate page title: %w", err)
+	}
+	heading, err := r.catalogs.Translate(language, ids.heading, nil)
+	if err != nil {
+		return fmt.Errorf("translate page heading: %w", err)
+	}
+	message, err := r.catalogs.Translate(language, ids.message, nil)
+	if err != nil {
+		return fmt.Errorf("translate page message: %w", err)
+	}
+	return r.RenderRequest(writer, request, PageData{
+		Language:         string(language),
+		Title:            title,
+		Heading:          heading,
+		Kind:             "state",
+		Message:          message,
+		Template:         "state",
+		FragmentTemplate: "state-fragment",
+	})
 }
 
 // Render writes one complete HTML document. It buffers template execution so a
@@ -133,4 +193,18 @@ func (r *PageRenderer) render(writer http.ResponseWriter, name string, page Page
 	writer.WriteHeader(http.StatusOK)
 	_, err := writer.Write(output.Bytes())
 	return err
+}
+
+type pageStateMessageIDs struct {
+	title   string
+	heading string
+	message string
+}
+
+var pageStateMessages = map[PageState]pageStateMessageIDs{
+	PageStateNotFound:       {title: "errors.not_found.title", heading: "errors.not_found.heading", message: "errors.not_found.message"},
+	PageStateAccessDenied:   {title: "errors.access_denied.title", heading: "errors.access_denied.heading", message: "errors.access_denied.message"},
+	PageStateValidation:     {title: "errors.validation.title", heading: "errors.validation.heading", message: "errors.validation.message"},
+	PageStateConflict:       {title: "errors.conflict.title", heading: "errors.conflict.heading", message: "errors.conflict.message"},
+	PageStateSessionExpired: {title: "errors.session_expired.title", heading: "errors.session_expired.heading", message: "errors.session_expired.message"},
 }

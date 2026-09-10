@@ -1,0 +1,14 @@
+{{define "state"}}
+  {{template "layout" .}}
+{{end}}
+
+{{define "state-content"}}
+  <p class="mt-4 max-w-2xl text-base-content/70">{{.Message}}</p>
+{{end}}
+
+{{define "state-fragment"}}
+  <section aria-labelledby="page-heading">
+    <h1 id="page-heading" class="text-3xl font-semibold tracking-tight">{{.Heading}}</h1>
+    {{template "state-content" .}}
+  </section>
+{{end}}

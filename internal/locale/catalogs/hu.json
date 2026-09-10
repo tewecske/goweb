@@ -10,6 +10,21 @@
     "nav.account_menu": {"text": "Fiókmenü"},
     "nav.account_settings": {"text": "Fiókbeállítások"},
     "nav.sign_out": {"text": "Kijelentkezés"},
+    "errors.not_found.title": {"text": "Az oldal nem található | GoWeb"},
+    "errors.not_found.heading": {"text": "Az oldal nem található"},
+    "errors.not_found.message": {"text": "A kért oldal nem található."},
+    "errors.access_denied.title": {"text": "Hozzáférés megtagadva | GoWeb"},
+    "errors.access_denied.heading": {"text": "Hozzáférés megtagadva"},
+    "errors.access_denied.message": {"text": "Nincs jogosultsága az oldal megtekintéséhez."},
+    "errors.validation.title": {"text": "Ellenőrizze az adatokat | GoWeb"},
+    "errors.validation.heading": {"text": "Ellenőrizze az adatokat"},
+    "errors.validation.message": {"text": "Néhány elküldött érték javításra szorul."},
+    "errors.conflict.title": {"text": "Módosítási ütközés | GoWeb"},
+    "errors.conflict.heading": {"text": "Módosítási ütközés"},
+    "errors.conflict.message": {"text": "A rekord időközben megváltozott. Töltse újra, majd próbálja ismét."},
+    "errors.session_expired.title": {"text": "A munkamenet lejárt | GoWeb"},
+    "errors.session_expired.heading": {"text": "A munkamenet lejárt"},
+    "errors.session_expired.message": {"text": "A folytatáshoz jelentkezzen be újra."},
     "items.count": {"one": "{count} elem", "other": "{count} elem"}
   }
 }

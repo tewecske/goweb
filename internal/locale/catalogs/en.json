@@ -10,6 +10,21 @@
     "nav.account_menu": {"text": "Account menu"},
     "nav.account_settings": {"text": "Account settings"},
     "nav.sign_out": {"text": "Sign out"},
+    "errors.not_found.title": {"text": "Page not found | GoWeb"},
+    "errors.not_found.heading": {"text": "Page not found"},
+    "errors.not_found.message": {"text": "We could not find the page you requested."},
+    "errors.access_denied.title": {"text": "Access denied | GoWeb"},
+    "errors.access_denied.heading": {"text": "Access denied"},
+    "errors.access_denied.message": {"text": "You do not have permission to view this page."},
+    "errors.validation.title": {"text": "Check your details | GoWeb"},
+    "errors.validation.heading": {"text": "Check your details"},
+    "errors.validation.message": {"text": "Some submitted values need attention."},
+    "errors.conflict.title": {"text": "Change conflict | GoWeb"},
+    "errors.conflict.heading": {"text": "Change conflict"},
+    "errors.conflict.message": {"text": "This record changed elsewhere. Reload it and try again."},
+    "errors.session_expired.title": {"text": "Session expired | GoWeb"},
+    "errors.session_expired.heading": {"text": "Session expired"},
+    "errors.session_expired.message": {"text": "Sign in again to continue."},
     "items.count": {"one": "{count} item", "other": "{count} items"}
   }
 }

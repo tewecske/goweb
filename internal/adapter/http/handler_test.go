@@ -161,3 +161,18 @@ func TestNewHandlerRejectsUnsupportedLocaleDeepLink(t *testing.T) {
 		t.Errorf("status = %d, want %d", response.Code, http.StatusNotFound)
 	}
 }
+
+func TestNewHandlerRendersLocalizedNotFound(t *testing.T) {
+	response := httptest.NewRecorder()
+	NewHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/hu/missing", nil))
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	body := response.Body.String()
+	for _, fragment := range []string{"<!doctype html>", "Az oldal nem található", "A kért oldal nem található."} {
+		if !strings.Contains(body, fragment) {
+			t.Errorf("localized not-found body missing %q", fragment)
+		}
+	}
+}
