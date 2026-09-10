@@ -63,7 +63,7 @@ func TestNewHandlerRendersHomeLayout(t *testing.T) {
 	body := response.Body.String()
 	for _, fragment := range []string{
 		"<!doctype html>",
-		`<html lang="en" data-theme="light">`,
+		`<html lang="en" data-theme="light" data-account-theme=""`,
 		"<title>GoWeb</title>",
 		`<h1 id="page-heading"`,
 		"Welcome to GoWeb",
