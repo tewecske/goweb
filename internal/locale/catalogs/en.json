@@ -1,0 +1,15 @@
+{
+  "messages": {
+    "app.name": {"text": "GoWeb"},
+    "home.title": {"text": "GoWeb"},
+    "home.heading": {"text": "Welcome to GoWeb"},
+    "home.description": {"text": "A server-rendered Go and HTMX application foundation."},
+    "nav.home": {"text": "Home"},
+    "nav.sign_in": {"text": "Sign in"},
+    "nav.sign_up": {"text": "Create account"},
+    "nav.account_menu": {"text": "Account menu"},
+    "nav.account_settings": {"text": "Account settings"},
+    "nav.sign_out": {"text": "Sign out"},
+    "items.count": {"one": "{count} item", "other": "{count} items"}
+  }
+}

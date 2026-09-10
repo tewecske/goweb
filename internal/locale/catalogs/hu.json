@@ -1,0 +1,15 @@
+{
+  "messages": {
+    "app.name": {"text": "GoWeb"},
+    "home.title": {"text": "GoWeb"},
+    "home.heading": {"text": "Üdvözli a GoWeb"},
+    "home.description": {"text": "Szerveroldali Go és HTMX alkalmazás-alap."},
+    "nav.home": {"text": "Kezdőlap"},
+    "nav.sign_in": {"text": "Bejelentkezés"},
+    "nav.sign_up": {"text": "Fiók létrehozása"},
+    "nav.account_menu": {"text": "Fiókmenü"},
+    "nav.account_settings": {"text": "Fiókbeállítások"},
+    "nav.sign_out": {"text": "Kijelentkezés"},
+    "items.count": {"one": "{count} elem", "other": "{count} elem"}
+  }
+}
