@@ -76,3 +76,9 @@ type GuestClaimCodeRedeemer interface {
 type GuestClaimCodeRevoker interface {
 	RevokeGuestClaimCode(context.Context, int64, int64) error
 }
+
+// GuestCleanupRepository removes only guests that are old and have no owned
+// application data. The store must enforce both predicates in one operation.
+type GuestCleanupRepository interface {
+	DeleteEmptyAbandonedGuests(context.Context, int64) (int, error)
+}
