@@ -12,7 +12,7 @@ import (
 
 const (
 	guestClaimCodeLength = 10
-	guestClaimAlphabet   = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	guestClaimAlphabet   = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 )
 
 var (
