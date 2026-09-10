@@ -10,9 +10,10 @@ Package responsibilities:
 
 - `cmd/web` owns process startup and dependency wiring. Keep business logic out.
 - `internal/config` loads typed environment configuration and redacts secrets.
+- `internal/locale` owns supported language codes, canonical localized paths, and translation catalogs.
 - `internal/service` contains application use cases.
-- `internal/adapter/http` owns routes and transport adapters.
-- `internal/adapter/http/middleware` owns request context, recovery, logging, tracing, and authentication boundaries.
+- `internal/adapter/http` owns routes, page rendering, full-page/HTMX responses, and transport adapters.
+- `internal/adapter/http/middleware` owns request context, recovery, logging, tracing, authentication, and CSRF boundaries.
 - `internal/server` owns listener lifecycle, graceful shutdown, and dependency closure.
 - `internal/store` owns database connection settings, migration execution, and persistence adapters.
 - `migrations/` stores ordered database schema changes.
@@ -40,6 +41,7 @@ Use Go 1.26 language features only. Prefer standard-library packages. Add third-
 - Do not log full URLs. Use safe method, status, duration, and request ID fields.
 - Keep security events separately identifiable from ordinary application logs.
 - Use `html/template` for user-controlled HTML output. Keep authorization, CSRF protection, and validation server-side.
+- State-changing form and HTMX requests require a server-validated CSRF token; compare tokens in constant time.
 - Protected routes must use authentication middleware explicitly.
 
 ## Tests and CI
@@ -59,6 +61,8 @@ Tests must cover success and failure paths, remain isolated and repeatable, and 
 - Use DaisyUI 5 components for frontend UI instead of hand-rolled equivalents.
 - Before writing HTML or JSX, load the `daisyui` skill and follow its component, usage, configuration, and color guidance.
 - Keep templates semantic and accessible. Preserve stable accessible names and test hooks when adding controls.
+- Keep localized URLs explicit and catalog IDs stable; validate catalog completeness and placeholders in tests.
+- Anonymous theme preference may use browser storage; authenticated theme preference must persist through a server-side use case and revert UI state when rejected.
 
 ## Documentation
 
