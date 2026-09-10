@@ -52,7 +52,7 @@ func TestNewHandlerAddsRequestID(t *testing.T) {
 
 func TestNewHandlerRendersHomeLayout(t *testing.T) {
 	response := httptest.NewRecorder()
-	NewHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+	NewHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/en/", nil))
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
@@ -77,7 +77,7 @@ func TestNewHandlerRendersHomeLayout(t *testing.T) {
 }
 
 func TestNewHandlerRendersHTMXFragment(t *testing.T) {
-	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request := httptest.NewRequest(http.MethodGet, "/en/", nil)
 	request.Header.Set("HX-Request", "true")
 	response := httptest.NewRecorder()
 
@@ -97,5 +97,38 @@ func TestNewHandlerRendersHTMXFragment(t *testing.T) {
 		if !strings.Contains(body, fragment) {
 			t.Errorf("HTMX response missing %q", fragment)
 		}
+	}
+}
+
+func TestNewHandlerRedirectsToDefaultLocale(t *testing.T) {
+	response := httptest.NewRecorder()
+	NewHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	if response.Code != http.StatusFound {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusFound)
+	}
+	if location := response.Header().Get("Location"); location != "/en/" {
+		t.Errorf("location = %q, want /en/", location)
+	}
+}
+
+func TestNewHandlerCanonicalizesLocalePath(t *testing.T) {
+	response := httptest.NewRecorder()
+	NewHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/hu", nil))
+
+	if response.Code != http.StatusFound {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusFound)
+	}
+	if location := response.Header().Get("Location"); location != "/hu/" {
+		t.Errorf("location = %q, want /hu/", location)
+	}
+}
+
+func TestNewHandlerRejectsUnsupportedLocaleDeepLink(t *testing.T) {
+	response := httptest.NewRecorder()
+	NewHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/fr/", nil))
+
+	if response.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", response.Code, http.StatusNotFound)
 	}
 }

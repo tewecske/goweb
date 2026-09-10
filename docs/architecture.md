@@ -5,6 +5,7 @@ This project uses hexagonal architecture with explicit, manual wiring.
 ```text
 cmd/web                   process entry point and dependency wiring
 internal/config           validated deployment configuration
+internal/locale            supported languages and canonical URL paths
 internal/service          application use-case services
 internal/adapter/http     HTTP transport adapter
 internal/adapter/http/middleware shared request boundaries

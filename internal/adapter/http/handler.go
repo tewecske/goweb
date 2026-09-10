@@ -4,8 +4,10 @@ package httpadapter
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/tewecske/goweb/internal/adapter/http/middleware"
+	"github.com/tewecske/goweb/internal/locale"
 )
 
 // NewHandler builds the HTTP handler for public foundation routes.
@@ -32,7 +34,9 @@ func newRouter(recoveryLogger *slog.Logger, requestLogger middleware.RequestLogg
 	if err != nil {
 		panic(err)
 	}
-	mux.HandleFunc("GET /", home(renderer))
+	mux.HandleFunc("GET /", defaultLocale)
+	mux.HandleFunc("GET /{language}", home(renderer))
+	mux.HandleFunc("GET /{language}/{path...}", localized(renderer))
 	mux.HandleFunc("GET /healthz", health)
 
 	shared := []middleware.Middleware{
@@ -51,28 +55,73 @@ func newRouter(recoveryLogger *slog.Logger, requestLogger middleware.RequestLogg
 	return handler
 }
 
+func defaultLocale(writer http.ResponseWriter, request *http.Request) {
+	path, err := locale.Path(locale.Default, "/")
+	if err != nil {
+		http.Error(writer, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(writer, request, path, http.StatusFound)
+}
+
 func home(renderer *PageRenderer) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
-		if request.URL.Path != "/" {
-			http.NotFound(writer, request)
+		language, route, ok := locale.ParsePath(request.URL.Path)
+		if !ok || route != "/" {
+			localizedNotFound(writer, request)
 			return
 		}
-		err := renderer.RenderRequest(writer, request, PageData{
-			Language:         "en",
+		if !strings.HasSuffix(request.URL.Path, "/") {
+			path, err := locale.Path(language, "/")
+			if err != nil {
+				http.Error(writer, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			http.Redirect(writer, request, path, http.StatusFound)
+			return
+		}
+
+		page := PageData{
+			Language:         string(language),
 			Title:            "GoWeb",
 			Heading:          "Welcome to GoWeb",
 			Template:         "home",
 			FragmentTemplate: "home-fragment",
-			Navigation: []NavigationItem{
-				{Label: "Home", URL: "/"},
-				{Label: "Sign in", URL: "/sign-in"},
-				{Label: "Create account", URL: "/sign-up"},
-			},
-		})
-		if err != nil {
+		}
+		for _, item := range []struct {
+			label string
+			route string
+		}{
+			{label: "Home", route: "/"},
+			{label: "Sign in", route: "/sign-in"},
+			{label: "Create account", route: "/sign-up"},
+		} {
+			path, err := locale.Path(language, item.route)
+			if err != nil {
+				http.Error(writer, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			page.Navigation = append(page.Navigation, NavigationItem{Label: item.label, URL: path})
+		}
+		if err := renderer.RenderRequest(writer, request, page); err != nil {
 			http.Error(writer, "internal server error", http.StatusInternalServerError)
 		}
 	}
+}
+
+func localized(renderer *PageRenderer) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		_, route, ok := locale.ParsePath(request.URL.Path)
+		if ok && route == "/" {
+			home(renderer).ServeHTTP(writer, request)
+			return
+		}
+		localizedNotFound(writer, request)
+	}
+}
+
+func localizedNotFound(writer http.ResponseWriter, request *http.Request) {
+	http.NotFound(writer, request)
 }
 
 func health(w http.ResponseWriter, _ *http.Request) {
