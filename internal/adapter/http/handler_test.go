@@ -63,12 +63,15 @@ func TestNewHandlerRendersHomeLayout(t *testing.T) {
 	body := response.Body.String()
 	for _, fragment := range []string{
 		"<!doctype html>",
-		`<html lang="en">`,
+		`<html lang="en" data-theme="light">`,
 		"<title>GoWeb</title>",
 		`<h1 id="page-heading"`,
 		"Welcome to GoWeb",
 		`aria-label="Primary navigation"`,
 		`id="alerts"`,
+		`id="theme-toggle"`,
+		`localStorage.getItem("goweb-theme")`,
+		`localStorage.setItem(key, theme)`,
 	} {
 		if !strings.Contains(body, fragment) {
 			t.Errorf("home body missing %q", fragment)

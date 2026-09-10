@@ -1,13 +1,25 @@
 {{define "layout"}}
 <!doctype html>
-<html lang="{{.Language}}">
+<html lang="{{.Language}}" data-theme="light">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{.CSRFToken}}">
     <title>{{.Title}}</title>
+    <script>
+      (() => {
+        try {
+          const theme = localStorage.getItem("goweb-theme");
+          if (theme === "light" || theme === "dark") {
+            document.documentElement.dataset.theme = theme;
+          }
+        } catch (_) {
+          // Browser storage can be unavailable in privacy-restricted contexts.
+        }
+      })();
+    </script>
   </head>
-  <body data-theme="light" class="min-h-screen bg-base-100 text-base-content">
+  <body class="min-h-screen bg-base-100 text-base-content">
     <header class="navbar border-b border-base-300 px-4" aria-label="Site header">
       <div class="navbar-start">
         <a class="btn btn-ghost text-xl" href="/">GoWeb</a>
@@ -18,6 +30,11 @@
         {{end}}
       </nav>
       <div class="navbar-end">
+        <label class="swap swap-rotate btn btn-ghost" title="Toggle theme">
+          <input id="theme-toggle" type="checkbox" class="theme-controller" value="dark" aria-label="Toggle dark mode">
+          <span class="swap-off">Light</span>
+          <span class="swap-on">Dark</span>
+        </label>
         {{if .Account}}
           <details class="dropdown dropdown-end">
             <summary class="btn btn-ghost" aria-label="Account menu">{{.Account.Label}}</summary>
@@ -54,6 +71,23 @@
         {{block "content" .}}{{end}}
       </section>
     </main>
+    <script>
+      (() => {
+        const toggle = document.getElementById("theme-toggle");
+        if (!toggle) return;
+        const key = "goweb-theme";
+        toggle.checked = document.documentElement.dataset.theme === "dark";
+        toggle.addEventListener("change", () => {
+          const theme = toggle.checked ? "dark" : "light";
+          document.documentElement.dataset.theme = theme;
+          try {
+            localStorage.setItem(key, theme);
+          } catch (_) {
+            // Keep current-page theme when browser storage is unavailable.
+          }
+        });
+      })();
+    </script>
   </body>
 </html>
 {{end}}
