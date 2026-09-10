@@ -12,7 +12,7 @@ import (
 func TestOAuthSignInCallbackCreatesAccountForNewProviderIdentity(t *testing.T) {
 	const state = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	provider := &oauthProviderStub{name: "google", authorizationURL: "https://accounts.example.test/authorize", profile: OAuthProfile{Subject: "subject-1", Email: "New@Example.COM", EmailVerified: true, DisplayName: "New User"}}
-	states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", ExpiresAt: 200}}
+	states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", Action: oauthActionSignIn, ExpiresAt: 200}}
 	identities := &oauthIdentityRepositoryStub{findErr: ErrOAuthIdentityNotFound}
 	users := &oauthUserRepositoryStub{}
 	service := newOAuthServiceForTest(t, provider, states, identities, users)
@@ -38,7 +38,7 @@ func TestOAuthSignInCallbackCreatesAccountForNewProviderIdentity(t *testing.T) {
 func TestOAuthSignInCallbackUsesStableIdentitySubject(t *testing.T) {
 	const state = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	provider := &oauthProviderStub{name: "google", profile: OAuthProfile{Subject: "stable-subject", Email: "different@example.com"}}
-	states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", ExpiresAt: 200}}
+	states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", Action: oauthActionSignIn, ExpiresAt: 200}}
 	identities := &oauthIdentityRepositoryStub{found: OAuthIdentity{UserID: 42, Provider: "google", Subject: "stable-subject"}}
 	users := &oauthUserRepositoryStub{byID: User{ID: 42, Email: stringPointer("original@example.com")}}
 	service := newOAuthServiceForTest(t, provider, states, identities, users)
@@ -55,7 +55,7 @@ func TestOAuthSignInCallbackUsesStableIdentitySubject(t *testing.T) {
 func TestOAuthSignInCallbackRefusesEmailMerge(t *testing.T) {
 	const state = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	provider := &oauthProviderStub{name: "google", profile: OAuthProfile{Subject: "new-subject", Email: "existing@example.com"}}
-	states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", ExpiresAt: 200}}
+	states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", Action: oauthActionSignIn, ExpiresAt: 200}}
 	identities := &oauthIdentityRepositoryStub{findErr: ErrOAuthIdentityNotFound}
 	users := &oauthUserRepositoryStub{byEmail: User{ID: 42, Email: stringPointer("existing@example.com")}}
 	service := newOAuthServiceForTest(t, provider, states, identities, users)
@@ -101,15 +101,93 @@ func TestOAuthSignInCallbackRejectsProviderMismatchAndFailures(t *testing.T) {
 		consumeErr error
 		expected   error
 	}{
-		{name: "provider mismatch", provider: &oauthProviderStub{name: "google"}, stored: OAuthState{State: state, Provider: "github", ExpiresAt: 200}, expected: ErrOAuthStateInvalid},
+		{name: "provider mismatch", provider: &oauthProviderStub{name: "google"}, stored: OAuthState{State: state, Provider: "github", Action: oauthActionSignIn, ExpiresAt: 200}, expected: ErrOAuthStateInvalid},
 		{name: "state store", provider: &oauthProviderStub{name: "google"}, consumeErr: errors.New("state store unavailable"), expected: ErrOAuthStateInvalid},
-		{name: "provider exchange", provider: &oauthProviderStub{name: "google", exchangeErr: errors.New("provider unavailable")}, stored: OAuthState{State: state, Provider: "google", ExpiresAt: 200}, expected: ErrOAuthAuthenticationFailed},
+		{name: "provider exchange", provider: &oauthProviderStub{name: "google", exchangeErr: errors.New("provider unavailable")}, stored: OAuthState{State: state, Provider: "google", Action: oauthActionSignIn, ExpiresAt: 200}, expected: ErrOAuthAuthenticationFailed},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			service := newOAuthServiceForTest(t, test.provider, &oauthStateRepositoryStub{consumed: test.stored, consumeErr: test.consumeErr}, &oauthIdentityRepositoryStub{}, &oauthUserRepositoryStub{})
 			if _, err := service.Callback(context.Background(), "google", "code", state); !errors.Is(err, test.expected) {
 				t.Fatalf("Callback() error = %v, want errors.Is(_, %v)", err, test.expected)
+			}
+		})
+	}
+}
+
+func TestOAuthSignInLinkBindsStateAndConfirmsMatchingEmail(t *testing.T) {
+	const state = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	provider := &oauthProviderStub{name: "google", authorizationURL: "https://accounts.example.test/authorize", profile: OAuthProfile{Subject: "linked-subject", Email: "user@example.com", EmailVerified: true}}
+	states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", Action: oauthActionLink, UserID: 42, ExpiresAt: 200}}
+	identities := &oauthIdentityRepositoryStub{findErr: ErrOAuthIdentityNotFound}
+	users := &oauthUserRepositoryStub{byID: User{ID: 42, Email: stringPointer("user@example.com"), Version: 2}}
+	service := newOAuthServiceForTest(t, provider, states, identities, users)
+
+	authorizationURL, err := service.StartLink(context.Background(), 42, "google")
+	if err != nil {
+		t.Fatalf("StartLink() error = %v, want nil", err)
+	}
+	if states.created.Action != oauthActionLink || states.created.UserID != 42 || !strings.Contains(authorizationURL, "state=") {
+		t.Fatalf("link state/URL = %#v/%q, want link action user 42", states.created, authorizationURL)
+	}
+	if err := service.CallbackLink(context.Background(), 42, "google", "code", state); err != nil {
+		t.Fatalf("CallbackLink() error = %v, want nil", err)
+	}
+	if identities.created.Subject != "linked-subject" || users.updated.EmailVerifiedAt == nil {
+		t.Fatalf("linked identity/verified user = %#v/%v, want identity and verified email", identities.created, users.updated.EmailVerifiedAt)
+	}
+}
+
+func TestOAuthSignInLinkRejectsDuplicateAndWrongActor(t *testing.T) {
+	const state = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	provider := &oauthProviderStub{name: "google", profile: OAuthProfile{Subject: "linked-subject", Email: "user@example.com"}}
+	tests := []struct {
+		name     string
+		actorID  int64
+		stored   OAuthState
+		identity *oauthIdentityRepositoryStub
+		expected error
+	}{
+		{name: "wrong actor", actorID: 99, stored: OAuthState{State: state, Provider: "google", Action: oauthActionLink, UserID: 42, ExpiresAt: 200}, identity: &oauthIdentityRepositoryStub{findErr: ErrOAuthIdentityNotFound}, expected: ErrOAuthStateInvalid},
+		{name: "duplicate identity", actorID: 42, stored: OAuthState{State: state, Provider: "google", Action: oauthActionLink, UserID: 42, ExpiresAt: 200}, identity: &oauthIdentityRepositoryStub{found: OAuthIdentity{ID: 7, UserID: 42, Provider: "google", Subject: "linked-subject"}}, expected: ErrOAuthIdentityConflict},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			service := newOAuthServiceForTest(t, provider, &oauthStateRepositoryStub{consumed: test.stored}, test.identity, &oauthUserRepositoryStub{byID: User{ID: 42, Email: stringPointer("user@example.com")}})
+			if err := service.CallbackLink(context.Background(), test.actorID, "google", "code", state); !errors.Is(err, test.expected) {
+				t.Fatalf("CallbackLink() error = %v, want errors.Is(_, %v)", err, test.expected)
+			}
+		})
+	}
+}
+
+func TestOAuthSignInUnlinkEnforcesLastCredential(t *testing.T) {
+	tests := []struct {
+		name          string
+		password      *string
+		identities    []OAuthIdentity
+		identityID    int64
+		expected      error
+		wantDeletedID int64
+	}{
+		{name: "password account", password: stringPointer("hash"), identities: []OAuthIdentity{{ID: 7, UserID: 42}, {ID: 8, UserID: 42}}, identityID: 7, wantDeletedID: 7},
+		{name: "last external method", identities: []OAuthIdentity{{ID: 7, UserID: 42}}, identityID: 7, expected: ErrOAuthLastSignInMethod},
+		{name: "not attached", password: stringPointer("hash"), identities: []OAuthIdentity{{ID: 7, UserID: 42}}, identityID: 9, expected: ErrOAuthIdentityNotFound},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			identities := &oauthIdentityRepositoryStub{listed: test.identities}
+			users := &oauthUserRepositoryStub{byID: User{ID: 42, PasswordHash: test.password}}
+			service := newOAuthServiceForTest(t, &oauthProviderStub{name: "google"}, &oauthStateRepositoryStub{}, identities, users)
+			err := service.Unlink(context.Background(), 42, test.identityID)
+			if !errors.Is(err, test.expected) {
+				if test.expected == nil {
+					t.Fatalf("Unlink() error = %v, want nil", err)
+				}
+				t.Fatalf("Unlink() error = %v, want errors.Is(_, %v)", err, test.expected)
+			}
+			if identities.deletedID != test.wantDeletedID {
+				t.Errorf("deleted identity ID = %d, want %d", identities.deletedID, test.wantDeletedID)
 			}
 		})
 	}
@@ -192,6 +270,11 @@ type oauthIdentityRepositoryStub struct {
 	created     OAuthIdentity
 	createErr   error
 	createCalls int
+	listed      []OAuthIdentity
+	listErr     error
+	deletedUser int64
+	deletedID   int64
+	deleteErr   error
 }
 
 func (r *oauthIdentityRepositoryStub) FindOAuthIdentity(context.Context, string, string) (OAuthIdentity, error) {
@@ -210,14 +293,30 @@ func (r *oauthIdentityRepositoryStub) CreateOAuthIdentity(_ context.Context, ide
 	return nil
 }
 
+func (r *oauthIdentityRepositoryStub) ListOAuthIdentities(context.Context, int64) ([]OAuthIdentity, error) {
+	if r.listErr != nil {
+		return nil, r.listErr
+	}
+	return append([]OAuthIdentity(nil), r.listed...), nil
+}
+
+func (r *oauthIdentityRepositoryStub) DeleteOAuthIdentity(_ context.Context, userID, identityID int64) error {
+	r.deletedUser = userID
+	r.deletedID = identityID
+	return r.deleteErr
+}
+
 type oauthUserRepositoryStub struct {
 	byID         User
 	byEmail      User
 	created      User
+	updated      User
 	createErr    error
 	findIDErr    error
 	findEmailErr error
+	updateErr    error
 	createCalls  int
+	updateCalls  int
 }
 
 func (r *oauthUserRepositoryStub) CreateUser(_ context.Context, user User) (User, error) {
@@ -254,8 +353,14 @@ func (r *oauthUserRepositoryStub) FindUserByUsername(context.Context, string) (U
 	return User{}, ErrUserNotFound
 }
 
-func (r *oauthUserRepositoryStub) UpdateUser(context.Context, User, int64) (User, error) {
-	return User{}, ErrUserNotFound
+func (r *oauthUserRepositoryStub) UpdateUser(_ context.Context, user User, _ int64) (User, error) {
+	r.updateCalls++
+	if r.updateErr != nil {
+		return User{}, r.updateErr
+	}
+	r.updated = user
+	r.updated.Version++
+	return r.updated, nil
 }
 
 func (r *oauthUserRepositoryStub) DeleteUser(context.Context, int64, int64) error {

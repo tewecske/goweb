@@ -20,6 +20,8 @@ const (
 	maxOAuthStateLength       = oauthStateBytes * 2
 	maxOAuthCodeLength        = 2048
 	maxOAuthSubjectLength     = 255
+	oauthActionSignIn         = "sign-in"
+	oauthActionLink           = "link"
 )
 
 var (
@@ -35,6 +37,8 @@ var (
 	ErrOAuthIdentityNotFound = errors.New("service: oauth identity not found")
 	// ErrOAuthIdentityConflict identifies a concurrent identity attachment.
 	ErrOAuthIdentityConflict = errors.New("service: oauth identity conflict")
+	// ErrOAuthLastSignInMethod prevents removing an account's final credential.
+	ErrOAuthLastSignInMethod = errors.New("service: last oauth sign-in method")
 )
 
 // OAuthProviderClient is the provider-specific transport port consumed by the
@@ -58,6 +62,8 @@ type OAuthProfile struct {
 type OAuthState struct {
 	State     string
 	Provider  string
+	Action    string
+	UserID    int64
 	CreatedAt int64
 	ExpiresAt int64
 }
@@ -82,6 +88,8 @@ type OAuthIdentity struct {
 type OAuthIdentityRepository interface {
 	FindOAuthIdentity(context.Context, string, string) (OAuthIdentity, error)
 	CreateOAuthIdentity(context.Context, OAuthIdentity) error
+	ListOAuthIdentities(context.Context, int64) ([]OAuthIdentity, error)
+	DeleteOAuthIdentity(context.Context, int64, int64) error
 }
 
 // OAuthSignInResult contains the account and session created by OAuth sign-in.
@@ -151,7 +159,7 @@ func (s *OAuthSignInService) Start(ctx context.Context, providerName string) (st
 	if !safeOAuthURL(authorizationURL) {
 		return "", ErrOAuthAuthenticationFailed
 	}
-	if err := s.states.CreateOAuthState(ctx, OAuthState{State: state, Provider: canonicalProviderName(provider.Name()), CreatedAt: createdAt, ExpiresAt: expiresAt}); err != nil {
+	if err := s.states.CreateOAuthState(ctx, OAuthState{State: state, Provider: canonicalProviderName(provider.Name()), Action: oauthActionSignIn, CreatedAt: createdAt, ExpiresAt: expiresAt}); err != nil {
 		return "", oauthFailure(err)
 	}
 	return authorizationURL, nil
@@ -180,7 +188,7 @@ func (s *OAuthSignInService) Callback(ctx context.Context, providerName, code, r
 		return OAuthSignInResult{}, ErrOAuthStateInvalid
 	}
 	canonicalName := canonicalProviderName(provider.Name())
-	if storedState.Provider != canonicalName || storedState.ExpiresAt <= now ||
+	if storedState.Provider != canonicalName || storedState.Action != oauthActionSignIn || storedState.UserID != 0 || storedState.ExpiresAt <= now ||
 		storedState.State == "" || subtle.ConstantTimeCompare([]byte(storedState.State), []byte(state)) != 1 {
 		return OAuthSignInResult{}, ErrOAuthStateInvalid
 	}
@@ -200,6 +208,148 @@ func (s *OAuthSignInService) Callback(ctx context.Context, providerName, code, r
 		return OAuthSignInResult{}, oauthFailure(err)
 	}
 	return s.createOAuthAccount(ctx, canonicalName, profile, now)
+}
+
+// StartLink creates a provider callback state bound to an authenticated user.
+func (s *OAuthSignInService) StartLink(ctx context.Context, userID int64, providerName string) (string, error) {
+	if err := s.validate(ctx); err != nil {
+		return "", err
+	}
+	if userID <= 0 {
+		return "", ErrOAuthAuthenticationFailed
+	}
+	if _, err := s.users.FindUserByID(ctx, userID); err != nil {
+		return "", ErrOAuthAuthenticationFailed
+	}
+	provider, ok := s.providerClient(providerName)
+	if !ok {
+		return "", ErrOAuthProviderUnavailable
+	}
+	state, err := newOAuthState()
+	if err != nil {
+		return "", err
+	}
+	createdAt := s.now().Unix()
+	expiresAt := createdAt + int64(s.stateLife/time.Second)
+	if expiresAt <= createdAt {
+		return "", ErrOAuthStateInvalid
+	}
+	authorizationURL, err := provider.AuthorizationURL(ctx, state)
+	if err != nil || !safeOAuthURL(authorizationURL) {
+		return "", ErrOAuthAuthenticationFailed
+	}
+	if err := s.states.CreateOAuthState(ctx, OAuthState{State: state, Provider: canonicalProviderName(provider.Name()), Action: oauthActionLink, UserID: userID, CreatedAt: createdAt, ExpiresAt: expiresAt}); err != nil {
+		return "", oauthFailure(err)
+	}
+	return authorizationURL, nil
+}
+
+// CallbackLink consumes a link state and attaches the returned provider
+// identity to actorUserID. It never merges accounts by reported email.
+func (s *OAuthSignInService) CallbackLink(ctx context.Context, actorUserID int64, providerName, code, rawState string) error {
+	if err := s.validate(ctx); err != nil {
+		return err
+	}
+	if actorUserID <= 0 || strings.TrimSpace(code) == "" || len(code) > maxOAuthCodeLength {
+		return ErrOAuthAuthenticationFailed
+	}
+	state, err := normalizeOAuthState(rawState)
+	if err != nil {
+		return err
+	}
+	provider, ok := s.providerClient(providerName)
+	if !ok {
+		return ErrOAuthProviderUnavailable
+	}
+	now := s.now().Unix()
+	storedState, err := s.states.ConsumeOAuthState(ctx, state, now)
+	if err != nil {
+		return ErrOAuthStateInvalid
+	}
+	canonicalName := canonicalProviderName(provider.Name())
+	if storedState.Provider != canonicalName || storedState.Action != oauthActionLink || storedState.UserID != actorUserID || storedState.ExpiresAt <= now || storedState.State == "" || subtle.ConstantTimeCompare([]byte(storedState.State), []byte(state)) != 1 {
+		return ErrOAuthStateInvalid
+	}
+	profile, err := provider.Exchange(ctx, code)
+	if err != nil {
+		return oauthFailure(err)
+	}
+	if err := validateOAuthProfile(profile); err != nil {
+		return err
+	}
+	if _, err := s.identities.FindOAuthIdentity(ctx, canonicalName, profile.Subject); err == nil {
+		return ErrOAuthIdentityConflict
+	} else if !errors.Is(err, ErrOAuthIdentityNotFound) {
+		return oauthFailure(err)
+	}
+	user, err := s.users.FindUserByID(ctx, actorUserID)
+	if err != nil || user.ID != actorUserID {
+		return ErrOAuthAuthenticationFailed
+	}
+	email := ""
+	if profile.Email != "" {
+		email, err = NormalizeEmail(profile.Email)
+		if err != nil || email == "" {
+			return ErrOAuthAuthenticationFailed
+		}
+	}
+	identity := OAuthIdentity{UserID: actorUserID, Provider: canonicalName, Subject: profile.Subject, Email: email, CreatedAt: now}
+	if err := s.identities.CreateOAuthIdentity(ctx, identity); err != nil {
+		if errors.Is(err, ErrOAuthIdentityConflict) {
+			return ErrOAuthIdentityConflict
+		}
+		return oauthFailure(err)
+	}
+	if profile.EmailVerified && email != "" && user.Email != nil {
+		accountEmail, normalizeErr := NormalizeEmail(*user.Email)
+		if normalizeErr == nil && accountEmail == email && user.EmailVerifiedAt == nil {
+			verifiedAt := now
+			user.EmailVerifiedAt = &verifiedAt
+			updated, updateErr := s.users.UpdateUser(ctx, user, user.Version)
+			if updateErr != nil || updated.ID != actorUserID {
+				return oauthFailure(updateErr)
+			}
+		}
+	}
+	return nil
+}
+
+// Unlink removes one external identity unless it would leave the account with
+// no password and no other linked identity.
+func (s *OAuthSignInService) Unlink(ctx context.Context, userID, identityID int64) error {
+	if err := s.validate(ctx); err != nil {
+		return err
+	}
+	if userID <= 0 || identityID <= 0 {
+		return ErrOAuthIdentityNotFound
+	}
+	user, err := s.users.FindUserByID(ctx, userID)
+	if err != nil {
+		return ErrOAuthIdentityNotFound
+	}
+	identities, err := s.identities.ListOAuthIdentities(ctx, userID)
+	if err != nil {
+		return oauthFailure(err)
+	}
+	var target OAuthIdentity
+	found := false
+	for _, identity := range identities {
+		if identity.ID == identityID && identity.UserID == userID {
+			target = identity
+			found = true
+			break
+		}
+	}
+	if !found {
+		return ErrOAuthIdentityNotFound
+	}
+	if user.PasswordHash == nil && len(identities) <= 1 {
+		return ErrOAuthLastSignInMethod
+	}
+	if err := s.identities.DeleteOAuthIdentity(ctx, userID, target.ID); err != nil {
+		return oauthFailure(err)
+	}
+	return nil
 }
 
 func (s *OAuthSignInService) signInExistingIdentity(ctx context.Context, identity OAuthIdentity) (OAuthSignInResult, error) {
