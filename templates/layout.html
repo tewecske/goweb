@@ -1,6 +1,6 @@
 {{define "layout"}}
 <!doctype html>
-<html lang="{{.Language}}" data-theme="light">
+<html lang="{{.Language}}" data-theme="light" data-account-theme="{{if .Account}}{{.Account.Theme}}{{end}}" data-theme-url="{{if .Account}}{{.Account.ThemeURL}}{{end}}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,7 +9,10 @@
     <script>
       (() => {
         try {
-          const theme = localStorage.getItem("goweb-theme");
+          const serverTheme = document.documentElement.dataset.accountTheme;
+          const theme = serverTheme === "light" || serverTheme === "dark"
+            ? serverTheme
+            : localStorage.getItem("goweb-theme");
           if (theme === "light" || theme === "dark") {
             document.documentElement.dataset.theme = theme;
           }
@@ -76,10 +79,30 @@
         const toggle = document.getElementById("theme-toggle");
         if (!toggle) return;
         const key = "goweb-theme";
+        const themeURL = document.documentElement.dataset.themeUrl;
         toggle.checked = document.documentElement.dataset.theme === "dark";
         toggle.addEventListener("change", () => {
           const theme = toggle.checked ? "dark" : "light";
+          const previousTheme = theme === "dark" ? "light" : "dark";
           document.documentElement.dataset.theme = theme;
+          if (themeURL) {
+            const token = document.querySelector('meta[name="csrf-token"]')?.content || "";
+            fetch(themeURL, {
+              method: "POST",
+              credentials: "same-origin",
+              headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+                "X-CSRF-Token": token
+              },
+              body: new URLSearchParams({theme}).toString()
+            }).then((response) => {
+              if (!response.ok) throw new Error("theme update rejected");
+            }).catch(() => {
+              document.documentElement.dataset.theme = previousTheme;
+              toggle.checked = previousTheme === "dark";
+            });
+            return;
+          }
           try {
             localStorage.setItem(key, theme);
           } catch (_) {

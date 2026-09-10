@@ -61,6 +61,8 @@ type AccountMenu struct {
 	Label       string
 	SettingsURL string
 	SignOutURL  string
+	Theme       string
+	ThemeURL    string
 }
 
 // Alert is a user-facing status message. Level accepts info, success, warning,

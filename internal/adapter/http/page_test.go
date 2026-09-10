@@ -124,3 +124,33 @@ func TestIsHTMX(t *testing.T) {
 		t.Error("IsHTMX(nil) = true, want false")
 	}
 }
+
+func TestPageRendererRendersAccountThemeConfiguration(t *testing.T) {
+	renderer, err := NewPageRenderer()
+	if err != nil {
+		t.Fatalf("NewPageRenderer() error = %v, want nil", err)
+	}
+	response := httptest.NewRecorder()
+	err = renderer.RenderRequest(response, httptest.NewRequest(http.MethodGet, "/en/", nil), PageData{
+		Language:         "en",
+		Title:            "GoWeb",
+		Heading:          "Home",
+		Kind:             "home",
+		Template:         "home",
+		FragmentTemplate: "home-fragment",
+		Account:          &AccountMenu{Theme: "dark", ThemeURL: "/en/account/theme"},
+	})
+	if err != nil {
+		t.Fatalf("RenderRequest() error = %v, want nil", err)
+	}
+	for _, fragment := range []string{
+		`data-account-theme="dark"`,
+		`data-theme-url="/en/account/theme"`,
+		`fetch(themeURL`,
+		`document.documentElement.dataset.theme = previousTheme`,
+	} {
+		if !strings.Contains(response.Body.String(), fragment) {
+			t.Errorf("account theme response missing %q", fragment)
+		}
+	}
+}
