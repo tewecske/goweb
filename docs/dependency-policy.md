@@ -16,6 +16,12 @@ Runtime code starts with no third-party dependencies.
 | Tests and HTTP tests | `testing`, `net/http/httptest` |
 | Browser interactions | HTMX assets, without a Go runtime dependency |
 
+Browser acceptance tests use Playwright as development-only tooling because a
+real browser engine is required to verify redirects, cookies, accessibility,
+and full-page versus HTMX behavior. Pin `@playwright/test` to an exact npm
+version and keep browser tests opt-in until a complete application fixture is
+available.
+
 Use standard-library functionality when it meets requirements. Do not add a package only to shorten small amounts of code.
 
 ## Adding a dependency

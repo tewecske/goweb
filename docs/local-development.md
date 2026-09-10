@@ -6,6 +6,7 @@
 - Go 1.26.x; the repository pins toolchain `go1.26.5`
 - `make` for the documented command shortcuts
 - `curl` for the health-check example
+- Node.js 20+ and npm for browser acceptance tests
 
 Check Go version:
 
@@ -112,6 +113,18 @@ Remove generated artifacts:
 ```sh
 make clean
 ```
+
+Run browser acceptance specs after installing npm dependencies:
+
+```sh
+npm install
+npx playwright install chromium
+GOWEB_BROWSER_E2E=1 npm run test:browser
+```
+
+Browser specs are skipped without `GOWEB_BROWSER_E2E=1`. Enabled runs require
+application routes plus configured mail and external-provider test fixtures;
+they never use committed credentials or token fixtures.
 
 ## Project conventions
 
