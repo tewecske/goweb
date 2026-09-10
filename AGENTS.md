@@ -58,6 +58,9 @@ go build ./...
 
 Tests must cover success and failure paths, remain isolated and repeatable, and avoid secret fixtures. GitHub Actions repeats module verification, formatting, vet, race tests, and package builds.
 
+- Browser checks use `npm run test:browser`; specs stay opt-in via `GOWEB_BROWSER_E2E=1`.
+- Browser runs require external mail/provider fixtures from environment; never commit credentials, tokens, or bearer fixtures.
+
 ## Frontend
 
 - Use DaisyUI 5 components for frontend UI instead of hand-rolled equivalents.
