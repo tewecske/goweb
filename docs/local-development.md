@@ -125,6 +125,9 @@ GOWEB_BROWSER_E2E=1 npm run test:browser
 Browser specs are skipped without `GOWEB_BROWSER_E2E=1`. Enabled runs require
 application routes plus configured mail and external-provider test fixtures;
 they never use committed credentials or token fixtures.
+Guest acceptance fixtures may override logical guest routes with
+`GOWEB_BROWSER_GUEST_WRITE_PATH`, `GOWEB_BROWSER_GUEST_TRANSFER_PATH`, and
+`GOWEB_BROWSER_GUEST_UPGRADE_PATH`.
 
 ## Project conventions
 
