@@ -282,6 +282,8 @@ func confirmationURL(t *testing.T) url.URL {
 
 type confirmationUserRepositoryStub struct {
 	user                  User
+	emailUser             User
+	emailErr              error
 	findErr               error
 	updated               User
 	updateExpectedVersion int64
@@ -301,6 +303,12 @@ func (r *confirmationUserRepositoryStub) FindUserByID(context.Context, int64) (U
 }
 
 func (r *confirmationUserRepositoryStub) FindUserByEmail(context.Context, string) (User, error) {
+	if r.emailErr != nil {
+		return User{}, r.emailErr
+	}
+	if r.emailUser.ID > 0 {
+		return r.emailUser, nil
+	}
 	return User{}, ErrUserNotFound
 }
 
