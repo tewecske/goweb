@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -23,6 +25,8 @@ var (
 	ErrRequestIDGeneration = errors.New("middleware: request id generation failed")
 	// ErrInvalidRequestID identifies an unsafe request ID.
 	ErrInvalidRequestID = errors.New("middleware: invalid request id")
+	// ErrInvalidRedirectPath identifies a redirect outside this application.
+	ErrInvalidRedirectPath = errors.New("middleware: invalid redirect path")
 )
 
 const (
@@ -242,6 +246,82 @@ func RequireAuth(authenticator Authenticator) Middleware {
 	}
 }
 
+// RequireAnonymous protects pages intended only for visitors without a
+// session. Authenticated visitors are redirected to redirectPath.
+func RequireAnonymous(authenticator Authenticator, redirectPath string) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			if authenticator == nil {
+				http.Error(writer, "internal server error", http.StatusInternalServerError)
+				return
+			}
+
+			_, err := authenticator.Authenticate(request.Context(), request)
+			if errors.Is(err, ErrUnauthenticated) {
+				next.ServeHTTP(writer, request)
+				return
+			}
+			if err != nil {
+				http.Error(writer, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			redirect(writer, request, redirectPath)
+		})
+	}
+}
+
+// RequireAuthenticated protects page routes and redirects visitors without a
+// valid session to redirectPath.
+func RequireAuthenticated(authenticator Authenticator, redirectPath string) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			if authenticator == nil {
+				http.Error(writer, "internal server error", http.StatusInternalServerError)
+				return
+			}
+
+			principal, err := authenticator.Authenticate(request.Context(), request)
+			if errors.Is(err, ErrUnauthenticated) {
+				redirect(writer, request, redirectPath)
+				return
+			}
+			if err != nil {
+				http.Error(writer, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			withPrincipal(next, writer, request, principal)
+		})
+	}
+}
+
+// RequireAdmin protects administrator pages. Authenticated non-administrators
+// receive access denied without revealing whether any other account exists.
+func RequireAdmin(authenticator Authenticator, redirectPath string) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			if authenticator == nil {
+				http.Error(writer, "internal server error", http.StatusInternalServerError)
+				return
+			}
+
+			principal, err := authenticator.Authenticate(request.Context(), request)
+			if errors.Is(err, ErrUnauthenticated) {
+				redirect(writer, request, redirectPath)
+				return
+			}
+			if err != nil {
+				http.Error(writer, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			if !principal.IsAdmin {
+				http.Error(writer, "access denied", http.StatusForbidden)
+				return
+			}
+			withPrincipal(next, writer, request, principal)
+		})
+	}
+}
+
 // PrincipalFromContext returns the authenticated principal when present.
 func PrincipalFromContext(ctx context.Context) (Principal, bool) {
 	if ctx == nil {
@@ -249,6 +329,30 @@ func PrincipalFromContext(ctx context.Context) (Principal, bool) {
 	}
 	principal, ok := ctx.Value(principalKey{}).(Principal)
 	return principal, ok
+}
+
+func withPrincipal(next http.Handler, writer http.ResponseWriter, request *http.Request, principal Principal) {
+	ctx := context.WithValue(request.Context(), principalKey{}, principal)
+	next.ServeHTTP(writer, request.WithContext(ctx))
+}
+
+func redirect(writer http.ResponseWriter, request *http.Request, path string) {
+	if !validRedirectPath(path) {
+		http.Error(writer, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(writer, request, path, http.StatusFound)
+}
+
+func validRedirectPath(path string) bool {
+	if path == "" || strings.ContainsAny(path, "\r\n") {
+		return false
+	}
+	parsed, err := url.Parse(path)
+	if err != nil || parsed.IsAbs() || parsed.Host != "" || !strings.HasPrefix(parsed.Path, "/") {
+		return false
+	}
+	return !strings.HasPrefix(path, "//")
 }
 
 type statusWriter struct {

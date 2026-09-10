@@ -204,6 +204,144 @@ func TestRequireAuth(t *testing.T) {
 	}
 }
 
+func TestRequireAnonymous(t *testing.T) {
+	tests := []struct {
+		name           string
+		authenticator  Authenticator
+		redirectPath   string
+		expectedStatus int
+		location       string
+	}{
+		{
+			name:           "anonymous proceeds",
+			authenticator:  authFunc(func(context.Context, *http.Request) (Principal, error) { return Principal{}, ErrUnauthenticated }),
+			redirectPath:   "/home",
+			expectedStatus: http.StatusNoContent,
+		},
+		{
+			name:           "authenticated redirects",
+			authenticator:  authFunc(func(context.Context, *http.Request) (Principal, error) { return Principal{ID: "user-1"}, nil }),
+			redirectPath:   "/home",
+			expectedStatus: http.StatusFound,
+			location:       "/home",
+		},
+		{
+			name: "backend failure",
+			authenticator: authFunc(func(context.Context, *http.Request) (Principal, error) {
+				return Principal{}, errors.New("backend failure")
+			}),
+			redirectPath:   "/home",
+			expectedStatus: http.StatusInternalServerError,
+		},
+		{
+			name:           "invalid redirect",
+			authenticator:  authFunc(func(context.Context, *http.Request) (Principal, error) { return Principal{ID: "user-1"}, nil }),
+			redirectPath:   "https://example.com",
+			expectedStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			called := false
+			handler := RequireAnonymous(test.authenticator, test.redirectPath)(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				called = true
+				writer.WriteHeader(http.StatusNoContent)
+			}))
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+
+			if response.Code != test.expectedStatus {
+				t.Errorf("status = %d, want %d", response.Code, test.expectedStatus)
+			}
+			if test.location != "" && response.Header().Get("Location") != test.location {
+				t.Errorf("location = %q, want %q", response.Header().Get("Location"), test.location)
+			}
+			if test.expectedStatus == http.StatusNoContent && !called {
+				t.Error("anonymous request did not reach handler")
+			}
+		})
+	}
+}
+
+func TestRequireAuthenticated(t *testing.T) {
+	tests := []struct {
+		name           string
+		authenticator  Authenticator
+		expectedStatus int
+	}{
+		{
+			name:           "missing session redirects",
+			authenticator:  authFunc(func(context.Context, *http.Request) (Principal, error) { return Principal{}, ErrUnauthenticated }),
+			expectedStatus: http.StatusFound,
+		},
+		{
+			name:           "authenticated proceeds",
+			authenticator:  authFunc(func(context.Context, *http.Request) (Principal, error) { return Principal{ID: "user-1"}, nil }),
+			expectedStatus: http.StatusNoContent,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			handler := RequireAuthenticated(test.authenticator, "/sign-in")(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				principal, ok := PrincipalFromContext(request.Context())
+				if !ok || principal.ID != "user-1" {
+					t.Error("principal missing from authenticated request")
+				}
+				writer.WriteHeader(http.StatusNoContent)
+			}))
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/private", nil))
+
+			if response.Code != test.expectedStatus {
+				t.Errorf("status = %d, want %d", response.Code, test.expectedStatus)
+			}
+		})
+	}
+}
+
+func TestRequireAdmin(t *testing.T) {
+	tests := []struct {
+		name           string
+		principal      Principal
+		authError      error
+		expectedStatus int
+	}{
+		{
+			name:           "missing session redirects",
+			authError:      ErrUnauthenticated,
+			expectedStatus: http.StatusFound,
+		},
+		{
+			name:           "member denied",
+			principal:      Principal{ID: "user-1"},
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name:           "administrator proceeds",
+			principal:      Principal{ID: "admin-1", IsAdmin: true},
+			expectedStatus: http.StatusNoContent,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			handler := RequireAdmin(authFunc(func(context.Context, *http.Request) (Principal, error) {
+				return test.principal, test.authError
+			}), "/sign-in")(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				writer.WriteHeader(http.StatusNoContent)
+			}))
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/admin", nil))
+
+			if response.Code != test.expectedStatus {
+				t.Errorf("status = %d, want %d", response.Code, test.expectedStatus)
+			}
+		})
+	}
+}
+
 type authFunc func(context.Context, *http.Request) (Principal, error)
 
 func (f authFunc) Authenticate(ctx context.Context, request *http.Request) (Principal, error) {
