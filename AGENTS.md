@@ -13,6 +13,7 @@ Package responsibilities:
 - `internal/locale` owns supported language codes, canonical localized paths, and translation catalogs.
 - `internal/service` contains application use cases.
 - `internal/adapter/http` owns routes, page rendering, full-page/HTMX responses, and transport adapters.
+- `internal/adapter/mail` owns mail delivery adapters; mail ports stay in consuming services.
 - `internal/adapter/http/middleware` owns request context, recovery, logging, tracing, authentication, and CSRF boundaries.
 - `internal/server` owns listener lifecycle, graceful shutdown, and dependency closure.
 - `internal/store` owns database connection settings, migration execution, and persistence adapters.

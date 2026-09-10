@@ -8,6 +8,7 @@ internal/config           validated deployment configuration
 internal/locale            supported languages and canonical URL paths
 internal/service          application use-case services
 internal/adapter/http     HTTP transport adapter
+internal/adapter/mail     mail delivery adapters
 internal/adapter/http/middleware shared request boundaries
 internal/server           HTTP lifecycle and dependency shutdown
 internal/store            database connection and migration infrastructure
