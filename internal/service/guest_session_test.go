@@ -38,6 +38,46 @@ func TestGuestSessionServiceCreate(t *testing.T) {
 	}
 }
 
+func TestGuestSessionServiceCreateWithTheme(t *testing.T) {
+	users := &guestUserRepositoryStub{}
+	sessionRepository := &guestSessionRepositoryStub{}
+	sessions, err := NewSessionService(sessionRepository, time.Hour)
+	if err != nil {
+		t.Fatalf("NewSessionService() error = %v, want nil", err)
+	}
+	service, err := NewGuestSessionService(users, sessions)
+	if err != nil {
+		t.Fatalf("NewGuestSessionService() error = %v, want nil", err)
+	}
+
+	result, err := service.CreateWithTheme(context.Background(), " DARK ")
+	if err != nil {
+		t.Fatalf("CreateWithTheme() error = %v, want nil", err)
+	}
+	if result.User.Theme != "dark" || users.created.Theme != "dark" {
+		t.Fatalf("guest theme = %q/%q, want dark", result.User.Theme, users.created.Theme)
+	}
+}
+
+func TestGuestSessionServiceCreateWithThemeRejectsInvalidTheme(t *testing.T) {
+	users := &guestUserRepositoryStub{}
+	sessions, err := NewSessionService(&guestSessionRepositoryStub{}, time.Hour)
+	if err != nil {
+		t.Fatalf("NewSessionService() error = %v, want nil", err)
+	}
+	service, err := NewGuestSessionService(users, sessions)
+	if err != nil {
+		t.Fatalf("NewGuestSessionService() error = %v, want nil", err)
+	}
+
+	if _, err := service.CreateWithTheme(context.Background(), "blue"); !errors.Is(err, ErrInvalidTheme) {
+		t.Fatalf("CreateWithTheme() error = %v, want %v", err, ErrInvalidTheme)
+	}
+	if users.createCalls != 0 {
+		t.Fatalf("CreateUser() calls = %d, want 0 for invalid theme", users.createCalls)
+	}
+}
+
 func TestNewGuestSessionServiceRejectsInvalidInputs(t *testing.T) {
 	sessions, err := NewSessionService(&guestSessionRepositoryStub{}, time.Hour)
 	if err != nil {

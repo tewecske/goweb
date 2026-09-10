@@ -41,9 +41,9 @@ func (s *ThemeService) UpdateTheme(ctx context.Context, userID int64, theme stri
 	if userID <= 0 {
 		return ErrInvalidUserID
 	}
-	theme = strings.ToLower(strings.TrimSpace(theme))
-	if theme != "light" && theme != "dark" {
-		return ErrInvalidTheme
+	theme, err := normalizeTheme(theme)
+	if err != nil {
+		return err
 	}
 	user, err := s.users.FindUserByID(ctx, userID)
 	if err != nil {
@@ -57,4 +57,12 @@ func (s *ThemeService) UpdateTheme(ctx context.Context, userID int64, theme stri
 		return fmt.Errorf("update user theme: %w", err)
 	}
 	return nil
+}
+
+func normalizeTheme(raw string) (string, error) {
+	theme := strings.ToLower(strings.TrimSpace(raw))
+	if theme != "light" && theme != "dark" {
+		return "", ErrInvalidTheme
+	}
+	return theme, nil
 }

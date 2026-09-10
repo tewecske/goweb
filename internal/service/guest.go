@@ -41,15 +41,19 @@ func NewGuestService(users UserRepository) (*GuestService, error) {
 // preferences. Session and username assignment belong to the guest session
 // flow so account creation remains usable by ownership write services.
 func (s *GuestService) Create(ctx context.Context) (User, error) {
-	return s.create(ctx, "")
+	return s.createWithTheme(ctx, "", defaultUserTheme)
 }
 
-func (s *GuestService) create(ctx context.Context, username string) (User, error) {
+func (s *GuestService) createWithTheme(ctx context.Context, username, theme string) (User, error) {
 	if s == nil || s.users == nil {
 		return User{}, ErrInvalidGuestCreation
 	}
 	if ctx == nil {
 		return User{}, errors.New("service: nil guest context")
+	}
+	theme, err := normalizeTheme(theme)
+	if err != nil {
+		return User{}, err
 	}
 	if username != "" {
 		normalized, err := NormalizeUsername(username)
@@ -61,7 +65,7 @@ func (s *GuestService) create(ctx context.Context, username string) (User, error
 
 	guest := User{
 		IsGuest:   true,
-		Theme:     defaultUserTheme,
+		Theme:     theme,
 		Locale:    defaultUserLocale,
 		CreatedAt: time.Now().Unix(),
 	}
@@ -107,6 +111,11 @@ func NewGuestSessionService(users UserRepository, sessions *SessionService) (*Gu
 
 // Create creates a guest with a random username and an ordinary session.
 func (s *GuestSessionService) Create(ctx context.Context) (GuestSessionResult, error) {
+	return s.CreateWithTheme(ctx, defaultUserTheme)
+}
+
+// CreateWithTheme creates a guest using the active anonymous browser theme.
+func (s *GuestSessionService) CreateWithTheme(ctx context.Context, theme string) (GuestSessionResult, error) {
 	if s == nil || s.guests == nil || s.sessions == nil {
 		return GuestSessionResult{}, ErrNilGuestSessionDependency
 	}
@@ -114,7 +123,7 @@ func (s *GuestSessionService) Create(ctx context.Context) (GuestSessionResult, e
 	if err != nil {
 		return GuestSessionResult{}, err
 	}
-	user, err := s.guests.create(ctx, username)
+	user, err := s.guests.createWithTheme(ctx, username, theme)
 	if err != nil {
 		return GuestSessionResult{}, err
 	}
