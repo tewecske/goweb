@@ -9,13 +9,13 @@ Server-rendered Go and HTMX application foundation.
 ## Run
 
 ```sh
-go run ./cmd/goweb
+go run ./cmd/web
 ```
 
 Server listens on `:8080` by default. Set `GOWEB_HTTP_ADDR` to use another host and port.
 
 ```sh
-GOWEB_HTTP_ADDR=127.0.0.1:8080 go run ./cmd/goweb
+GOWEB_HTTP_ADDR=127.0.0.1:8080 go run ./cmd/web
 ```
 
 Health check: `GET /healthz`.

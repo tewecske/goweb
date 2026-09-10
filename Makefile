@@ -5,7 +5,7 @@ GO := go
 
 build:
 	mkdir -p bin
-	$(GO) build -o bin/$(BINARY_NAME) ./cmd/$(BINARY_NAME)
+	$(GO) build -o bin/$(BINARY_NAME) ./cmd/web
 
 clean:
 	rm -rf bin coverage.out coverage.html
@@ -22,4 +22,4 @@ vet:
 check: fmt-check vet test
 
 run:
-	$(GO) run ./cmd/$(BINARY_NAME)
+	$(GO) run ./cmd/web
