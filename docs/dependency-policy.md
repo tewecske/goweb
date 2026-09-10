@@ -12,6 +12,7 @@ Runtime code starts with no third-party dependencies.
 | Structured logs | `log/slog` |
 | Database contracts | `database/sql` |
 | Cryptography and secure randomness | `crypto/*` |
+| Password hashing | `golang.org/x/crypto/argon2` because standard library has no Argon2id implementation |
 | Tests and HTTP tests | `testing`, `net/http/httptest` |
 | Browser interactions | HTMX assets, without a Go runtime dependency |
 
