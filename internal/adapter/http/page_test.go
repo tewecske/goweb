@@ -68,7 +68,11 @@ func TestPageRendererRenderRejectsInvalidPage(t *testing.T) {
 		},
 		{
 			name: "missing template",
-			page: PageData{Language: "en", Title: "title", Heading: "heading"},
+			page: PageData{
+				Language: "en",
+				Title:    "title",
+				Heading:  "heading",
+			},
 			want: ErrPageNotFound,
 		},
 	}
@@ -91,5 +95,32 @@ func TestPageRendererRenderRejectsInvalidPage(t *testing.T) {
 				t.Error("invalid render wrote response body")
 			}
 		})
+	}
+}
+
+func TestIsHTMX(t *testing.T) {
+	tests := []struct {
+		name   string
+		header string
+		want   bool
+	}{
+		{name: "missing header", want: false},
+		{name: "true", header: "true", want: true},
+		{name: "case and whitespace", header: " TRUE ", want: true},
+		{name: "false", header: "false", want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "/", nil)
+			request.Header.Set("HX-Request", test.header)
+			if got := IsHTMX(request); got != test.want {
+				t.Errorf("IsHTMX() = %t, want %t", got, test.want)
+			}
+		})
+	}
+
+	if IsHTMX(nil) {
+		t.Error("IsHTMX(nil) = true, want false")
 	}
 }

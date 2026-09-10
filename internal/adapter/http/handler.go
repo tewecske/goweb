@@ -57,10 +57,12 @@ func home(renderer *PageRenderer) http.HandlerFunc {
 			http.NotFound(writer, request)
 			return
 		}
-		err := renderer.Render(writer, "home", PageData{
-			Language: "en",
-			Title:    "GoWeb",
-			Heading:  "Welcome to GoWeb",
+		err := renderer.RenderRequest(writer, request, PageData{
+			Language:         "en",
+			Title:            "GoWeb",
+			Heading:          "Welcome to GoWeb",
+			Template:         "home",
+			FragmentTemplate: "home-fragment",
 			Navigation: []NavigationItem{
 				{Label: "Home", URL: "/"},
 				{Label: "Sign in", URL: "/sign-in"},

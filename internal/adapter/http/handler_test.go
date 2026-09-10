@@ -75,3 +75,27 @@ func TestNewHandlerRendersHomeLayout(t *testing.T) {
 		}
 	}
 }
+
+func TestNewHandlerRendersHTMXFragment(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request.Header.Set("HX-Request", "true")
+	response := httptest.NewRecorder()
+
+	NewHandler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if response.Header().Get("Vary") != "HX-Request" {
+		t.Errorf("vary = %q, want HX-Request", response.Header().Get("Vary"))
+	}
+	body := response.Body.String()
+	if strings.Contains(body, "<!doctype html>") {
+		t.Error("HTMX response contains full document")
+	}
+	for _, fragment := range []string{`<section aria-labelledby="page-heading">`, `<h1 id="page-heading"`, "Welcome to GoWeb"} {
+		if !strings.Contains(body, fragment) {
+			t.Errorf("HTMX response missing %q", fragment)
+		}
+	}
+}
