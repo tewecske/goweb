@@ -15,12 +15,28 @@ func NewHandler() http.Handler {
 
 // NewRouter builds public routes and applies shared transport boundaries.
 func NewRouter(extra ...middleware.Middleware) http.Handler {
+	return newRouter(slog.Default(), nil, extra...)
+}
+
+// NewLoggedRouter builds routes with structured request logging.
+func NewLoggedRouter(logger *Logger, extra ...middleware.Middleware) http.Handler {
+	if logger == nil {
+		return NewRouter(extra...)
+	}
+	return newRouter(logger.Application(), logger, extra...)
+}
+
+func newRouter(recoveryLogger *slog.Logger, requestLogger middleware.RequestLogger, extra ...middleware.Middleware) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", health)
 
 	shared := []middleware.Middleware{
+		middleware.WithRequestID(nil),
 		middleware.WithRequestInfo(),
-		middleware.Recover(slog.Default()),
+		middleware.Recover(recoveryLogger),
+	}
+	if requestLogger != nil {
+		shared = append(shared, middleware.Log(requestLogger))
 	}
 	shared = append(shared, extra...)
 	handler, err := middleware.Chain(mux, shared...)

@@ -3,7 +3,10 @@ package middleware
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -16,6 +19,17 @@ var (
 	ErrNilMiddleware = errors.New("middleware: nil middleware")
 	// ErrUnauthenticated identifies a request without valid authentication.
 	ErrUnauthenticated = errors.New("middleware: unauthenticated")
+	// ErrRequestIDGeneration identifies failure to create a request ID.
+	ErrRequestIDGeneration = errors.New("middleware: request id generation failed")
+	// ErrInvalidRequestID identifies an unsafe request ID.
+	ErrInvalidRequestID = errors.New("middleware: invalid request id")
+)
+
+const (
+	// RequestIDHeader is the response header containing the server-generated ID.
+	RequestIDHeader = "X-Request-ID"
+	requestIDBytes  = 16
+	maxRequestIDLen = 128
 )
 
 // Middleware transforms one HTTP handler into another.
@@ -43,6 +57,53 @@ type requestInfoKey struct{}
 // RequestInfo contains request-scoped timing metadata.
 type RequestInfo struct {
 	StartedAt time.Time
+}
+
+type requestIDKey struct{}
+
+// RequestIDGenerator creates a server-side request correlation ID.
+type RequestIDGenerator func() (string, error)
+
+// NewRequestID creates a cryptographically random, header-safe request ID.
+func NewRequestID() (string, error) {
+	value := make([]byte, requestIDBytes)
+	if _, err := rand.Read(value); err != nil {
+		return "", fmt.Errorf("%w: random source unavailable", ErrRequestIDGeneration)
+	}
+	return hex.EncodeToString(value), nil
+}
+
+// WithRequestID adds a generated request ID to context and response headers.
+func WithRequestID(generator RequestIDGenerator) Middleware {
+	if generator == nil {
+		generator = NewRequestID
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			requestID, err := generator()
+			if err != nil {
+				http.Error(writer, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			if !validRequestID(requestID) {
+				http.Error(writer, "internal server error", http.StatusInternalServerError)
+				return
+			}
+
+			writer.Header().Set(RequestIDHeader, requestID)
+			ctx := context.WithValue(request.Context(), requestIDKey{}, requestID)
+			next.ServeHTTP(writer, request.WithContext(ctx))
+		})
+	}
+}
+
+// RequestIDFromContext returns the server-generated request ID when present.
+func RequestIDFromContext(ctx context.Context) (string, bool) {
+	if ctx == nil {
+		return "", false
+	}
+	requestID, ok := ctx.Value(requestIDKey{}).(string)
+	return requestID, ok
 }
 
 // WithRequestInfo adds request-scoped metadata to the context.
@@ -87,9 +148,10 @@ func Recover(logger *slog.Logger) Middleware {
 
 // RequestEvent contains safe, low-cardinality request outcome fields.
 type RequestEvent struct {
-	Method   string
-	Status   int
-	Duration time.Duration
+	RequestID string
+	Method    string
+	Status    int
+	Duration  time.Duration
 }
 
 // RequestLogger receives request events without URL or credential fields.
@@ -112,9 +174,10 @@ func Log(logger RequestLogger) Middleware {
 				status = http.StatusOK
 			}
 			logger.LogRequest(request.Context(), RequestEvent{
-				Method:   request.Method,
-				Status:   status,
-				Duration: time.Since(startedAt),
+				RequestID: requestID(request.Context()),
+				Method:    request.Method,
+				Status:    status,
+				Duration:  time.Since(startedAt),
 			})
 		})
 	}
@@ -206,4 +269,24 @@ func (w *statusWriter) Write(body []byte) (int, error) {
 		w.WriteHeader(http.StatusOK)
 	}
 	return w.ResponseWriter.Write(body)
+}
+
+func requestID(ctx context.Context) string {
+	value, _ := RequestIDFromContext(ctx)
+	return value
+}
+
+func validRequestID(value string) bool {
+	if value == "" || len(value) > maxRequestIDLen {
+		return false
+	}
+	for _, character := range value {
+		if (character < 'a' || character > 'z') &&
+			(character < 'A' || character > 'Z') &&
+			(character < '0' || character > '9') &&
+			character != '-' && character != '_' && character != '.' {
+			return false
+		}
+	}
+	return true
 }

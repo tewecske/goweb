@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,7 +19,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	server, err := appserver.New(appConfig.HTTPAddress, httpadapter.NewHandler())
+	applicationLogger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	securityLogger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	logger := httpadapter.NewLogger(applicationLogger, securityLogger)
+
+	server, err := appserver.New(appConfig.HTTPAddress, httpadapter.NewLoggedRouter(logger))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -26,7 +31,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	log.Printf("listening on %s", appConfig.HTTPAddress)
+	logger.Application().Info("server listening", "address", appConfig.HTTPAddress)
 	if err := server.Run(ctx); err != nil {
 		log.Fatal(err)
 	}

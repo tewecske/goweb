@@ -35,3 +35,16 @@ func TestNewHandler(t *testing.T) {
 		})
 	}
 }
+
+func TestNewHandlerAddsRequestID(t *testing.T) {
+	response := httptest.NewRecorder()
+	NewHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+
+	requestID := response.Header().Get("X-Request-ID")
+	if requestID == "" {
+		t.Fatal("X-Request-ID header is empty")
+	}
+	if len(requestID) != 32 {
+		t.Errorf("request id length = %d, want 32", len(requestID))
+	}
+}

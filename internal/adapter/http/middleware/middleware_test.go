@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -68,6 +69,50 @@ func TestWithRequestInfo(t *testing.T) {
 	}
 }
 
+func TestWithRequestID(t *testing.T) {
+	handler := WithRequestID(func() (string, error) { return "request-123", nil })(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requestID, ok := RequestIDFromContext(request.Context())
+		if !ok || requestID != "request-123" {
+			t.Errorf("RequestIDFromContext() = %q, %t; want request-123, true", requestID, ok)
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	if response.Code != http.StatusNoContent {
+		t.Errorf("status = %d, want %d", response.Code, http.StatusNoContent)
+	}
+	if response.Header().Get(RequestIDHeader) != "request-123" {
+		t.Errorf("request id header = %q, want request-123", response.Header().Get(RequestIDHeader))
+	}
+	if _, err := NewRequestID(); err != nil {
+		t.Fatalf("NewRequestID() error = %v, want nil", err)
+	}
+
+	for _, test := range []struct {
+		name      string
+		generator RequestIDGenerator
+	}{
+		{name: "generator failure", generator: func() (string, error) { return "", ErrRequestIDGeneration }},
+		{name: "empty id", generator: func() (string, error) { return "", nil }},
+		{name: "unsafe id", generator: func() (string, error) { return "request\nid", nil }},
+		{name: "long id", generator: func() (string, error) { return strings.Repeat("x", 129), nil }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			WithRequestID(test.generator)(http.NotFoundHandler()).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+			if response.Code != http.StatusInternalServerError {
+				t.Errorf("status = %d, want %d", response.Code, http.StatusInternalServerError)
+			}
+			if response.Header().Get(RequestIDHeader) != "" {
+				t.Error("request id header set after generation failure")
+			}
+		})
+	}
+}
+
 func TestRecover(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := Recover(logger)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
@@ -87,9 +132,9 @@ func TestRecover(t *testing.T) {
 
 func TestLog(t *testing.T) {
 	logger := &testRequestLogger{}
-	handler := Log(logger)(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+	handler := WithRequestID(func() (string, error) { return "request-123", nil })(Log(logger)(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(http.StatusNoContent)
-	}))
+	})))
 
 	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/private?token=secret", nil))
 
@@ -98,6 +143,9 @@ func TestLog(t *testing.T) {
 	}
 	if logger.event.Status != http.StatusNoContent {
 		t.Errorf("status = %d, want %d", logger.event.Status, http.StatusNoContent)
+	}
+	if logger.event.RequestID != "request-123" {
+		t.Errorf("request id = %q, want request-123", logger.event.RequestID)
 	}
 	if logger.event.Duration < 0 {
 		t.Errorf("duration = %s, want non-negative", logger.event.Duration)
