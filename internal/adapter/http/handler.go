@@ -20,15 +20,32 @@ func NewRouter(extra ...middleware.Middleware) http.Handler {
 	return newRouter(slog.Default(), nil, extra...)
 }
 
+// NewRouterWithServices builds public routes while retaining application
+// dependencies for future feature handlers.
+func NewRouterWithServices(services any, extra ...middleware.Middleware) http.Handler {
+	return newRouterWithServices(slog.Default(), nil, services, extra...)
+}
+
 // NewLoggedRouter builds routes with structured request logging.
 func NewLoggedRouter(logger *Logger, extra ...middleware.Middleware) http.Handler {
+	return NewLoggedRouterWithServices(logger, nil, extra...)
+}
+
+// NewLoggedRouterWithServices retains the application graph at HTTP
+// composition time. Feature handlers will consume its ports as routes land;
+// this foundation still exposes only public routes.
+func NewLoggedRouterWithServices(logger *Logger, services any, extra ...middleware.Middleware) http.Handler {
 	if logger == nil {
-		return NewRouter(extra...)
+		return NewRouterWithServices(services, extra...)
 	}
-	return newRouter(logger.Application(), logger, extra...)
+	return newRouterWithServices(logger.Application(), logger, services, extra...)
 }
 
 func newRouter(recoveryLogger *slog.Logger, requestLogger middleware.RequestLogger, extra ...middleware.Middleware) http.Handler {
+	return newRouterWithServices(recoveryLogger, requestLogger, nil, extra...)
+}
+
+func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware.RequestLogger, services any, extra ...middleware.Middleware) http.Handler {
 	mux := http.NewServeMux()
 	renderer, err := NewPageRenderer()
 	if err != nil {
@@ -53,7 +70,12 @@ func newRouter(recoveryLogger *slog.Logger, requestLogger middleware.RequestLogg
 	if err != nil {
 		panic(err)
 	}
-	return handler
+	return &serviceAwareHandler{Handler: handler, services: services}
+}
+
+type serviceAwareHandler struct {
+	http.Handler
+	services any
 }
 
 func defaultLocale(writer http.ResponseWriter, request *http.Request) {

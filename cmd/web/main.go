@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log"
 	"log/slog"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	httpadapter "github.com/tewecske/goweb/internal/adapter/http"
+	"github.com/tewecske/goweb/internal/app"
 	"github.com/tewecske/goweb/internal/config"
 	appserver "github.com/tewecske/goweb/internal/server"
 	"github.com/tewecske/goweb/internal/store"
@@ -25,30 +27,45 @@ func main() {
 	applicationLogger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	securityLogger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	logger := httpadapter.NewLogger(applicationLogger, securityLogger)
+	router := httpadapter.NewLoggedRouter(logger)
 
 	var serverOptions []appserver.Option
+	var database *sql.DB
 	if appConfig.DatabaseURL.IsSet() {
 		startupContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		database, openErr := store.Open(startupContext, appConfig.DatabaseURL.Reveal())
-		cancel()
+		var openErr error
+		database, openErr = store.Open(startupContext, appConfig.DatabaseURL.Reveal())
 		if openErr != nil {
+			cancel()
 			log.Fatal(openErr)
 		}
 
 		migrator, migrateErr := store.NewMigrator(database, migrations.FS)
 		if migrateErr != nil {
+			cancel()
 			_ = database.Close()
 			log.Fatal(migrateErr)
 		}
-		if migrateErr := migrator.Apply(context.Background()); migrateErr != nil {
+		migrateErr = migrator.Apply(startupContext)
+		cancel()
+		if migrateErr != nil {
 			_ = database.Close()
 			log.Fatal(migrateErr)
+		}
+		applicationGraph, composeErr := app.New(database, appConfig)
+		if composeErr != nil {
+			_ = database.Close()
+			log.Fatal(composeErr)
 		}
 		serverOptions = append(serverOptions, appserver.WithDependency(database))
+		router = httpadapter.NewLoggedRouterWithServices(logger, applicationGraph)
 	}
 
-	server, err := appserver.New(appConfig.HTTPAddress, httpadapter.NewLoggedRouter(logger), serverOptions...)
+	server, err := appserver.New(appConfig.HTTPAddress, router, serverOptions...)
 	if err != nil {
+		if database != nil {
+			_ = database.Close()
+		}
 		log.Fatal(err)
 	}
 

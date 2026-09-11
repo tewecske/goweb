@@ -9,6 +9,7 @@ Use hexagonal boundaries and manual constructor wiring. Keep domain code indepen
 Package responsibilities:
 
 - `cmd/web` owns process startup and dependency wiring. Keep business logic out.
+- `internal/app` owns explicit application graph composition; it does not own resource lifecycle.
 - `internal/config` loads typed environment configuration and redacts secrets.
 - `internal/locale` owns supported language codes, canonical localized paths, and translation catalogs.
 - `internal/service` contains application use cases.
