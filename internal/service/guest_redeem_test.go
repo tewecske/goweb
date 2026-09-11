@@ -82,7 +82,8 @@ func TestGuestRedemptionServicePropagatesOperationalFailures(t *testing.T) {
 		claim:   GuestClaimCode{UserID: 42, Code: "ABCDEFGH23", CreatedAt: 1},
 		markErr: backendErr,
 	}
-	sessions, err := NewSessionService(&guestRedemptionSessionRepositoryStub{}, time.Hour)
+	sessionRepository := &guestRedemptionSessionRepositoryStub{}
+	sessions, err := NewSessionService(sessionRepository, time.Hour)
 	if err != nil {
 		t.Fatalf("NewSessionService() error = %v, want nil", err)
 	}
@@ -92,6 +93,33 @@ func TestGuestRedemptionServicePropagatesOperationalFailures(t *testing.T) {
 	}
 	if _, err := service.Redeem(context.Background(), "ABCDEFGH23"); !errors.Is(err, backendErr) {
 		t.Fatalf("Redeem() error = %v, want errors.Is(_, %v)", err, backendErr)
+	}
+	if sessionRepository.revokeCalls != 1 {
+		t.Fatalf("revoke calls = %d, want 1", sessionRepository.revokeCalls)
+	}
+}
+
+func TestGuestRedemptionServiceDoesNotMarkCodeWhenSessionCreationFails(t *testing.T) {
+	users := &guestRedemptionUserRepositoryStub{user: User{ID: 42, IsGuest: true}}
+	codes := &guestRedemptionCodeRepositoryStub{claim: GuestClaimCode{
+		UserID:    42,
+		Code:      "ABCDEFGH23",
+		CreatedAt: 1,
+	}}
+	sessionErr := errors.New("session backend failed")
+	sessions, err := NewSessionService(&guestRedemptionSessionRepositoryStub{createErr: sessionErr}, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewGuestRedemptionService(users, codes, sessions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Redeem(context.Background(), "ABCDEFGH23"); !errors.Is(err, sessionErr) {
+		t.Fatalf("Redeem() error = %v, want %v", err, sessionErr)
+	}
+	if codes.markCalls != 0 {
+		t.Fatalf("mark calls = %d, want 0", codes.markCalls)
 	}
 }
 
@@ -154,11 +182,13 @@ func (r *guestRedemptionCodeRepositoryStub) MarkGuestClaimCodeUsed(_ context.Con
 
 type guestRedemptionSessionRepositoryStub struct {
 	createCalls int
+	createErr   error
+	revokeCalls int
 }
 
 func (r *guestRedemptionSessionRepositoryStub) CreateSession(context.Context, Session) error {
 	r.createCalls++
-	return nil
+	return r.createErr
 }
 
 func (r *guestRedemptionSessionRepositoryStub) FindSession(context.Context, string) (Session, error) {
@@ -166,6 +196,7 @@ func (r *guestRedemptionSessionRepositoryStub) FindSession(context.Context, stri
 }
 
 func (r *guestRedemptionSessionRepositoryStub) RevokeSession(context.Context, string, int64) error {
+	r.revokeCalls++
 	return nil
 }
 

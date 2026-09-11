@@ -70,12 +70,18 @@ func (s *GuestRedemptionService) Redeem(ctx context.Context, rawCode string) (Gu
 		return GuestSessionResult{}, ErrInvalidGuestClaimCode
 	}
 
-	if err := s.codes.MarkGuestClaimCodeUsed(ctx, code, time.Now().Unix()); err != nil {
-		return GuestSessionResult{}, fmt.Errorf("mark guest claim code used: %w", err)
-	}
 	session, err := s.sessions.Create(ctx, user.ID)
 	if err != nil {
 		return GuestSessionResult{}, fmt.Errorf("create redeemed guest session: %w", err)
+	}
+	if err := s.codes.MarkGuestClaimCodeUsed(ctx, code, time.Now().Unix()); err != nil {
+		if revokeErr := s.sessions.Revoke(ctx, session.ID); revokeErr != nil {
+			return GuestSessionResult{}, errors.Join(
+				fmt.Errorf("mark guest claim code used: %w", err),
+				fmt.Errorf("revoke redeemed guest session: %w", revokeErr),
+			)
+		}
+		return GuestSessionResult{}, fmt.Errorf("mark guest claim code used: %w", err)
 	}
 	return GuestSessionResult{User: user, Session: session}, nil
 }
