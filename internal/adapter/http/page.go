@@ -36,25 +36,28 @@ const (
 
 // PageData contains escaped, server-owned data for a full HTML document.
 type PageData struct {
-	Language         string
-	Title            string
-	Heading          string
-	Kind             string
-	Message          string
-	Description      string
-	CSRFToken        string
-	Form             FormData
-	FormAction       string
-	FormMethod       string
-	SubmitLabel      string
-	Template         string
-	FragmentTemplate string
-	Navigation       []NavigationItem
-	Account          *AccountMenu
-	SignInURL        string
-	SignUpURL        string
-	OAuthProviders   []OAuthProviderView
-	Alerts           []Alert
+	Language          string
+	Title             string
+	Heading           string
+	Kind              string
+	Message           string
+	Description       string
+	CSRFToken         string
+	Form              FormData
+	FormAction        string
+	FormMethod        string
+	SubmitLabel       string
+	Template          string
+	FragmentTemplate  string
+	Navigation        []NavigationItem
+	Account           *AccountMenu
+	SignInURL         string
+	SignUpURL         string
+	OAuthProviders    []OAuthProviderView
+	GuestBanner       bool
+	GuestOwned        bool
+	GuestTransferCode string
+	Alerts            []Alert
 }
 
 // NavigationItem describes one internal navigation link.

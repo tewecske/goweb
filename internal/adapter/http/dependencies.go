@@ -35,6 +35,10 @@ type Dependencies struct {
 	PasswordResetterUse  PasswordResetterUse
 	OAuth                OAuthAuthenticator
 	OAuthProviders       OAuthProviderLister
+	GuestCreator         GuestCreator
+	GuestClaimer         GuestClaimer
+	GuestRedeemer        GuestRedeemer
+	GuestUpgrader        GuestUpgrader
 }
 
 // UserFinder resolves an account for an authenticated session.
@@ -94,6 +98,22 @@ type OAuthAuthenticator interface {
 
 type OAuthProviderLister interface {
 	Names() []string
+}
+
+type GuestCreator interface {
+	Create(context.Context, string, string) (service.GuestSessionResult, error)
+}
+
+type GuestClaimer interface {
+	Issue(context.Context, int64) (service.GuestClaimCode, error)
+}
+
+type GuestRedeemer interface {
+	Redeem(context.Context, string, string) (service.GuestSessionResult, error)
+}
+
+type GuestUpgrader interface {
+	Upgrade(context.Context, int64, service.GuestUpgradeInput) (service.User, error)
 }
 
 // Validate checks dependencies needed by session-aware routes.

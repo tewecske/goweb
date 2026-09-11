@@ -13,6 +13,12 @@
     {{template "recovery-content" .}}
   {{else if eq .Kind "reset-password"}}
     {{template "recovery-content" .}}
+  {{else if eq .Kind "guest-write"}}
+    {{template "guest-content" .}}
+  {{else if eq .Kind "guest-transfer"}}
+    {{template "guest-content" .}}
+  {{else if eq .Kind "guest-upgrade"}}
+    {{template "guest-content" .}}
   {{else}}
     {{template "state-content" .}}
   {{end}}

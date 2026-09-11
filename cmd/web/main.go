@@ -82,6 +82,10 @@ func main() {
 			PasswordResetterUse:  applicationGraph.PasswordConsumer,
 			OAuth:                applicationGraph.OAuth,
 			OAuthProviders:       applicationGraph.Providers,
+			GuestCreator:         applicationGraph.GuestRateLimited,
+			GuestClaimer:         applicationGraph.GuestClaim,
+			GuestRedeemer:        applicationGraph.GuestRateLimited,
+			GuestUpgrader:        applicationGraph.GuestUpgrade,
 		})
 	}
 

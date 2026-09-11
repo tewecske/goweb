@@ -87,6 +87,42 @@ type httpOAuthProvidersStub struct{ names []string }
 
 func (s httpOAuthProvidersStub) Names() []string { return s.names }
 
+type httpGuestCreatorStub struct {
+	result service.GuestSessionResult
+	err    error
+}
+
+func (s httpGuestCreatorStub) Create(context.Context, string, string) (service.GuestSessionResult, error) {
+	return s.result, s.err
+}
+
+type httpGuestClaimerStub struct {
+	claim service.GuestClaimCode
+	err   error
+}
+
+func (s httpGuestClaimerStub) Issue(context.Context, int64) (service.GuestClaimCode, error) {
+	return s.claim, s.err
+}
+
+type httpGuestRedeemerStub struct {
+	result service.GuestSessionResult
+	err    error
+}
+
+func (s httpGuestRedeemerStub) Redeem(context.Context, string, string) (service.GuestSessionResult, error) {
+	return s.result, s.err
+}
+
+type httpGuestUpgraderStub struct {
+	user service.User
+	err  error
+}
+
+func (s httpGuestUpgraderStub) Upgrade(context.Context, int64, service.GuestUpgradeInput) (service.User, error) {
+	return s.user, s.err
+}
+
 func (s *httpSignOutStub) SignOut(context.Context, string) error {
 	s.called = true
 	return s.err
@@ -387,5 +423,82 @@ func TestOAuthCallbackSuccessCreatesSessionCookie(t *testing.T) {
 	}
 	if sessionCookie == nil || sessionCookie.Value != "oauth-session" {
 		t.Fatalf("OAuth success session cookie = %+v", sessionCookie)
+	}
+}
+
+func TestGuestWriteCreatesAccountOnlyOnPost(t *testing.T) {
+	dependencies := newHTTPTestDependencies(t)
+	guest := service.User{ID: 73, IsGuest: true, Username: stringPointer("guest-73"), Theme: "light"}
+	dependencies.GuestCreator = httpGuestCreatorStub{result: service.GuestSessionResult{User: guest, Session: service.Session{ID: "guest-session"}}}
+	handler := NewRouterWithServices(dependencies)
+	view := httptest.NewRecorder()
+	handler.ServeHTTP(view, httptest.NewRequest(http.MethodGet, "/en/guest/write", nil))
+	if view.Code != http.StatusOK || strings.Contains(view.Body.String(), "data-guest-banner") {
+		t.Fatalf("guest page view created or displayed guest account: %d %s", view.Code, view.Body.String())
+	}
+	csrf := csrfCookie(t, handler)
+	response := csrfRequest(t, handler, http.MethodPost, "/en/guest/write", url.Values{"_csrf": {csrf.Value}, "action": {"write"}}, csrf)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "data-guest-banner") || !strings.Contains(response.Body.String(), "data-guest-owned-state") {
+		t.Fatalf("guest write response = %d %s", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "guest-session") {
+		t.Fatal("guest write response rendered session credential")
+	}
+}
+
+func TestGuestTransferCodeOnlyAppearsAfterExplicitRequest(t *testing.T) {
+	dependencies := newHTTPTestDependencies(t)
+	guest := service.User{ID: 73, IsGuest: true, Username: stringPointer("guest-73"), Theme: "light"}
+	dependencies.Users = httpUserStub{user: guest}
+	dependencies.Sessions = httpSessionStub{session: service.Session{ID: "opaque-session", UserID: 73, CreatedAt: 1, ExpiresAt: time.Now().Add(time.Hour).Unix()}}
+	dependencies.GuestClaimer = httpGuestClaimerStub{claim: service.GuestClaimCode{UserID: 73, Code: "ABCDEFGHJK"}}
+	handler := NewRouterWithServices(dependencies)
+	csrf := csrfCookie(t, handler)
+	session := &http.Cookie{Name: middleware.DefaultSessionCookieName, Value: "opaque-session"}
+	view := csrfRequest(t, handler, http.MethodGet, "/en/guest/transfer", nil, csrf, session)
+	if strings.Contains(view.Body.String(), "ABCDEFGHJK") {
+		t.Fatal("guest transfer page exposed code before request")
+	}
+	response := csrfRequest(t, handler, http.MethodPost, "/en/guest/transfer", url.Values{"_csrf": {csrf.Value}, "action": {"request"}}, csrf, session)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "ABCDEFGHJK") {
+		t.Fatalf("explicit transfer request response = %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestGuestInvalidTransferCodeHasUniformSafeError(t *testing.T) {
+	dependencies := newHTTPTestDependencies(t)
+	dependencies.GuestRedeemer = httpGuestRedeemerStub{err: service.ErrInvalidGuestClaimCode}
+	handler := NewRouterWithServices(dependencies)
+	csrf := csrfCookie(t, handler)
+	response := csrfRequest(t, handler, http.MethodPost, "/en/guest/transfer", url.Values{
+		"_csrf": {csrf.Value}, "action": {"redeem"}, "code": {"SECRET-CODE"},
+	}, csrf)
+
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "invalid or no longer available") {
+		t.Fatalf("invalid guest code response = %d %s", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "SECRET-CODE") || strings.Contains(response.Body.String(), "session_id") {
+		t.Fatal("invalid guest code response leaked credentials")
+	}
+}
+
+func TestGuestUpgradeRemovesBannerAndKeepsOwnedState(t *testing.T) {
+	dependencies := newHTTPTestDependencies(t)
+	guest := service.User{ID: 73, IsGuest: true, Username: stringPointer("guest-73"), Theme: "light"}
+	dependencies.Users = httpUserStub{user: guest}
+	dependencies.Sessions = httpSessionStub{session: service.Session{ID: "opaque-session", UserID: 73, CreatedAt: 1, ExpiresAt: time.Now().Add(time.Hour).Unix()}}
+	dependencies.GuestUpgrader = httpGuestUpgraderStub{user: service.User{ID: 73, Email: stringPointer("upgraded@example.test"), Theme: "light"}}
+	handler := NewRouterWithServices(dependencies)
+	csrf := csrfCookie(t, handler)
+	response := csrfRequest(t, handler, http.MethodPost, "/en/guest/upgrade", url.Values{
+		"_csrf": {csrf.Value}, "email": {"upgraded@example.test"}, "password": {"correct-horse-battery-staple"},
+	}, csrf, &http.Cookie{Name: middleware.DefaultSessionCookieName, Value: "opaque-session"})
+
+	body := response.Body.String()
+	if response.Code != http.StatusOK || strings.Contains(body, "data-guest-banner") || !strings.Contains(body, "data-guest-owned-state") {
+		t.Fatalf("guest upgrade response = %d %s", response.Code, body)
+	}
+	if strings.Contains(body, "correct-horse-battery-staple") {
+		t.Fatal("guest upgrade response rendered password")
 	}
 }
