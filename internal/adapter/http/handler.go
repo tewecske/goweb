@@ -8,6 +8,7 @@ import (
 
 	"github.com/tewecske/goweb/internal/adapter/http/middleware"
 	"github.com/tewecske/goweb/internal/locale"
+	staticassets "github.com/tewecske/goweb/static"
 )
 
 // NewHandler builds the HTTP handler for public foundation routes.
@@ -54,6 +55,7 @@ func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware
 	mux.HandleFunc("GET /", defaultLocale)
 	mux.HandleFunc("GET /{language}", home(renderer))
 	mux.HandleFunc("GET /{language}/{path...}", localized(renderer))
+	mux.Handle("GET /static/{path...}", http.StripPrefix("/static/", http.FileServer(http.FS(staticassets.Files()))))
 	mux.HandleFunc("GET /healthz", health)
 
 	shared := []middleware.Middleware{

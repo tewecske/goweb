@@ -63,6 +63,7 @@ func TestNewHandlerRendersHomeLayout(t *testing.T) {
 	body := response.Body.String()
 	for _, fragment := range []string{
 		"<!doctype html>",
+		`<link rel="stylesheet" href="/static/app.css">`,
 		`<html lang="en" data-theme="light" data-account-theme=""`,
 		"<title>GoWeb</title>",
 		`<h1 id="page-heading"`,
@@ -76,6 +77,30 @@ func TestNewHandlerRendersHomeLayout(t *testing.T) {
 		if !strings.Contains(body, fragment) {
 			t.Errorf("home body missing %q", fragment)
 		}
+	}
+}
+
+func TestNewHandlerServesGeneratedStylesheet(t *testing.T) {
+	response := httptest.NewRecorder()
+	NewHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/static/app.css", nil))
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if contentType := response.Header().Get("Content-Type"); contentType != "text/css; charset=utf-8" {
+		t.Errorf("content type = %q, want text/css; charset=utf-8", contentType)
+	}
+	if response.Body.Len() == 0 {
+		t.Fatal("stylesheet response is empty")
+	}
+}
+
+func TestNewHandlerDoesNotServeAssetSource(t *testing.T) {
+	response := httptest.NewRecorder()
+	NewHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/static/src/app.css", nil))
+
+	if response.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", response.Code, http.StatusNotFound)
 	}
 }
 

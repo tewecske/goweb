@@ -16,6 +16,16 @@ go version
 
 ## Start application
 
+Build browser assets after installing npm dependencies:
+
+```sh
+npm install
+npm run build:css
+npm run check:assets
+```
+
+The Go server embeds and serves the generated stylesheet at `/static/app.css`.
+
 No database is required for a no-persistence local run. When
 `GOWEB_DATABASE_URL` is configured, startup verifies PostgreSQL and applies
 pending migrations before serving requests.
