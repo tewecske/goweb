@@ -231,7 +231,27 @@ func (h *authHandler) renderPasswordPageWithStatus(writer http.ResponseWriter, r
 		FragmentTemplate: "auth-fragment",
 		Alerts:           alerts,
 	}
+	if kind == "sign-in" {
+		for _, provider := range h.oauthProviders(language) {
+			page.OAuthProviders = append(page.OAuthProviders, provider)
+		}
+		if request.URL.Query().Get("oauth") == "error" {
+			page.Alerts = append(page.Alerts, Alert{Level: "error", Message: h.translate(language, "oauth.error.generic")})
+		}
+	}
 	h.renderPageWithStatus(writer, request, page, status)
+}
+
+func (h *authHandler) oauthProviders(language locale.Code) []OAuthProviderView {
+	if h.dependencies.OAuthProviders == nil {
+		return nil
+	}
+	names := h.dependencies.OAuthProviders.Names()
+	providers := make([]OAuthProviderView, 0, len(names))
+	for _, name := range names {
+		providers = append(providers, OAuthProviderView{Name: name, URL: h.path(language, "/oauth/"+name)})
+	}
+	return providers
 }
 
 func (h *authHandler) finishSignIn(writer http.ResponseWriter, request *http.Request, language locale.Code, sessionID, destination string) {

@@ -37,6 +37,14 @@
           <span class="loading loading-spinner loading-sm htmx-indicator" aria-hidden="true"></span>
         </button>
       </form>
+      {{if .OAuthProviders}}
+        <div class="divider" role="presentation">or</div>
+        <div class="grid gap-2" aria-label="External sign-in providers">
+          {{range .OAuthProviders}}
+            <a class="btn btn-outline" data-oauth-provider="{{.Name}}" href="{{.URL}}">Continue with {{.Name}}</a>
+          {{end}}
+        </div>
+      {{end}}
       <p class="mt-4 text-sm text-base-content/70">
         {{if eq .Kind "sign-up"}}Already have an account? <a class="link link-primary" href="{{.SignInURL}}">Sign in</a>{{else}}Need an account? <a class="link link-primary" href="{{.SignUpURL}}">Create one</a>{{end}}
       </p>

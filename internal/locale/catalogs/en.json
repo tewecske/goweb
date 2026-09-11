@@ -45,6 +45,7 @@
     "recovery.reset.success": {"text": "Password changed. Sign in again with your new password."},
     "recovery.reset.failure": {"text": "This password-reset link is invalid or no longer available."},
     "recovery.request.accepted": {"text": "If the address is eligible, instructions will arrive shortly."},
+    "oauth.error.generic": {"text": "External sign-in could not be completed. Try again or use a password account."},
     "errors.not_found.title": {"text": "Page not found | GoWeb"},
     "errors.not_found.heading": {"text": "Page not found"},
     "errors.not_found.message": {"text": "We could not find the page you requested."},

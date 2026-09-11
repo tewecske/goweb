@@ -53,6 +53,7 @@ type PageData struct {
 	Account          *AccountMenu
 	SignInURL        string
 	SignUpURL        string
+	OAuthProviders   []OAuthProviderView
 	Alerts           []Alert
 }
 
@@ -76,6 +77,13 @@ type AccountMenu struct {
 type Alert struct {
 	Level   string
 	Message string
+}
+
+// OAuthProviderView contains only safe provider display data and its local
+// authorization-start URL.
+type OAuthProviderView struct {
+	Name string
+	URL  string
 }
 
 // FormData contains submitted values and server-side field errors.

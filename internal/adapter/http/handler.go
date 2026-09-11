@@ -72,6 +72,17 @@ func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware
 		mux.HandleFunc("GET "+prefix+"/confirm-email", auth.confirmEmail)
 		mux.HandleFunc("GET "+prefix+"/reset-password", auth.resetPassword)
 		mux.HandleFunc("POST "+prefix+"/reset-password", auth.resetPassword)
+		if dependencies.OAuthProviders != nil {
+			for _, provider := range dependencies.OAuthProviders.Names() {
+				providerName := provider
+				mux.HandleFunc("GET "+prefix+"/oauth/"+providerName, func(writer http.ResponseWriter, request *http.Request) {
+					auth.oauthStart(writer, request, providerName)
+				})
+				mux.HandleFunc("GET "+prefix+"/oauth/"+providerName+"/callback", func(writer http.ResponseWriter, request *http.Request) {
+					auth.oauthCallback(writer, request, providerName)
+				})
+			}
+		}
 	}
 	mux.HandleFunc("GET /confirm-email", auth.confirmEmail)
 	mux.HandleFunc("GET /reset-password", auth.resetPassword)

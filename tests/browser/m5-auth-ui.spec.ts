@@ -37,4 +37,12 @@ test.describe("M5.2 authentication UI", () => {
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await expect(page.locator("body")).not.toContainText(token);
   });
+
+  test("unconfigured external providers stay absent and unreachable", async ({ page }) => {
+    await page.goto("/en/sign-in");
+    await expect(page.locator("[data-oauth-provider]")).toHaveCount(0);
+    await page.goto("/en/oauth/github");
+    await expect(page.getByRole("heading", { level: 1 })).toContainText(/not found|nem található/i);
+    await expect(page.locator("body")).not.toContainText(/client_secret|provider_subject|access_token/i);
+  });
 });

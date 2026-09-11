@@ -80,6 +80,8 @@ func main() {
 			ConfirmationConsumer: applicationGraph.Confirmation,
 			PasswordResetter:     applicationGraph.PasswordResetter,
 			PasswordResetterUse:  applicationGraph.PasswordConsumer,
+			OAuth:                applicationGraph.OAuth,
+			OAuthProviders:       applicationGraph.Providers,
 		})
 	}
 

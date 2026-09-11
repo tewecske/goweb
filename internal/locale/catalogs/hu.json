@@ -45,6 +45,7 @@
     "recovery.reset.success": {"text": "Jelszava megváltozott. Jelentkezzen be újra az új jelszavával."},
     "recovery.reset.failure": {"text": "Ez a jelszó-visszaállítási link érvénytelen vagy már nem érhető el."},
     "recovery.request.accepted": {"text": "Ha a cím jogosult, hamarosan megérkezik az útmutató."},
+    "oauth.error.generic": {"text": "A külső bejelentkezés nem sikerült. Próbálja újra, vagy használjon jelszavas fiókot."},
     "errors.not_found.title": {"text": "Az oldal nem található | GoWeb"},
     "errors.not_found.heading": {"text": "Az oldal nem található"},
     "errors.not_found.message": {"text": "A kért oldal nem található."},

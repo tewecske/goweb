@@ -33,6 +33,8 @@ type Dependencies struct {
 	ConfirmationConsumer ConfirmationConsumer
 	PasswordResetter     PasswordResetter
 	PasswordResetterUse  PasswordResetterUse
+	OAuth                OAuthAuthenticator
+	OAuthProviders       OAuthProviderLister
 }
 
 // UserFinder resolves an account for an authenticated session.
@@ -83,6 +85,15 @@ type PasswordResetter interface {
 
 type PasswordResetterUse interface {
 	Redeem(context.Context, string, string) error
+}
+
+type OAuthAuthenticator interface {
+	Start(context.Context, string) (string, error)
+	Callback(context.Context, string, string, string) (service.OAuthSignInResult, error)
+}
+
+type OAuthProviderLister interface {
+	Names() []string
 }
 
 // Validate checks dependencies needed by session-aware routes.

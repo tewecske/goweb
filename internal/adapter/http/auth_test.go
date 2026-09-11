@@ -69,6 +69,24 @@ type httpResetUseStub struct{ err error }
 
 func (s httpResetUseStub) Redeem(context.Context, string, string) error { return s.err }
 
+type httpOAuthStub struct {
+	startURL string
+	result   service.OAuthSignInResult
+	err      error
+}
+
+func (s httpOAuthStub) Start(context.Context, string) (string, error) {
+	return s.startURL, s.err
+}
+
+func (s httpOAuthStub) Callback(context.Context, string, string, string) (service.OAuthSignInResult, error) {
+	return s.result, s.err
+}
+
+type httpOAuthProvidersStub struct{ names []string }
+
+func (s httpOAuthProvidersStub) Names() []string { return s.names }
+
 func (s *httpSignOutStub) SignOut(context.Context, string) error {
 	s.called = true
 	return s.err
@@ -307,5 +325,67 @@ func TestConfirmationFailuresAreUniform(t *testing.T) {
 	}
 	if strings.Contains(response.Body.String(), "secret-confirmation-token") {
 		t.Fatal("confirmation response exposed bearer token")
+	}
+}
+
+func TestOAuthControlsOnlyRenderConfiguredProviders(t *testing.T) {
+	configured := newHTTPTestDependencies(t)
+	configured.OAuthProviders = httpOAuthProvidersStub{names: []string{"github"}}
+	configured.OAuth = httpOAuthStub{}
+	handler := NewRouterWithServices(configured)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/en/sign-in", nil))
+
+	body := response.Body.String()
+	if !strings.Contains(body, `data-oauth-provider="github"`) || !strings.Contains(body, "/en/oauth/github") {
+		t.Fatal("configured OAuth provider control missing")
+	}
+	if strings.Contains(body, "client_secret") || strings.Contains(body, "provider_subject") {
+		t.Fatal("OAuth diagnostics leaked into sign-in page")
+	}
+
+	unconfigured := httptest.NewRecorder()
+	handler.ServeHTTP(unconfigured, httptest.NewRequest(http.MethodGet, "/en/oauth/google", nil))
+	if unconfigured.Code != http.StatusOK || !strings.Contains(unconfigured.Body.String(), "Page not found") {
+		t.Fatalf("unconfigured OAuth route = %d %q", unconfigured.Code, unconfigured.Body.String())
+	}
+}
+
+func TestOAuthCallbackFailureRedirectsWithoutProviderSecrets(t *testing.T) {
+	dependencies := newHTTPTestDependencies(t)
+	dependencies.OAuthProviders = httpOAuthProvidersStub{names: []string{"github"}}
+	dependencies.OAuth = httpOAuthStub{err: service.ErrOAuthAuthenticationFailed}
+	handler := NewRouterWithServices(dependencies)
+	request := httptest.NewRequest(http.MethodGet, "/en/oauth/github/callback?code=provider-code&state=opaque-state", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/en/sign-in?oauth=error" {
+		t.Fatalf("OAuth failure response = %d %q", response.Code, response.Header().Get("Location"))
+	}
+	if strings.Contains(response.Header().Get("Location"), "provider-code") || strings.Contains(response.Header().Get("Location"), "opaque-state") {
+		t.Fatal("OAuth failure redirect leaked callback credentials")
+	}
+}
+
+func TestOAuthCallbackSuccessCreatesSessionCookie(t *testing.T) {
+	dependencies := newHTTPTestDependencies(t)
+	dependencies.OAuthProviders = httpOAuthProvidersStub{names: []string{"github"}}
+	dependencies.OAuth = httpOAuthStub{result: service.OAuthSignInResult{Session: service.Session{ID: "oauth-session"}}}
+	handler := NewRouterWithServices(dependencies)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/en/oauth/github/callback?code=provider-code&state=opaque-state", nil))
+
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/en/home" {
+		t.Fatalf("OAuth success response = %d %q", response.Code, response.Header().Get("Location"))
+	}
+	var sessionCookie *http.Cookie
+	for _, cookie := range response.Result().Cookies() {
+		if cookie.Name == middleware.DefaultSessionCookieName {
+			sessionCookie = cookie
+		}
+	}
+	if sessionCookie == nil || sessionCookie.Value != "oauth-session" {
+		t.Fatalf("OAuth success session cookie = %+v", sessionCookie)
 	}
 }

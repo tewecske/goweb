@@ -30,6 +30,7 @@ type Graph struct {
 	PasswordReset        *postgresstore.PasswordResetTokenRepository
 	OAuthStates          *postgresstore.OAuthStateRepository
 	OAuthIdentities      *postgresstore.OAuthIdentityRepository
+	Providers            *service.ProviderRegistry
 	SessionService       *service.SessionService
 	PasswordHasher       *service.PasswordHasher
 	Mail                 *mailadapter.DevelopmentSender
@@ -188,6 +189,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		GuestClaimRepository: guestClaimsRepository, EmailTokens: emailTokens,
 		PasswordReset: passwordResetTokens, OAuthStates: oauthStates,
 		OAuthIdentities: oauthIdentities, SessionService: sessionService,
+		Providers:      providers,
 		PasswordHasher: passwordHasher, Mail: mailSender, SignUp: signUp,
 		SignIn: signIn, Confirmation: confirmation,
 		ConfirmationResend: confirmationResend, PasswordResetter: passwordResetter,
