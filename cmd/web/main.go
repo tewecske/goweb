@@ -68,13 +68,18 @@ func main() {
 		}
 		serverOptions = append(serverOptions, appserver.WithDependency(database))
 		router = httpadapter.NewLoggedRouterWithServices(logger, httpadapter.Dependencies{
-			Users:         applicationGraph.Users,
-			Sessions:      applicationGraph.SessionService,
-			SessionAdmin:  applicationGraph.SessionService,
-			SessionCookie: sessionCookie,
-			SignUp:        applicationGraph.SignUp,
-			SignIn:        applicationGraph.SignIn,
-			SignOut:       applicationGraph.SessionService,
+			Users:                applicationGraph.Users,
+			Sessions:             applicationGraph.SessionService,
+			SessionAdmin:         applicationGraph.SessionService,
+			SessionCookie:        sessionCookie,
+			SignUp:               applicationGraph.SignUp,
+			SignIn:               applicationGraph.SignIn,
+			SignOut:              applicationGraph.SessionService,
+			ConfirmationIssuer:   applicationGraph.Confirmation,
+			ConfirmationResender: applicationGraph.ConfirmationResend,
+			ConfirmationConsumer: applicationGraph.Confirmation,
+			PasswordResetter:     applicationGraph.PasswordResetter,
+			PasswordResetterUse:  applicationGraph.PasswordConsumer,
 		})
 	}
 

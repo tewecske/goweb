@@ -65,7 +65,16 @@ func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware
 		mux.HandleFunc("POST "+prefix+"/sign-in", auth.signIn)
 		mux.HandleFunc("GET "+prefix+"/home", auth.home)
 		mux.HandleFunc("POST "+prefix+"/sign-out", auth.signOut)
+		mux.HandleFunc("GET "+prefix+"/resend-confirmation", auth.resendConfirmation)
+		mux.HandleFunc("POST "+prefix+"/resend-confirmation", auth.resendConfirmation)
+		mux.HandleFunc("GET "+prefix+"/forgot-password", auth.forgotPassword)
+		mux.HandleFunc("POST "+prefix+"/forgot-password", auth.forgotPassword)
+		mux.HandleFunc("GET "+prefix+"/confirm-email", auth.confirmEmail)
+		mux.HandleFunc("GET "+prefix+"/reset-password", auth.resetPassword)
+		mux.HandleFunc("POST "+prefix+"/reset-password", auth.resetPassword)
 	}
+	mux.HandleFunc("GET /confirm-email", auth.confirmEmail)
+	mux.HandleFunc("GET /reset-password", auth.resetPassword)
 	mux.Handle("GET /static/{path...}", http.StripPrefix("/static/", http.FileServer(http.FS(staticassets.Files()))))
 	mux.HandleFunc("GET /healthz", health)
 

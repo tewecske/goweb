@@ -27,6 +27,12 @@ type Dependencies struct {
 	SignUp  SignUpper
 	SignIn  SignInner
 	SignOut SignOuter
+
+	ConfirmationIssuer   ConfirmationIssuer
+	ConfirmationResender ConfirmationResender
+	ConfirmationConsumer ConfirmationConsumer
+	PasswordResetter     PasswordResetter
+	PasswordResetterUse  PasswordResetterUse
 }
 
 // UserFinder resolves an account for an authenticated session.
@@ -57,6 +63,26 @@ type SignInner interface {
 // SignOuter revokes the current session.
 type SignOuter interface {
 	SignOut(context.Context, string) error
+}
+
+type ConfirmationIssuer interface {
+	Issue(context.Context, int64) error
+}
+
+type ConfirmationResender interface {
+	Resend(context.Context, string) error
+}
+
+type ConfirmationConsumer interface {
+	Confirm(context.Context, string) error
+}
+
+type PasswordResetter interface {
+	Request(context.Context, string) error
+}
+
+type PasswordResetterUse interface {
+	Redeem(context.Context, string, string) error
 }
 
 // Validate checks dependencies needed by session-aware routes.

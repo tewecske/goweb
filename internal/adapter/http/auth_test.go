@@ -55,6 +55,20 @@ type httpSignOutStub struct {
 	err    error
 }
 
+type httpConfirmationStub struct{ err error }
+
+func (s httpConfirmationStub) Issue(context.Context, int64) error    { return s.err }
+func (s httpConfirmationStub) Resend(context.Context, string) error  { return s.err }
+func (s httpConfirmationStub) Confirm(context.Context, string) error { return s.err }
+
+type httpResetRequestStub struct{ err error }
+
+func (s httpResetRequestStub) Request(context.Context, string) error { return s.err }
+
+type httpResetUseStub struct{ err error }
+
+func (s httpResetUseStub) Redeem(context.Context, string, string) error { return s.err }
+
 func (s *httpSignOutStub) SignOut(context.Context, string) error {
 	s.called = true
 	return s.err
@@ -214,5 +228,84 @@ func TestSignInServiceErrorDoesNotLeakInternalError(t *testing.T) {
 
 	if strings.Contains(response.Body.String(), "database password secret") {
 		t.Fatal("sign-in response exposed internal error")
+	}
+}
+
+func TestPasswordRecoveryRequestIsUniformAndCSRFProtected(t *testing.T) {
+	dependencies := newHTTPTestDependencies(t)
+	dependencies.PasswordResetter = httpResetRequestStub{}
+	handler := NewRouterWithServices(dependencies)
+	csrf := csrfCookie(t, handler)
+	response := csrfRequest(t, handler, http.MethodPost, "/en/forgot-password", url.Values{
+		"_csrf": {csrf.Value}, "email": {"unknown@example.test"},
+	}, csrf)
+
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "If the address is eligible") {
+		t.Fatalf("recovery response = %d %q, want uniform accepted guidance", response.Code, response.Body.String())
+	}
+	withoutCSRF := httptest.NewRecorder()
+	handler.ServeHTTP(withoutCSRF, httptest.NewRequest(http.MethodPost, "/en/forgot-password", strings.NewReader("email=unknown%40example.test")))
+	if withoutCSRF.Code != http.StatusForbidden {
+		t.Fatalf("missing csrf status = %d, want %d", withoutCSRF.Code, http.StatusForbidden)
+	}
+}
+
+func TestResetPasswordFailureDoesNotRenderTokenOrPassword(t *testing.T) {
+	dependencies := newHTTPTestDependencies(t)
+	dependencies.PasswordResetterUse = httpResetUseStub{err: service.ErrPasswordTooShort}
+	handler := NewRouterWithServices(dependencies)
+	csrf := csrfCookie(t, handler)
+	password := "short-password-value"
+	response := csrfRequest(t, handler, http.MethodPost, "/en/reset-password?token=secret-reset-token", url.Values{
+		"_csrf": {csrf.Value}, "password": {password},
+	}, csrf)
+
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnprocessableEntity)
+	}
+	body := response.Body.String()
+	if strings.Contains(body, "secret-reset-token") || strings.Contains(body, password) || !strings.Contains(body, "password-error") {
+		t.Fatal("reset response exposed token/password or omitted field error")
+	}
+}
+
+func TestResetPasswordSuccessClearsBrowserSession(t *testing.T) {
+	dependencies := newHTTPTestDependencies(t)
+	dependencies.PasswordResetterUse = httpResetUseStub{}
+	handler := NewRouterWithServices(dependencies)
+	csrf := csrfCookie(t, handler)
+	response := csrfRequest(t, handler, http.MethodPost, "/en/reset-password?token=secret-reset-token", url.Values{
+		"_csrf": {csrf.Value}, "password": {"correct-horse-battery-staple"},
+	}, csrf, &http.Cookie{Name: middleware.DefaultSessionCookieName, Value: "opaque-session"})
+
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Password changed") {
+		t.Fatalf("success response = %d %q", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "secret-reset-token") {
+		t.Fatal("reset success response exposed bearer token")
+	}
+	cleared := false
+	for _, cookie := range response.Result().Cookies() {
+		if cookie.Name == middleware.DefaultSessionCookieName && cookie.MaxAge < 0 {
+			cleared = true
+		}
+	}
+	if !cleared {
+		t.Fatal("successful reset did not clear browser session cookie")
+	}
+}
+
+func TestConfirmationFailuresAreUniform(t *testing.T) {
+	dependencies := newHTTPTestDependencies(t)
+	dependencies.ConfirmationConsumer = httpConfirmationStub{err: service.ErrInvalidConfirmationToken}
+	handler := NewRouterWithServices(dependencies)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/en/confirm-email?token=secret-confirmation-token", nil))
+
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "invalid or no longer available") {
+		t.Fatalf("confirmation response = %d %q", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "secret-confirmation-token") {
+		t.Fatal("confirmation response exposed bearer token")
 	}
 }

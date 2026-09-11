@@ -27,4 +27,14 @@ test.describe("M5.2 authentication UI", () => {
     expect(response.status()).toBe(403);
     expect(await response.text()).not.toMatch(/not-a-real-password|password_hash|session[_ -]?id/i);
   });
+
+  test("recovery pages keep bearer tokens out of rendered HTML", async ({ page }) => {
+    await page.goto("/en/forgot-password");
+    await expect(page.getByLabel(/email/i)).toBeVisible();
+
+    const token = "a".repeat(64);
+    await page.goto(`/en/confirm-email?token=${token}`);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(page.locator("body")).not.toContainText(token);
+  });
 });

@@ -5,6 +5,14 @@
     {{template "auth-content" .}}
   {{else if eq .Kind "sign-in"}}
     {{template "auth-content" .}}
+  {{else if eq .Kind "resend-confirmation"}}
+    {{template "recovery-content" .}}
+  {{else if eq .Kind "forgot-password"}}
+    {{template "recovery-content" .}}
+  {{else if eq .Kind "confirm-email"}}
+    {{template "recovery-content" .}}
+  {{else if eq .Kind "reset-password"}}
+    {{template "recovery-content" .}}
   {{else}}
     {{template "state-content" .}}
   {{end}}
