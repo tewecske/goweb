@@ -19,3 +19,8 @@ Run integration tests with:
 ```sh
 GOWEB_DATABASE_URL='postgres://goweb:goweb@localhost:5432/goweb?sslmode=disable' go test -tags=integration ./...
 ```
+
+Browser acceptance tests are opt-in with `GOWEB_BROWSER_E2E=1`. Email and
+guest lifecycle specs skip database-backed flows unless `GOWEB_DATABASE_URL`
+is configured; no browser credential or bearer-token fixtures belong in this
+repository.

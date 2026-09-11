@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const enabled = process.env.GOWEB_BROWSER_E2E === "1";
+const fixtureEnabled = enabled && Boolean(process.env.GOWEB_DATABASE_URL);
 const writePath = process.env.GOWEB_BROWSER_GUEST_WRITE_PATH ?? "/en/guest/write";
 const transferPath = process.env.GOWEB_BROWSER_GUEST_TRANSFER_PATH ?? "/en/guest/transfer";
 const upgradePath = process.env.GOWEB_BROWSER_GUEST_UPGRADE_PATH ?? "/en/guest/upgrade";
@@ -17,6 +18,7 @@ test.describe("M5 guest accounts", () => {
   test.skip(!enabled, "set GOWEB_BROWSER_E2E=1 to run browser acceptance specs");
 
   test("page view stays anonymous until an ownership write succeeds", async ({ page }) => {
+    test.skip(!fixtureEnabled, "requires configured database fixture");
     await page.goto("/en/");
     await expect(page.locator("[data-guest-banner]")).toHaveCount(0);
 
@@ -31,6 +33,7 @@ test.describe("M5 guest accounts", () => {
     context,
     page,
   }) => {
+    test.skip(!fixtureEnabled, "requires configured database fixture");
     await page.goto(writePath);
     await page.getByRole("button", { name: /save|create|add/i }).first().click();
     await expect(page.locator("[data-guest-banner]")).toBeVisible();
@@ -59,6 +62,7 @@ test.describe("M5 guest accounts", () => {
   });
 
   test("guest upgrade keeps owned state and invalidates transfer credential", async ({ page }) => {
+    test.skip(!fixtureEnabled, "requires configured database fixture");
     await page.goto(writePath);
     await page.getByRole("button", { name: /save|create|add/i }).first().click();
     await expect(page.locator("[data-guest-banner]")).toBeVisible();
@@ -81,6 +85,7 @@ test.describe("M5 guest accounts", () => {
   });
 
   test("invalid transfer codes have uniform readable failures", async ({ page }) => {
+    test.skip(!fixtureEnabled, "requires configured database fixture");
     const messages: string[] = [];
     for (const code of ["short", randomTransferCode(), randomTransferCode()]) {
       await page.goto(transferPath);

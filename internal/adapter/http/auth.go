@@ -78,7 +78,11 @@ func (h *authHandler) handlePasswordPage(writer http.ResponseWriter, request *ht
 			h.renderPasswordPageWithStatus(writer, request, language, kind, form, http.StatusUnprocessableEntity, handle)
 			return
 		}
-		h.finishSignIn(writer, request, language, result.Session.ID, "/home")
+		destination := "/home"
+		if result.ConfirmationRequired {
+			destination = "/check-inbox"
+		}
+		h.finishSignIn(writer, request, language, result.Session.ID, destination)
 		return
 	}
 	if h.dependencies.SignIn == nil {
