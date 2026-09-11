@@ -28,8 +28,15 @@ func TestEmailConfirmationTokensConsumeOnceAndRejectInactive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConsumeEmailConfirmationToken() error = %v", err)
 	}
-	if consumed.UserID != userID || consumed.ConsumedAt == nil || *consumed.ConsumedAt != 150 {
-		t.Fatalf("consumed token user/timestamp = %d/%v, want %d/150", consumed.UserID, consumed.ConsumedAt, userID)
+	if consumed.UserID != userID || consumed.ConsumedAt != nil {
+		t.Fatalf("consumed token metadata = user %d/timestamp %v, want user %d/pre-consumption", consumed.UserID, consumed.ConsumedAt, userID)
+	}
+	var consumedAt sql.NullInt64
+	if err := harness.DB.QueryRowContext(context.Background(), "SELECT consumed_at FROM email_verification_tokens WHERE token = $1", token.Token).Scan(&consumedAt); err != nil {
+		t.Fatal(err)
+	}
+	if !consumedAt.Valid || consumedAt.Int64 != 150 {
+		t.Fatalf("stored consumed timestamp = %v, want 150", consumedAt)
 	}
 	if _, err := repository.ConsumeEmailConfirmationToken(context.Background(), token.Token, 151); !errors.Is(err, service.ErrEmailConfirmationTokenNotFound) {
 		t.Fatalf("reused token error = %v, want %v", err, service.ErrEmailConfirmationTokenNotFound)
@@ -66,8 +73,15 @@ func TestPasswordResetTokensConsumeOnceAndRejectInactive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConsumePasswordResetToken() error = %v", err)
 	}
-	if consumed.UserID != userID || consumed.ConsumedAt == nil || *consumed.ConsumedAt != 150 {
-		t.Fatalf("consumed token user/timestamp = %d/%v, want %d/150", consumed.UserID, consumed.ConsumedAt, userID)
+	if consumed.UserID != userID || consumed.ConsumedAt != nil {
+		t.Fatalf("consumed token metadata = user %d/timestamp %v, want user %d/pre-consumption", consumed.UserID, consumed.ConsumedAt, userID)
+	}
+	var consumedAt sql.NullInt64
+	if err := harness.DB.QueryRowContext(context.Background(), "SELECT consumed_at FROM password_reset_tokens WHERE token = $1", token.Token).Scan(&consumedAt); err != nil {
+		t.Fatal(err)
+	}
+	if !consumedAt.Valid || consumedAt.Int64 != 150 {
+		t.Fatalf("stored consumed timestamp = %v, want 150", consumedAt)
 	}
 	if _, err := repository.ConsumePasswordResetToken(context.Background(), token.Token, 151); !errors.Is(err, service.ErrPasswordResetTokenNotFound) {
 		t.Fatalf("reused token error = %v, want %v", err, service.ErrPasswordResetTokenNotFound)

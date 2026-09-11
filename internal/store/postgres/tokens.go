@@ -47,7 +47,7 @@ func (r *EmailConfirmationTokenRepository) ConsumeEmailConfirmationToken(ctx con
 		UPDATE email_verification_tokens
 		SET consumed_at = $2
 		WHERE token = $1 AND consumed_at IS NULL AND expires_at > $2
-		RETURNING user_id, token, created_at, expires_at, consumed_at
+		RETURNING user_id, token, created_at, expires_at, NULL::BIGINT
 	`, token, now))
 	if err != nil {
 		return service.EmailConfirmationToken{}, mapTokenError(err, service.ErrEmailConfirmationTokenNotFound)
@@ -94,7 +94,7 @@ func (r *PasswordResetTokenRepository) ConsumePasswordResetToken(ctx context.Con
 		UPDATE password_reset_tokens
 		SET consumed_at = $2
 		WHERE token = $1 AND consumed_at IS NULL AND expires_at > $2
-		RETURNING user_id, token, created_at, expires_at, consumed_at
+		RETURNING user_id, token, created_at, expires_at, NULL::BIGINT
 	`, token, now))
 	if err != nil {
 		return service.PasswordResetToken{}, mapTokenError(err, service.ErrPasswordResetTokenNotFound)
