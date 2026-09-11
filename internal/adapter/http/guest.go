@@ -165,6 +165,7 @@ func (h *authHandler) renderGuestWithStatus(writer http.ResponseWriter, request 
 		GuestTransferCode: code,
 		SignInURL:         mustLocalePath(language, "/sign-in"),
 		Alerts:            alerts,
+		Labels:            h.formLabels(language),
 	}
 	if user.ID > 0 {
 		page.Account = &AccountMenu{Label: accountLabel(user), SettingsURL: mustLocalePath(language, "/account/settings"), SignOutURL: mustLocalePath(language, "/sign-out"), Theme: user.Theme, ThemeURL: mustLocalePath(language, "/account/theme")}

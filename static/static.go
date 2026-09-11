@@ -8,7 +8,7 @@ import (
 
 // FS contains the generated browser assets served by the HTTP adapter.
 //
-//go:embed app.css
+//go:embed app.css htmx.min.js
 var FS embed.FS
 
 // Files returns the embedded asset filesystem without its package directory.

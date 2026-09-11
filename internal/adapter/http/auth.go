@@ -230,6 +230,7 @@ func (h *authHandler) renderPasswordPageWithStatus(writer http.ResponseWriter, r
 		Template:         "auth",
 		FragmentTemplate: "auth-fragment",
 		Alerts:           alerts,
+		Labels:           h.formLabels(language),
 	}
 	if kind == "sign-in" {
 		for _, provider := range h.oauthProviders(language) {
@@ -240,6 +241,22 @@ func (h *authHandler) renderPasswordPageWithStatus(writer http.ResponseWriter, r
 		}
 	}
 	h.renderPageWithStatus(writer, request, page, status)
+}
+
+func (h *authHandler) formLabels(language locale.Code) map[string]string {
+	labels := make(map[string]string, 20)
+	for name, id := range map[string]string{
+		"email": "form.email", "username": "form.username", "optional": "form.optional",
+		"identifier": "form.identifier", "password": "form.password", "new_password": "form.new_password",
+		"email_help": "form.email_help", "back_sign_in": "form.back_sign_in", "external_providers": "form.external_providers",
+		"or": "form.or", "transfer_code": "form.transfer_code", "save": "form.save", "request_transfer": "form.request_transfer",
+		"redeem": "form.redeem", "upgrade": "form.upgrade", "sign_in": "form.sign_in", "create_account": "form.create_account",
+		"already_account": "form.already_account", "need_account": "form.need_account",
+		"continue": "form.continue",
+	} {
+		labels[name] = h.translate(language, id)
+	}
+	return labels
 }
 
 func (h *authHandler) oauthProviders(language locale.Code) []OAuthProviderView {

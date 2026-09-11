@@ -147,6 +147,7 @@ func (h *authHandler) renderRecoveryWithStatus(writer http.ResponseWriter, reque
 		Template:         "recovery",
 		FragmentTemplate: "recovery-fragment",
 		Alerts:           alerts,
+		Labels:           h.formLabels(language),
 	}
 	if kind == "resend-confirmation" {
 		page.FormAction = mustLocalePath(language, "/resend-confirmation")

@@ -78,6 +78,9 @@ func TestNewHandlerRendersHomeLayout(t *testing.T) {
 			t.Errorf("home body missing %q", fragment)
 		}
 	}
+	if !strings.Contains(body, `src="/static/htmx.min.js"`) {
+		t.Error("home body missing local HTMX runtime")
+	}
 }
 
 func TestNewHandlerServesGeneratedStylesheet(t *testing.T) {
@@ -92,6 +95,18 @@ func TestNewHandlerServesGeneratedStylesheet(t *testing.T) {
 	}
 	if response.Body.Len() == 0 {
 		t.Fatal("stylesheet response is empty")
+	}
+}
+
+func TestNewHandlerServesPinnedHTMXRuntime(t *testing.T) {
+	response := httptest.NewRecorder()
+	NewHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/static/htmx.min.js", nil))
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if response.Body.Len() == 0 || !strings.Contains(response.Body.String(), "htmx") {
+		t.Fatal("HTMX runtime response is empty or invalid")
 	}
 }
 

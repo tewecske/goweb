@@ -13,8 +13,9 @@ npm run build:css
 npm run check:assets
 ```
 
-`src/app.css` is the CSS-first Tailwind 4 entry point. `app.css` is generated,
-embedded by Go, and served at `/static/app.css`; do not use a CDN in templates.
+`src/app.css` is the CSS-first Tailwind 4 entry point. `app.css` and the pinned
+HTMX runtime are generated/copied into `static/`, embedded by Go, and served
+locally; do not use a CDN in templates.
 
 Static assets are presentation dependencies. Authentication, authorization,
 validation, and state-changing request protection remain server-side.

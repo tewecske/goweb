@@ -14,3 +14,13 @@ func TestFilesContainsGeneratedStylesheet(t *testing.T) {
 		t.Fatal("app.css is empty")
 	}
 }
+
+func TestFilesContainsPinnedHTMXRuntime(t *testing.T) {
+	info, err := fs.Stat(Files(), "htmx.min.js")
+	if err != nil {
+		t.Fatalf("stat htmx.min.js: %v", err)
+	}
+	if info.Size() == 0 {
+		t.Fatal("htmx.min.js is empty")
+	}
+}

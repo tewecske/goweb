@@ -7,17 +7,17 @@
     <div class="card-body">
       {{if .Description}}<p class="text-base-content/70">{{.Description}}</p>{{end}}
       {{if or (eq .Kind "resend-confirmation") (eq .Kind "forgot-password") (eq .Kind "reset-password")}}
-        <form class="mt-4 grid gap-4" method="{{.FormMethod}}" action="{{.FormAction}}" hx-post="{{.FormAction}}" hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this">
+        <form class="mt-4 grid gap-4" method="{{.FormMethod}}" action="{{.FormAction}}" hx-post="{{.FormAction}}" hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this" hx-indicator=".htmx-indicator">
           <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
           {{if or (eq .Kind "resend-confirmation") (eq .Kind "forgot-password")}}
             <fieldset class="fieldset">
-              <label class="fieldset-legend" for="email">Email</label>
+              <label class="fieldset-legend" for="email">{{.Labels.email}}</label>
               <input id="email" class="input w-full" name="email" type="email" autocomplete="email" value="{{.Form.Value "email"}}" required aria-invalid="{{if .Form.Error "email"}}true{{else}}false{{end}}" aria-describedby="email-error">
               {{with .Form.Error "email"}}<p id="email-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
             </fieldset>
           {{else}}
             <fieldset class="fieldset">
-              <label class="fieldset-legend" for="password">New password</label>
+              <label class="fieldset-legend" for="password">{{.Labels.new_password}}</label>
               <input id="password" class="input w-full" name="password" type="password" autocomplete="new-password" required aria-invalid="{{if .Form.Error "password"}}true{{else}}false{{end}}" aria-describedby="password-error">
               {{with .Form.Error "password"}}<p id="password-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
             </fieldset>
@@ -28,7 +28,7 @@
           </button>
         </form>
       {{end}}
-      <p class="mt-4 text-sm text-base-content/70"><a class="link link-primary" href="{{.SignInURL}}">Back to sign in</a></p>
+      <p class="mt-4 text-sm text-base-content/70"><a class="link link-primary" href="{{.SignInURL}}">{{.Labels.back_sign_in}}</a></p>
     </div>
   </div>
 {{end}}

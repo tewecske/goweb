@@ -221,6 +221,27 @@ func TestSignInFailureIsUniformAndPreservesOnlyIdentifier(t *testing.T) {
 	}
 }
 
+func TestHTMXSignInUsesCSRFHeaderAndReturnsFragment(t *testing.T) {
+	dependencies := newHTTPTestDependencies(t)
+	dependencies.SignIn = &httpSignInStub{err: service.ErrInvalidCredentials}
+	handler := NewRouterWithServices(dependencies)
+	csrf := csrfCookie(t, handler)
+	request := httptest.NewRequest(http.MethodPost, "/en/sign-in", strings.NewReader("identifier=user%40example.test&password=wrong-password"))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("HX-Request", "true")
+	request.Header.Set(middleware.CSRFHeaderName, csrf.Value)
+	request.AddCookie(csrf)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want service failure status %d", response.Code, http.StatusUnauthorized)
+	}
+	if strings.Contains(response.Body.String(), "<!doctype html>") || !strings.Contains(response.Body.String(), `id="page-content"`) {
+		t.Fatal("HTMX authentication response was not an accessible fragment")
+	}
+}
+
 func TestSignUpValidationShowsFieldErrorWithoutPasswordValue(t *testing.T) {
 	dependencies := newHTTPTestDependencies(t)
 	dependencies.SignUp = &httpSignUpStub{err: service.ErrPasswordTooShort}

@@ -14,6 +14,9 @@ test.describe("M5.2 authentication UI", () => {
     await expect(page.getByLabel(/e-mail|email|felhasznál/i)).toBeVisible();
     await expect(page.getByLabel(/jelszó|password/i)).toBeVisible();
     await expect(page.locator('link[rel="stylesheet"]')).toHaveAttribute("href", "/static/app.css");
+    await expect(page.locator('script[src="/static/htmx.min.js"]')).toHaveCount(1);
+    await expect(page.locator("form[hx-post]")).toHaveCount(1);
+    await expect.poll(() => page.evaluate(() => typeof (window as typeof window & { htmx?: unknown }).htmx)).toBe("object");
     await expect(page.locator("body")).not.toContainText(/password_hash|session[_ -]?id/i);
 
     await page.getByLabel(/e-mail|email|felhasznál/i).focus();

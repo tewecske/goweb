@@ -57,6 +57,7 @@ type PageData struct {
 	GuestBanner       bool
 	GuestOwned        bool
 	GuestTransferCode string
+	Labels            map[string]string
 	Alerts            []Alert
 }
 

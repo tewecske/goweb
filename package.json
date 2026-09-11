@@ -2,14 +2,15 @@
   "name": "goweb-browser-tests",
   "private": true,
   "scripts": {
-    "build:css": "tailwindcss -i ./static/src/app.css -o ./static/app.css --minify",
-    "check:assets": "test -s ./static/app.css",
+    "build:css": "tailwindcss -i ./static/src/app.css -o ./static/app.css --minify && cp ./node_modules/htmx.org/dist/htmx.min.js ./static/htmx.min.js",
+    "check:assets": "test -s ./static/app.css && test -s ./static/htmx.min.js",
     "test:browser": "playwright test"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
     "@tailwindcss/cli": "4.3.3",
     "daisyui": "5.7.37",
+    "htmx.org": "2.0.10",
     "tailwindcss": "4.3.3"
   }
 }

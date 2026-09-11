@@ -16,9 +16,9 @@
       <section class="card card-border bg-base-100 shadow-sm">
         <div class="card-body">
           <p>Save a first item without creating an account.</p>
-          <form method="post" action="{{.FormAction}}" hx-post="{{.FormAction}}" hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this">
+          <form method="post" action="{{.FormAction}}" hx-post="{{.FormAction}}" hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this" hx-indicator=".htmx-indicator">
             <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
-            <button class="btn btn-primary" type="submit" name="action" value="write">Save</button>
+            <button class="btn btn-primary" type="submit" name="action" value="write">{{.Labels.save}}</button>
           </form>
         </div>
       </section>
@@ -30,20 +30,20 @@
             <div class="alert alert-success" role="status">Write this code down before leaving this page.</div>
             <code data-testid="guest-transfer-code" class="rounded-box bg-base-200 p-4 text-center text-2xl tracking-[0.25em]">{{.GuestTransferCode}}</code>
           {{else if .GuestBanner}}
-            <form method="post" action="{{.FormAction}}" hx-post="{{.FormAction}}" hx-target="#page-content" hx-swap="outerHTML">
+            <form method="post" action="{{.FormAction}}" hx-post="{{.FormAction}}" hx-target="#page-content" hx-swap="outerHTML" hx-indicator=".htmx-indicator">
               <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
-              <button class="btn btn-primary" type="submit" name="action" value="request">Request transfer code</button>
+              <button class="btn btn-primary" type="submit" name="action" value="request">{{.Labels.request_transfer}}</button>
             </form>
           {{end}}
           <div class="divider">On another device</div>
-          <form class="grid gap-4" method="post" action="{{.FormAction}}" hx-post="{{.FormAction}}" hx-target="#page-content" hx-swap="outerHTML">
+          <form class="grid gap-4" method="post" action="{{.FormAction}}" hx-post="{{.FormAction}}" hx-target="#page-content" hx-swap="outerHTML" hx-indicator=".htmx-indicator">
             <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
             <fieldset class="fieldset">
-              <label class="fieldset-legend" for="transfer-code">Transfer code</label>
+              <label class="fieldset-legend" for="transfer-code">{{.Labels.transfer_code}}</label>
               <input id="transfer-code" class="input w-full" name="code" autocomplete="one-time-code" inputmode="text" aria-describedby="transfer-error">
               {{with .Form.Error "code"}}<p id="transfer-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
             </fieldset>
-            <button class="btn" type="submit" name="action" value="redeem">Redeem code</button>
+            <button class="btn" type="submit" name="action" value="redeem">{{.Labels.redeem}}</button>
           </form>
         </div>
       </section>
@@ -51,19 +51,19 @@
       <section class="card card-border bg-base-100 shadow-sm">
         <div class="card-body">
           <h2 class="card-title">Keep this account</h2>
-          <form class="grid gap-4" method="post" action="{{.FormAction}}" hx-post="{{.FormAction}}" hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this">
+          <form class="grid gap-4" method="post" action="{{.FormAction}}" hx-post="{{.FormAction}}" hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this" hx-indicator=".htmx-indicator">
             <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
             <fieldset class="fieldset">
-              <label class="fieldset-legend" for="upgrade-email">Email</label>
+              <label class="fieldset-legend" for="upgrade-email">{{.Labels.email}}</label>
               <input id="upgrade-email" class="input w-full" name="email" type="email" autocomplete="email" value="{{.Form.Value "email"}}" required aria-describedby="upgrade-email-error">
               {{with .Form.Error "email"}}<p id="upgrade-email-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
             </fieldset>
             <fieldset class="fieldset">
-              <label class="fieldset-legend" for="upgrade-password">Password</label>
+              <label class="fieldset-legend" for="upgrade-password">{{.Labels.password}}</label>
               <input id="upgrade-password" class="input w-full" name="password" type="password" autocomplete="new-password" required aria-describedby="upgrade-password-error">
               {{with .Form.Error "password"}}<p id="upgrade-password-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
             </fieldset>
-            <button class="btn btn-primary" type="submit">Upgrade account</button>
+            <button class="btn btn-primary" type="submit">{{.Labels.upgrade}}</button>
           </form>
         </div>
       </section>

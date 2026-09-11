@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{.CSRFToken}}">
     <link rel="stylesheet" href="/static/app.css">
+    <script src="/static/htmx.min.js" defer></script>
     <title>{{.Title}}</title>
     <script>
       (() => {
@@ -82,6 +83,10 @@
     </main>
     <script>
       (() => {
+        document.body.addEventListener("htmx:configRequest", (event) => {
+          const token = document.querySelector('meta[name="csrf-token"]')?.content || "";
+          event.detail.headers["X-CSRF-Token"] = token;
+        });
         const toggle = document.getElementById("theme-toggle");
         if (!toggle) return;
         const key = "goweb-theme";
