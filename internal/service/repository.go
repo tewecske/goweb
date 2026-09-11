@@ -1,6 +1,14 @@
 package service
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+var (
+	// ErrOptimisticLockConflict identifies a write based on a stale revision.
+	ErrOptimisticLockConflict = errors.New("service: optimistic lock conflict")
+)
 
 // User is the persistence-facing account model. Nullable database columns use
 // pointers so repositories cannot silently turn NULL into an application value.

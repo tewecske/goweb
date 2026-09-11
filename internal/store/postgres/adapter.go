@@ -72,6 +72,18 @@ func ClassifyError(err error) error {
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
 	}
+	if errors.Is(err, ErrNotFound) {
+		return ErrNotFound
+	}
+	if errors.Is(err, ErrConflict) {
+		return ErrConflict
+	}
+	if errors.Is(err, ErrInvalidData) {
+		return ErrInvalidData
+	}
+	if errors.Is(err, ErrDatabase) {
+		return ErrDatabase
+	}
 
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
