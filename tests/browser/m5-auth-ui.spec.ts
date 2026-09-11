@@ -1,0 +1,30 @@
+import { expect, test } from "@playwright/test";
+
+const enabled = process.env.GOWEB_BROWSER_E2E === "1";
+
+test.describe("M5.2 authentication UI", () => {
+  test.skip(!enabled, "set GOWEB_BROWSER_E2E=1 to run browser acceptance specs");
+
+  test("localized sign-in page is keyboard-usable and styled without secrets", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/hu/sign-in");
+
+    await expect(page).toHaveTitle(/Bejelentkezés/);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(page.getByLabel(/e-mail|email|felhasznál/i)).toBeVisible();
+    await expect(page.getByLabel(/jelszó|password/i)).toBeVisible();
+    await expect(page.locator('link[rel="stylesheet"]')).toHaveAttribute("href", "/static/app.css");
+    await expect(page.locator("body")).not.toContainText(/password_hash|session[_ -]?id/i);
+
+    await page.getByLabel(/e-mail|email|felhasznál/i).focus();
+    await expect(page.getByLabel(/e-mail|email|felhasznál/i)).toBeFocused();
+  });
+
+  test("state-changing auth request without CSRF is rejected", async ({ request }) => {
+    const response = await request.post("/en/sign-in", {
+      form: { identifier: "user@example.test", password: "not-a-real-password" },
+    });
+    expect(response.status()).toBe(403);
+    expect(await response.text()).not.toMatch(/not-a-real-password|password_hash|session[_ -]?id/i);
+  });
+});

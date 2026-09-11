@@ -10,25 +10,25 @@
         <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
         {{if eq .Kind "sign-up"}}
           <fieldset class="fieldset">
-            <legend class="fieldset-legend">Email</legend>
+            <label class="fieldset-legend" for="email">Email</label>
             <input id="email" class="input w-full" name="email" type="email" autocomplete="email" value="{{.Form.Value "email"}}" required aria-invalid="{{if .Form.Error "email"}}true{{else}}false{{end}}" aria-describedby="email-help email-error">
             <p id="email-help" class="label">Use an address you can access.</p>
             {{with .Form.Error "email"}}<p id="email-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
           </fieldset>
           <fieldset class="fieldset">
-            <legend class="fieldset-legend">Username <span class="font-normal text-base-content/60">(optional)</span></legend>
+            <label class="fieldset-legend" for="username">Username <span class="font-normal text-base-content/60">(optional)</span></label>
             <input id="username" class="input w-full" name="username" autocomplete="username" value="{{.Form.Value "username"}}" aria-invalid="{{if .Form.Error "username"}}true{{else}}false{{end}}" aria-describedby="username-error">
             {{with .Form.Error "username"}}<p id="username-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
           </fieldset>
         {{else}}
           <fieldset class="fieldset">
-            <legend class="fieldset-legend">Email or username</legend>
+            <label class="fieldset-legend" for="identifier">Email or username</label>
             <input id="identifier" class="input w-full" name="identifier" autocomplete="username" value="{{.Form.Value "identifier"}}" required aria-invalid="{{if .Form.Error "identifier"}}true{{else}}false{{end}}" aria-describedby="identifier-error">
             {{with .Form.Error "identifier"}}<p id="identifier-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
           </fieldset>
         {{end}}
         <fieldset class="fieldset">
-          <legend class="fieldset-legend">Password</legend>
+          <label class="fieldset-legend" for="password">Password</label>
           <input id="password" class="input w-full" name="password" type="password" autocomplete="{{if eq .Kind "sign-up"}}new-password{{else}}current-password{{end}}" required aria-invalid="{{if .Form.Error "password"}}true{{else}}false{{end}}" aria-describedby="password-error">
           {{with .Form.Error "password"}}<p id="password-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
         </fieldset>

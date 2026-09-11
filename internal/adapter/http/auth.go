@@ -73,7 +73,8 @@ func (h *authHandler) handlePasswordPage(writer http.ResponseWriter, request *ht
 			DisplayName: request.PostFormValue("display_name"),
 		})
 		if err != nil {
-			handle := h.signUpError(language, err)
+			handle, fieldErrors := h.signUpError(language, err)
+			form.Errors = fieldErrors
 			h.renderPasswordPageWithStatus(writer, request, language, kind, form, http.StatusUnprocessableEntity, handle)
 			return
 		}
@@ -183,15 +184,28 @@ func passwordForm(request *http.Request, kind string) FormData {
 	return FormData{Submitted: true, Values: values}
 }
 
-func (h *authHandler) signUpError(language locale.Code, err error) Alert {
+func (h *authHandler) signUpError(language locale.Code, err error) (Alert, []FieldError) {
 	messageID := "auth.error.invalid"
+	field := ""
 	if errors.Is(err, service.ErrDuplicateEmail) {
 		messageID = "auth.error.duplicate_email"
+		field = "email"
 	}
 	if errors.Is(err, service.ErrDuplicateUsername) {
 		messageID = "auth.error.duplicate_username"
+		field = "username"
 	}
-	return Alert{Level: "error", Message: h.translate(language, messageID)}
+	if errors.Is(err, service.ErrInvalidEmail) {
+		field = "email"
+	}
+	if errors.Is(err, service.ErrPasswordTooShort) || errors.Is(err, service.ErrPasswordTooLong) || errors.Is(err, service.ErrInvalidPassword) {
+		field = "password"
+	}
+	var fields []FieldError
+	if field != "" {
+		fields = []FieldError{{Field: field, Message: h.translate(language, messageID)}}
+	}
+	return Alert{Level: "error", Message: h.translate(language, messageID)}, fields
 }
 
 func (h *authHandler) renderPasswordPage(writer http.ResponseWriter, request *http.Request, language locale.Code, kind string, form FormData) {
