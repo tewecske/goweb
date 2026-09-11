@@ -128,6 +128,32 @@ func TestNewHandlerRendersHTMXFragment(t *testing.T) {
 	}
 }
 
+func TestNewHandlerRegistersLocalizedAuthenticationRoutes(t *testing.T) {
+	response := httptest.NewRecorder()
+	NewHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/hu/sign-in", nil))
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	body := response.Body.String()
+	for _, fragment := range []string{"<!doctype html>", `lang="hu"`, `id="identifier"`, `id="password"`} {
+		if !strings.Contains(body, fragment) {
+			t.Errorf("sign-in page missing %q", fragment)
+		}
+	}
+}
+
+func TestNewHandlerRejectsAuthenticationMutationWithoutCSRF(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/en/sign-in", strings.NewReader("identifier=user%40example.test&password=secret-password"))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := httptest.NewRecorder()
+	NewHandler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+}
+
 func TestNewHandlerRedirectsToDefaultLocale(t *testing.T) {
 	response := httptest.NewRecorder()
 	NewHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))

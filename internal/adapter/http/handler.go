@@ -48,6 +48,7 @@ func newRouter(recoveryLogger *slog.Logger, requestLogger middleware.RequestLogg
 
 func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware.RequestLogger, services any, extra ...middleware.Middleware) http.Handler {
 	mux := http.NewServeMux()
+	dependencies, _ := services.(Dependencies)
 	renderer, err := NewPageRenderer()
 	if err != nil {
 		panic(err)
@@ -55,6 +56,16 @@ func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware
 	mux.HandleFunc("GET /", defaultLocale)
 	mux.HandleFunc("GET /{language}", home(renderer))
 	mux.HandleFunc("GET /{language}/{path...}", localized(renderer))
+	auth := newAuthHandler(renderer, dependencies)
+	for _, language := range locale.Codes() {
+		prefix := "/" + string(language)
+		mux.HandleFunc("GET "+prefix+"/sign-up", auth.signUp)
+		mux.HandleFunc("POST "+prefix+"/sign-up", auth.signUp)
+		mux.HandleFunc("GET "+prefix+"/sign-in", auth.signIn)
+		mux.HandleFunc("POST "+prefix+"/sign-in", auth.signIn)
+		mux.HandleFunc("GET "+prefix+"/home", auth.home)
+		mux.HandleFunc("POST "+prefix+"/sign-out", auth.signOut)
+	}
 	mux.Handle("GET /static/{path...}", http.StripPrefix("/static/", http.FileServer(http.FS(staticassets.Files()))))
 	mux.HandleFunc("GET /healthz", health)
 
@@ -72,12 +83,7 @@ func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware
 	if err != nil {
 		panic(err)
 	}
-	return &serviceAwareHandler{Handler: handler, services: services}
-}
-
-type serviceAwareHandler struct {
-	http.Handler
-	services any
+	return handler
 }
 
 func defaultLocale(writer http.ResponseWriter, request *http.Request) {
@@ -134,6 +140,8 @@ func home(renderer *PageRenderer) http.HandlerFunc {
 			Kind:             "home",
 			Template:         "home",
 			FragmentTemplate: "home-fragment",
+			SignInURL:        mustLocalePath(language, "/sign-in"),
+			SignUpURL:        mustLocalePath(language, "/sign-up"),
 		}
 		page.CSRFToken, _ = middleware.CSRFTokenFromContext(request.Context())
 		for _, item := range []struct {
@@ -155,6 +163,11 @@ func home(renderer *PageRenderer) http.HandlerFunc {
 			http.Error(writer, "internal server error", http.StatusInternalServerError)
 		}
 	}
+}
+
+func mustLocalePath(language locale.Code, route string) string {
+	path, _ := locale.Path(language, route)
+	return path
 }
 
 func localized(renderer *PageRenderer) http.HandlerFunc {

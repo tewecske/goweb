@@ -1,6 +1,10 @@
 {{define "content"}}
   {{if eq .Kind "home"}}
     {{template "home-content" .}}
+  {{else if eq .Kind "sign-up"}}
+    {{template "auth-content" .}}
+  {{else if eq .Kind "sign-in"}}
+    {{template "auth-content" .}}
   {{else}}
     {{template "state-content" .}}
   {{end}}

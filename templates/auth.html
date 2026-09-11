@@ -1,0 +1,52 @@
+{{define "auth"}}
+  {{template "layout" .}}
+{{end}}
+
+{{define "auth-content"}}
+  <div id="page-content" class="card card-border mt-6 w-full max-w-xl bg-base-100 shadow-sm">
+    <div class="card-body">
+      {{if .Description}}<p class="text-base-content/70">{{.Description}}</p>{{end}}
+      <form class="mt-4 grid gap-4" method="{{.FormMethod}}" action="{{.FormAction}}" hx-post="{{.FormAction}}" hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this">
+        <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+        {{if eq .Kind "sign-up"}}
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend">Email</legend>
+            <input id="email" class="input w-full" name="email" type="email" autocomplete="email" value="{{.Form.Value "email"}}" required aria-invalid="{{if .Form.Error "email"}}true{{else}}false{{end}}" aria-describedby="email-help email-error">
+            <p id="email-help" class="label">Use an address you can access.</p>
+            {{with .Form.Error "email"}}<p id="email-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
+          </fieldset>
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend">Username <span class="font-normal text-base-content/60">(optional)</span></legend>
+            <input id="username" class="input w-full" name="username" autocomplete="username" value="{{.Form.Value "username"}}" aria-invalid="{{if .Form.Error "username"}}true{{else}}false{{end}}" aria-describedby="username-error">
+            {{with .Form.Error "username"}}<p id="username-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
+          </fieldset>
+        {{else}}
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend">Email or username</legend>
+            <input id="identifier" class="input w-full" name="identifier" autocomplete="username" value="{{.Form.Value "identifier"}}" required aria-invalid="{{if .Form.Error "identifier"}}true{{else}}false{{end}}" aria-describedby="identifier-error">
+            {{with .Form.Error "identifier"}}<p id="identifier-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
+          </fieldset>
+        {{end}}
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Password</legend>
+          <input id="password" class="input w-full" name="password" type="password" autocomplete="{{if eq .Kind "sign-up"}}new-password{{else}}current-password{{end}}" required aria-invalid="{{if .Form.Error "password"}}true{{else}}false{{end}}" aria-describedby="password-error">
+          {{with .Form.Error "password"}}<p id="password-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
+        </fieldset>
+        <button class="btn btn-primary" type="submit">
+          <span class="submit-label">{{.SubmitLabel}}</span>
+          <span class="loading loading-spinner loading-sm htmx-indicator" aria-hidden="true"></span>
+        </button>
+      </form>
+      <p class="mt-4 text-sm text-base-content/70">
+        {{if eq .Kind "sign-up"}}Already have an account? <a class="link link-primary" href="{{.SignInURL}}">Sign in</a>{{else}}Need an account? <a class="link link-primary" href="{{.SignUpURL}}">Create one</a>{{end}}
+      </p>
+    </div>
+  </div>
+{{end}}
+
+{{define "auth-fragment"}}
+  <section id="page-content" aria-labelledby="page-heading">
+    <h1 id="page-heading" class="text-3xl font-semibold tracking-tight">{{.Heading}}</h1>
+    {{template "auth-content" .}}
+  </section>
+{{end}}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	httpadapter "github.com/tewecske/goweb/internal/adapter/http"
+	"github.com/tewecske/goweb/internal/adapter/http/middleware"
 	"github.com/tewecske/goweb/internal/app"
 	"github.com/tewecske/goweb/internal/config"
 	appserver "github.com/tewecske/goweb/internal/server"
@@ -57,8 +58,24 @@ func main() {
 			_ = database.Close()
 			log.Fatal(composeErr)
 		}
+		sessionCookie, cookieErr := middleware.NewSessionCookie(middleware.SessionCookieConfig{
+			Secure:   appConfig.SessionCookieSecure,
+			Lifetime: appConfig.SessionLifetime,
+		})
+		if cookieErr != nil {
+			_ = database.Close()
+			log.Fatal(cookieErr)
+		}
 		serverOptions = append(serverOptions, appserver.WithDependency(database))
-		router = httpadapter.NewLoggedRouterWithServices(logger, applicationGraph)
+		router = httpadapter.NewLoggedRouterWithServices(logger, httpadapter.Dependencies{
+			Users:         applicationGraph.Users,
+			Sessions:      applicationGraph.SessionService,
+			SessionAdmin:  applicationGraph.SessionService,
+			SessionCookie: sessionCookie,
+			SignUp:        applicationGraph.SignUp,
+			SignIn:        applicationGraph.SignIn,
+			SignOut:       applicationGraph.SessionService,
+		})
 	}
 
 	server, err := appserver.New(appConfig.HTTPAddress, router, serverOptions...)

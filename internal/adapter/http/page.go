@@ -41,12 +41,18 @@ type PageData struct {
 	Heading          string
 	Kind             string
 	Message          string
+	Description      string
 	CSRFToken        string
 	Form             FormData
+	FormAction       string
+	FormMethod       string
+	SubmitLabel      string
 	Template         string
 	FragmentTemplate string
 	Navigation       []NavigationItem
 	Account          *AccountMenu
+	SignInURL        string
+	SignUpURL        string
 	Alerts           []Alert
 }
 
@@ -133,6 +139,14 @@ func NewPageRenderer() (*PageRenderer, error) {
 	return &PageRenderer{templates: parsed, catalogs: catalogs}, nil
 }
 
+// Translate resolves one validated catalog message for a page handler.
+func (r *PageRenderer) Translate(language locale.Code, id string) (string, error) {
+	if r == nil || r.catalogs == nil {
+		return "", fmt.Errorf("%w: renderer is nil", ErrInvalidPage)
+	}
+	return r.catalogs.Translate(language, id, nil)
+}
+
 // RenderState renders a localized error or recovery state in full-page or
 // fragment mode according to request headers.
 func (r *PageRenderer) RenderState(writer http.ResponseWriter, request *http.Request, language locale.Code, state PageState) error {
@@ -195,6 +209,12 @@ func (r *PageRenderer) Render(writer http.ResponseWriter, name string, page Page
 // RenderRequest serves a complete document for normal requests and an
 // accessible fragment for HTMX requests.
 func (r *PageRenderer) RenderRequest(writer http.ResponseWriter, request *http.Request, page PageData) error {
+	return r.RenderRequestStatus(writer, request, page, http.StatusOK)
+}
+
+// RenderRequestStatus renders a full page or fragment with an explicit HTTP
+// status after buffering template execution.
+func (r *PageRenderer) RenderRequestStatus(writer http.ResponseWriter, request *http.Request, page PageData, status int) error {
 	if request == nil {
 		return ErrNilRequest
 	}
@@ -209,7 +229,7 @@ func (r *PageRenderer) RenderRequest(writer http.ResponseWriter, request *http.R
 		return fmt.Errorf("%w: response template is required", ErrInvalidPage)
 	}
 	writer.Header().Add("Vary", "HX-Request")
-	return r.render(writer, name, page)
+	return r.renderStatus(writer, name, page, status)
 }
 
 // IsHTMX reports whether request asks for an HTMX response fragment.
@@ -221,6 +241,10 @@ func IsHTMX(request *http.Request) bool {
 }
 
 func (r *PageRenderer) render(writer http.ResponseWriter, name string, page PageData) error {
+	return r.renderStatus(writer, name, page, http.StatusOK)
+}
+
+func (r *PageRenderer) renderStatus(writer http.ResponseWriter, name string, page PageData, status int) error {
 	if r == nil || r.templates == nil {
 		return fmt.Errorf("%w: renderer is nil", ErrInvalidPage)
 	}
@@ -233,7 +257,7 @@ func (r *PageRenderer) render(writer http.ResponseWriter, name string, page Page
 		return fmt.Errorf("execute page template %q: %w", name, err)
 	}
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
-	writer.WriteHeader(http.StatusOK)
+	writer.WriteHeader(status)
 	_, err := writer.Write(output.Bytes())
 	return err
 }
