@@ -105,6 +105,7 @@
     "settings.success.password": {"text": "A jelszó frissítve."},
     "settings.success.identity_removed": {"text": "A külső azonosság eltávolítva."},
     "settings.error.generic": {"text": "A beállítások nem menthetők. Próbálja újra."},
+    "settings.error.not_found": {"text": "Ez a fiók már nem érhető el."},
     "settings.error.conflict": {"text": "A fiók időközben megváltozott. Töltse újra az oldalt."},
     "settings.error.username_unavailable": {"text": "Ez a felhasználónév már foglalt."},
     "settings.error.invalid_username": {"text": "Ez a felhasználónév nem használható."},

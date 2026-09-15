@@ -124,16 +124,21 @@ func (h *settingsHandler) updateProfile(writer http.ResponseWriter, request *htt
 	if err != nil {
 		form.Errors = h.profileFieldErrors(language, err)
 		message := "settings.error.generic"
-		if errors.Is(err, service.ErrUsernameUnavailable) {
+		status := http.StatusUnprocessableEntity
+		switch {
+		case errors.Is(err, service.ErrUsernameUnavailable):
 			message = "settings.error.username_unavailable"
-		} else if errors.Is(err, service.ErrInvalidUsername) {
+		case errors.Is(err, service.ErrInvalidUsername):
 			message = "settings.error.invalid_username"
-		} else if errors.Is(err, service.ErrInvalidDisplayName) {
+		case errors.Is(err, service.ErrInvalidDisplayName):
 			message = "settings.error.invalid_display_name"
-		} else if errors.Is(err, service.ErrOptimisticLockConflict) {
+		case errors.Is(err, service.ErrOptimisticLockConflict):
 			message = "settings.error.conflict"
+		case errors.Is(err, service.ErrRecordNotFound):
+			message = "settings.error.not_found"
+			status = http.StatusNotFound
 		}
-		h.renderSettings(writer, request, language, user, form, []Alert{{Level: "error", Message: settingsTranslate(h.settings, language, message)}}, http.StatusUnprocessableEntity)
+		h.renderSettings(writer, request, language, user, form, []Alert{{Level: "error", Message: settingsTranslate(h.settings, language, message)}}, status)
 		return
 	}
 	h.renderSettings(writer, request, language, updated, FormData{}, []Alert{{Level: "success", Message: settingsTranslate(h.settings, language, "settings.success.profile")}}, http.StatusOK)
@@ -161,6 +166,7 @@ func (h *settingsHandler) updatePassword(writer http.ResponseWriter, request *ht
 	if err != nil {
 		form := FormData{Submitted: true}
 		message := "settings.error.generic"
+		status := http.StatusUnprocessableEntity
 		switch {
 		case errors.Is(err, service.ErrCurrentPasswordRequired):
 			form.Errors = []FieldError{{Field: "current_password", Message: settingsTranslate(h.settings, language, "settings.error.current_required")}}
@@ -173,8 +179,11 @@ func (h *settingsHandler) updatePassword(writer http.ResponseWriter, request *ht
 			message = "settings.error.weak_password"
 		case errors.Is(err, service.ErrOptimisticLockConflict):
 			message = "settings.error.conflict"
+		case errors.Is(err, service.ErrRecordNotFound):
+			message = "settings.error.not_found"
+			status = http.StatusNotFound
 		}
-		h.renderSettings(writer, request, language, user, form, []Alert{{Level: "error", Message: settingsTranslate(h.settings, language, message)}}, http.StatusUnprocessableEntity)
+		h.renderSettings(writer, request, language, user, form, []Alert{{Level: "error", Message: settingsTranslate(h.settings, language, message)}}, status)
 		return
 	}
 	fresh, err := h.dependencies.Users.FindUserByID(request.Context(), user.ID)
@@ -204,11 +213,18 @@ func (h *settingsHandler) updateLocale(writer http.ResponseWriter, request *http
 	if _, err := h.dependencies.LocaleSettings.Update(request.Context(), user.ID, selected); err != nil {
 		form := FormData{Submitted: true}
 		message := "settings.error.generic"
-		if errors.Is(err, service.ErrInvalidLocale) {
+		status := http.StatusUnprocessableEntity
+		switch {
+		case errors.Is(err, service.ErrInvalidLocale):
 			form.Errors = []FieldError{{Field: "locale", Message: settingsTranslate(h.settings, language, "settings.error.invalid_locale")}}
 			message = "settings.error.invalid_locale"
+		case errors.Is(err, service.ErrOptimisticLockConflict):
+			message = "settings.error.conflict"
+		case errors.Is(err, service.ErrRecordNotFound):
+			message = "settings.error.not_found"
+			status = http.StatusNotFound
 		}
-		h.renderSettings(writer, request, language, user, form, []Alert{{Level: "error", Message: settingsTranslate(h.settings, language, message)}}, http.StatusUnprocessableEntity)
+		h.renderSettings(writer, request, language, user, form, []Alert{{Level: "error", Message: settingsTranslate(h.settings, language, message)}}, status)
 		return
 	}
 	destination, err := locale.Path(locale.Code(selected), "/account/settings")

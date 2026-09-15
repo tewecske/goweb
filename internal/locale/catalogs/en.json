@@ -105,6 +105,7 @@
     "settings.success.password": {"text": "Password updated."},
     "settings.success.identity_removed": {"text": "External identity removed."},
     "settings.error.generic": {"text": "Your settings could not be saved. Try again."},
+    "settings.error.not_found": {"text": "This account is no longer available."},
     "settings.error.conflict": {"text": "This account changed elsewhere. Reload the page and try again."},
     "settings.error.username_unavailable": {"text": "That username is already in use."},
     "settings.error.invalid_username": {"text": "That username cannot be used."},

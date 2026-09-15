@@ -78,6 +78,12 @@ func (s *ProfileSettingsService) Update(ctx context.Context, userID int64, input
 	}
 	updated, err := s.users.UpdateUser(ctx, user, user.Version)
 	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			return User{}, ErrRecordNotFound
+		}
+		if errors.Is(err, ErrOptimisticLockConflict) {
+			return User{}, ErrOptimisticLockConflict
+		}
 		return User{}, fmt.Errorf("update profile settings: %w", err)
 	}
 	return publicUser(updated), nil
@@ -168,6 +174,12 @@ func (s *LocaleSettingsService) Update(ctx context.Context, userID int64, rawLoc
 	user.Locale = code
 	updated, err := s.users.UpdateUser(ctx, user, user.Version)
 	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			return User{}, ErrRecordNotFound
+		}
+		if errors.Is(err, ErrOptimisticLockConflict) {
+			return User{}, ErrOptimisticLockConflict
+		}
 		return User{}, fmt.Errorf("update locale settings: %w", err)
 	}
 	return publicUser(updated), nil

@@ -80,6 +80,12 @@ func (s *PasswordSettingsService) Update(ctx context.Context, userID int64, inpu
 	user.PasswordHash = &passwordHash
 	updated, err := s.users.UpdateUser(ctx, user, user.Version)
 	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			return User{}, ErrRecordNotFound
+		}
+		if errors.Is(err, ErrOptimisticLockConflict) {
+			return User{}, ErrOptimisticLockConflict
+		}
 		return User{}, fmt.Errorf("update settings password: %w", err)
 	}
 	return publicUser(updated), nil

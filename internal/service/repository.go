@@ -8,7 +8,26 @@ import (
 var (
 	// ErrOptimisticLockConflict identifies a write based on a stale revision.
 	ErrOptimisticLockConflict = errors.New("service: optimistic lock conflict")
+	// ErrRecordNotFound identifies a stale write whose record no longer exists.
+	ErrRecordNotFound = errors.New("service: record not found")
 )
+
+// ClassifyStaleWrite translates a revision-checked write failure into the
+// conflict or not-found outcome. Missing records are reported as not-found even
+// when the repository cannot distinguish them from a concurrent change, so the
+// caller never shows a misleading conflict for a deleted record.
+func ClassifyStaleWrite(missing bool) error {
+	if missing {
+		return ErrRecordNotFound
+	}
+	return ErrOptimisticLockConflict
+}
+
+// IsWriteConflict reports whether err is an optimistic-lock or missing-record
+// outcome produced by a revision-checked write.
+func IsWriteConflict(err error) bool {
+	return errors.Is(err, ErrOptimisticLockConflict) || errors.Is(err, ErrRecordNotFound)
+}
 
 // User is the persistence-facing account model. Nullable database columns use
 // pointers so repositories cannot silently turn NULL into an application value.
