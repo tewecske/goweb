@@ -235,8 +235,8 @@ func TestNewHandlerRendersLocalizedNotFound(t *testing.T) {
 	response := httptest.NewRecorder()
 	NewHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/hu/missing", nil))
 
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
 	}
 	body := response.Body.String()
 	for _, fragment := range []string{"<!doctype html>", "Az oldal nem található", "A kért oldal nem található."} {

@@ -47,6 +47,10 @@ type Dependencies struct {
 	IdentityLister   IdentityLister
 	IdentityUnlinker IdentityUnlinker
 	IdentityLink     IdentityLinkStarter
+
+	Groups       GroupUseCases
+	GroupInvites GroupInviter
+	JoinGroup    JoinRateLimitedGroupJoiner
 }
 
 // UserFinder resolves an account for an authenticated session.

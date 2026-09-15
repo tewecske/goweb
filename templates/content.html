@@ -21,6 +21,10 @@
     {{template "guest-content" .}}
   {{else if eq .Kind "settings"}}
     {{template "settings-content" .}}
+  {{else if eq .Kind "groups"}}
+    {{template "groups-content" .}}
+  {{else if eq .Kind "group-detail"}}
+    {{template "groups-content" .}}
   {{else}}
     {{template "state-content" .}}
   {{end}}

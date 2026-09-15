@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/tewecske/goweb/internal/locale"
+	"github.com/tewecske/goweb/internal/service"
 	"github.com/tewecske/goweb/templates"
 )
 
@@ -53,6 +54,7 @@ type PageData struct {
 	Account           *AccountMenu
 	SignInURL         string
 	SignUpURL         string
+	GroupsURL         string
 	OAuthProviders    []OAuthProviderView
 	GuestBanner       bool
 	GuestOwned        bool
@@ -60,6 +62,50 @@ type PageData struct {
 	Labels            map[string]string
 	Alerts            []Alert
 	Settings          *SettingsView
+	Groups            *GroupsView
+	Group             *GroupDetailView
+}
+
+// GroupsView contains the group list and join/create affordances.
+type GroupsView struct {
+	ListURL     string
+	CreateURL   string
+	JoinURL     string
+	Creating    bool
+	Summaries   []service.GroupSummary
+	CreateLabel string
+	JoinLabel   string
+}
+
+// GroupDetailView contains one group's detail, roster, and management URLs.
+type GroupDetailView struct {
+	GroupID     int64
+	Name        string
+	Version     int64
+	MemberCount int
+	IsAdmin     bool
+	IsMember    bool
+	InviteCode  string
+	ListURL     string
+	RenameURL   string
+	InviteURL   string
+	LeaveURL    string
+	MembersURL  string
+	Members     []GroupMemberView
+}
+
+// GroupMemberView contains one roster row and its available actions.
+type GroupMemberView struct {
+	UserID     int64
+	Role       string
+	Version    int64
+	Label      string
+	IsAdmin    bool
+	IsSelf     bool
+	RoleAction string
+	RoleLabel  string
+	PromoteURL string
+	RemoveURL  string
 }
 
 // SettingsView contains server-owned account settings data for rendering.
@@ -222,7 +268,7 @@ func (r *PageRenderer) RenderState(writer http.ResponseWriter, request *http.Req
 	if err != nil {
 		return fmt.Errorf("translate page message: %w", err)
 	}
-	return r.RenderRequest(writer, request, PageData{
+	return r.RenderRequestStatus(writer, request, PageData{
 		Language:         string(language),
 		Title:            title,
 		Heading:          heading,
@@ -230,7 +276,22 @@ func (r *PageRenderer) RenderState(writer http.ResponseWriter, request *http.Req
 		Message:          message,
 		Template:         "state",
 		FragmentTemplate: "state-fragment",
-	})
+	}, stateStatus(state))
+}
+
+func stateStatus(state PageState) int {
+	switch state {
+	case PageStateNotFound:
+		return http.StatusNotFound
+	case PageStateAccessDenied:
+		return http.StatusForbidden
+	case PageStateConflict:
+		return http.StatusConflict
+	case PageStateSessionExpired:
+		return http.StatusUnauthorized
+	default:
+		return http.StatusUnprocessableEntity
+	}
 }
 
 // Render writes one complete HTML document. It buffers template execution so a

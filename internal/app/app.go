@@ -30,6 +30,8 @@ type Graph struct {
 	PasswordReset        *postgresstore.PasswordResetTokenRepository
 	OAuthStates          *postgresstore.OAuthStateRepository
 	OAuthIdentities      *postgresstore.OAuthIdentityRepository
+	Groups               *postgresstore.GroupRepository
+	GroupMemberships     *postgresstore.GroupMembershipRepository
 	Providers            *service.ProviderRegistry
 	SessionService       *service.SessionService
 	PasswordHasher       *service.PasswordHasher
@@ -51,6 +53,8 @@ type Graph struct {
 	ProfileSettings      *service.ProfileSettingsService
 	PasswordSettings     *service.PasswordSettingsService
 	LocaleSettings       *service.LocaleSettingsService
+	Group                *service.GroupService
+	GroupJoin            *service.RateLimitedGroupJoiner
 }
 
 // New constructs the service graph over one migrated database. It performs no
@@ -90,6 +94,14 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	oauthIdentities, err := postgresstore.NewOAuthIdentityRepository(database)
 	if err != nil {
 		return nil, fmt.Errorf("construct oauth identity repository: %w", err)
+	}
+	groupsRepository, err := postgresstore.NewGroupRepository(database)
+	if err != nil {
+		return nil, fmt.Errorf("construct group repository: %w", err)
+	}
+	groupMembershipsRepository, err := postgresstore.NewGroupMembershipRepository(database)
+	if err != nil {
+		return nil, fmt.Errorf("construct group membership repository: %w", err)
 	}
 
 	sessionService, err := service.NewSessionService(sessionsRepository, appConfig.SessionLifetime)
@@ -198,6 +210,20 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct locale settings service: %w", err)
 	}
+	groupService, err := service.NewGroupService(groupsRepository, groupMembershipsRepository, users)
+	if err != nil {
+		return nil, fmt.Errorf("construct group service: %w", err)
+	}
+	groupJoinLimiter, err := service.NewRateLimiter(service.RateLimitConfig{
+		Limit: 20, Window: time.Minute, MaxKeys: 10_000,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("construct group join rate limiter: %w", err)
+	}
+	groupJoinService, err := service.NewRateLimitedGroupJoiner(groupService, groupJoinLimiter)
+	if err != nil {
+		return nil, fmt.Errorf("construct group join service: %w", err)
+	}
 
 	return &Graph{
 		Database: database, Users: users, Sessions: sessionsRepository,
@@ -213,6 +239,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		GuestRedemption: guestRedemption, GuestUpgrade: guestUpgrade,
 		GuestRateLimited: guestRateLimited, GuestCleanup: guestCleanup, Theme: theme,
 		ProfileSettings: profileSettings, PasswordSettings: passwordSettings, LocaleSettings: localeSettings,
+		Groups: groupsRepository, GroupMemberships: groupMembershipsRepository, Group: groupService, GroupJoin: groupJoinService,
 	}, nil
 }
 

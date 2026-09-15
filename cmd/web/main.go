@@ -93,6 +93,9 @@ func main() {
 			IdentityLister:       applicationGraph.OAuthIdentities,
 			IdentityUnlinker:     applicationGraph.OAuth,
 			IdentityLink:         applicationGraph.OAuth,
+			Groups:               applicationGraph.Group,
+			GroupInvites:         applicationGraph.Group,
+			JoinGroup:            applicationGraph.GroupJoin,
 		})
 	}
 

@@ -131,6 +131,7 @@ func (h *authHandler) home(writer http.ResponseWriter, request *http.Request) {
 	}
 	settingsURL := h.path(language, "/account/settings")
 	themeURL := h.path(language, "/account/theme")
+	groupsPath, _ := locale.Path(language, "/groups")
 	page := PageData{
 		Language:         string(language),
 		Title:            "GoWeb",
@@ -139,6 +140,7 @@ func (h *authHandler) home(writer http.ResponseWriter, request *http.Request) {
 		Template:         "home",
 		FragmentTemplate: "home-fragment",
 		CSRFToken:        csrfToken(request),
+		GroupsURL:        groupsPath,
 		Account: &AccountMenu{
 			Label:       accountLabel(user),
 			SettingsURL: settingsURL,
@@ -267,6 +269,16 @@ func (h *authHandler) formLabels(language locale.Code) map[string]string {
 		"settings_identities": "settings.identities.heading", "settings_identities_help": "settings.identities.help",
 		"settings_identities_empty": "settings.identities.empty", "settings_identities_add": "settings.identities.add",
 		"settings_identity_provider": "settings.identities.provider", "settings_identity_account": "settings.identities.account",
+		"groups_title": "groups.title", "groups_heading": "groups.heading", "groups_sections": "groups.sections", "groups_nav": "groups.nav",
+		"groups_mine": "groups.mine", "groups_join": "groups.join", "groups_create": "groups.create",
+		"groups_name": "groups.name", "groups_members": "groups.members", "groups_role": "groups.role",
+		"groups_view": "groups.view", "groups_empty": "groups.empty", "groups_back": "groups.back",
+		"groups_role_admin": "groups.role.admin", "groups_role_member": "groups.role.member",
+		"groups_rename": "groups.rename", "groups_invite": "groups.invite", "groups_invite_code": "groups.invite.code",
+		"groups_rotate": "groups.invite.rotate", "groups_leave": "groups.leave", "groups_leave_confirm": "groups.leave.confirm",
+		"groups_roster": "groups.roster", "groups_member": "groups.roster.member", "groups_you": "groups.roster.you",
+		"groups_remove": "groups.roster.remove", "groups_remove_confirm": "groups.roster.remove_confirm",
+		"groups_promote": "groups.roster.promote", "groups_demote": "groups.roster.demote",
 	} {
 		labels[name] = h.translate(language, id)
 	}

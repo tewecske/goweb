@@ -4,6 +4,11 @@
 
 {{define "home-content"}}
   <p class="mt-4 max-w-2xl text-base-content/70">A server-rendered Go and HTMX application foundation.</p>
+  {{if .GroupsURL}}
+    <div class="mt-6">
+      <a class="btn btn-outline" href="{{.GroupsURL}}">{{.Labels.groups_nav}}</a>
+    </div>
+  {{end}}
 {{end}}
 
 {{define "home-fragment"}}

@@ -21,7 +21,7 @@ func TestPageRendererRenderState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderState() error = %v, want nil", err)
 	}
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Change conflict") {
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "Change conflict") {
 		t.Errorf("full state response = %d, %q", response.Code, response.Body.String())
 	}
 

@@ -300,6 +300,13 @@ func authenticatedRequest(method, target string, _ int64, form string) *http.Req
 	if form != "" {
 		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
+	segments := strings.Split(strings.Trim(strings.SplitN(target, "?", 2)[0], "/"), "/")
+	if len(segments) >= 3 && segments[1] == "groups" {
+		request.SetPathValue("id", segments[2])
+	}
+	if len(segments) >= 5 && segments[3] == "members" {
+		request.SetPathValue("memberID", segments[4])
+	}
 	request.AddCookie(&http.Cookie{Name: middleware.DefaultSessionCookieName, Value: "opaque-session"})
 	return request
 }

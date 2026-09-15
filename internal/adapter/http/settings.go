@@ -322,36 +322,7 @@ func (h *settingsHandler) updateTheme(writer http.ResponseWriter, request *http.
 }
 
 func (h *settingsHandler) authenticatedUser(writer http.ResponseWriter, request *http.Request) (service.User, locale.Code, bool) {
-	language := recoveryLanguage(request)
-	if h.authenticator == nil || h.dependencies.Users == nil {
-		renderSimpleError(writer, request, http.StatusInternalServerError)
-		return service.User{}, language, false
-	}
-	principal, err := h.authenticator.Authenticate(request.Context(), request)
-	if errors.Is(err, middleware.ErrUnauthenticated) {
-		if IsHTMX(request) {
-			writer.Header().Set("HX-Redirect", localizedPath(language, "/sign-in"))
-			writer.WriteHeader(http.StatusOK)
-			return service.User{}, language, false
-		}
-		redirectLocalized(writer, request, language, "/sign-in")
-		return service.User{}, language, false
-	}
-	if err != nil {
-		renderSimpleError(writer, request, http.StatusInternalServerError)
-		return service.User{}, language, false
-	}
-	userID, err := strconv.ParseInt(principal.ID, 10, 64)
-	if err != nil {
-		renderSimpleError(writer, request, http.StatusInternalServerError)
-		return service.User{}, language, false
-	}
-	user, err := h.dependencies.Users.FindUserByID(request.Context(), userID)
-	if err != nil || user.ID != userID {
-		renderSimpleError(writer, request, http.StatusInternalServerError)
-		return service.User{}, language, false
-	}
-	return user, language, true
+	return authenticatePageUser(writer, request, h.authenticator, h.dependencies.Users)
 }
 
 func (h *settingsHandler) renderSettings(writer http.ResponseWriter, request *http.Request, language locale.Code, user service.User, form FormData, alerts []Alert, status int) {
@@ -497,6 +468,39 @@ func settingsTranslate(renderer *SettingsRenderer, language locale.Code, id stri
 		return id
 	}
 	return value
+}
+
+func authenticatePageUser(writer http.ResponseWriter, request *http.Request, authenticator *SessionAuthenticator, users UserFinder) (service.User, locale.Code, bool) {
+	language := recoveryLanguage(request)
+	if authenticator == nil || users == nil {
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+		return service.User{}, language, false
+	}
+	principal, err := authenticator.Authenticate(request.Context(), request)
+	if errors.Is(err, middleware.ErrUnauthenticated) {
+		if IsHTMX(request) {
+			writer.Header().Set("HX-Redirect", localizedPath(language, "/sign-in"))
+			writer.WriteHeader(http.StatusOK)
+			return service.User{}, language, false
+		}
+		redirectLocalized(writer, request, language, "/sign-in")
+		return service.User{}, language, false
+	}
+	if err != nil {
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+		return service.User{}, language, false
+	}
+	userID, err := strconv.ParseInt(principal.ID, 10, 64)
+	if err != nil {
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+		return service.User{}, language, false
+	}
+	user, err := users.FindUserByID(request.Context(), userID)
+	if err != nil || user.ID != userID {
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+		return service.User{}, language, false
+	}
+	return user, language, true
 }
 
 func localizedPath(language locale.Code, route string) string {

@@ -403,7 +403,7 @@ func TestOAuthControlsOnlyRenderConfiguredProviders(t *testing.T) {
 
 	unconfigured := httptest.NewRecorder()
 	handler.ServeHTTP(unconfigured, httptest.NewRequest(http.MethodGet, "/en/oauth/google", nil))
-	if unconfigured.Code != http.StatusOK || !strings.Contains(unconfigured.Body.String(), "Page not found") {
+	if unconfigured.Code != http.StatusNotFound || !strings.Contains(unconfigured.Body.String(), "Page not found") {
 		t.Fatalf("unconfigured OAuth route = %d %q", unconfigured.Code, unconfigured.Body.String())
 	}
 }
