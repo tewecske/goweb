@@ -88,11 +88,13 @@ type httpOAuthProvidersStub struct{ names []string }
 func (s httpOAuthProvidersStub) Names() []string { return s.names }
 
 type httpGuestCreatorStub struct {
-	result service.GuestSessionResult
-	err    error
+	result    service.GuestSessionResult
+	err       error
+	lastTheme string
 }
 
-func (s httpGuestCreatorStub) Create(context.Context, string, string) (service.GuestSessionResult, error) {
+func (s *httpGuestCreatorStub) Create(_ context.Context, _ string, theme string) (service.GuestSessionResult, error) {
+	s.lastTheme = theme
 	return s.result, s.err
 }
 
@@ -450,7 +452,8 @@ func TestOAuthCallbackSuccessCreatesSessionCookie(t *testing.T) {
 func TestGuestWriteCreatesAccountOnlyOnPost(t *testing.T) {
 	dependencies := newHTTPTestDependencies(t)
 	guest := service.User{ID: 73, IsGuest: true, Username: stringPointer("guest-73"), Theme: "light"}
-	dependencies.GuestCreator = httpGuestCreatorStub{result: service.GuestSessionResult{User: guest, Session: service.Session{ID: "guest-session"}}}
+	creator := &httpGuestCreatorStub{result: service.GuestSessionResult{User: guest, Session: service.Session{ID: "guest-session"}}}
+	dependencies.GuestCreator = creator
 	handler := NewRouterWithServices(dependencies)
 	view := httptest.NewRecorder()
 	handler.ServeHTTP(view, httptest.NewRequest(http.MethodGet, "/en/guest/write", nil))
@@ -464,6 +467,9 @@ func TestGuestWriteCreatesAccountOnlyOnPost(t *testing.T) {
 	}
 	if strings.Contains(response.Body.String(), "guest-session") {
 		t.Fatal("guest write response rendered session credential")
+	}
+	if creator.lastTheme == "" {
+		t.Fatal("guest creation without a theme did not fall back to a supported theme")
 	}
 }
 

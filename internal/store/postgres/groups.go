@@ -116,10 +116,10 @@ func (r *GroupRepository) UpdateGroup(ctx context.Context, group service.Group, 
 	}
 	updated, scanErr := findGroup(ctx, db.QueryRowContext(ctx, `
 		UPDATE groups
-		SET name = $1, name_norm = $2, version = version + 1
-		WHERE id = $3 AND version = $4
+		SET name = $1, name_norm = $2, invite_code = $3, version = version + 1
+		WHERE id = $4 AND version = $5
 		RETURNING id, name, name_norm, invite_code, created_by, created_at, version
-	`, group.Name, group.NameNorm, group.ID, expectedVersion))
+	`, group.Name, group.NameNorm, group.InviteCode, group.ID, expectedVersion))
 	if scanErr == nil {
 		return updated, nil
 	}

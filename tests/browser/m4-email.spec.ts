@@ -16,7 +16,7 @@ test.describe("M4 email confirmation and recovery", () => {
     await page.getByLabel("Password", { exact: true }).fill(password);
     await page.getByRole("button", { name: /create account|sign up/i }).click();
 
-    await expect(page).toHaveURL(/\/en\/(check-inbox|sign-in|home)/);
+    await expect(page.getByRole("heading", { level: 1 }).last()).toContainText(/confirm|check|your home/i);
     await expect(page.locator("body")).not.toContainText(/password_hash|session[_ -]?id|reset token/i);
   });
 
@@ -28,7 +28,7 @@ test.describe("M4 email confirmation and recovery", () => {
     await page.getByLabel("Email").fill(email);
     await page.getByRole("button", { name: /send|reset|continue/i }).click();
 
-    await expect(page.locator("[role=alert], #alerts")).toContainText(/check|sent|inbox/i);
+    await expect(page.locator("#alerts")).toContainText(/check|sent|inbox|eligible|instructions/i);
     await expect(page.locator("body")).not.toContainText(/password_hash|session[_ -]?id|reset token/i);
   });
 

@@ -32,7 +32,11 @@ func (h *authHandler) guestWrite(writer http.ResponseWriter, request *http.Reque
 		return
 	}
 	_ = request.ParseForm()
-	result, err := h.dependencies.GuestCreator.Create(request.Context(), requestOrigin(request), request.PostFormValue("theme"))
+	theme := strings.TrimSpace(request.PostFormValue("theme"))
+	if theme == "" {
+		theme = "light"
+	}
+	result, err := h.dependencies.GuestCreator.Create(request.Context(), requestOrigin(request), theme)
 	if err != nil {
 		h.renderGuestAlert(writer, request, "guest-write", language, http.StatusUnprocessableEntity, FormData{}, "guest.error.create")
 		return

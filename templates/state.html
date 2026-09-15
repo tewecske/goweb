@@ -7,6 +7,7 @@
 {{end}}
 
 {{define "state-fragment"}}
+  {{template "alerts-oob" .}}
   <section aria-labelledby="page-heading">
     <h1 id="page-heading" class="text-3xl font-semibold tracking-tight">{{.Heading}}</h1>
     {{template "state-content" .}}

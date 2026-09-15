@@ -34,6 +34,7 @@
 {{end}}
 
 {{define "recovery-fragment"}}
+  {{template "alerts-oob" .}}
   <section id="page-content" aria-labelledby="page-heading">
     <h1 id="page-heading" class="text-3xl font-semibold tracking-tight">{{.Heading}}</h1>
     {{template "recovery-content" .}}

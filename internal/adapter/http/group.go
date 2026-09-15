@@ -59,6 +59,7 @@ type GroupUseCases interface {
 }
 
 type groupHandler struct {
+	auth          *authHandler
 	renderer      *PageRenderer
 	settings      *SettingsRenderer
 	dependencies  Dependencies
@@ -68,6 +69,7 @@ type groupHandler struct {
 func newGroupHandler(renderer *PageRenderer, dependencies Dependencies) *groupHandler {
 	authenticator, _ := NewSessionAuthenticator(dependencies.Users, dependencies.Sessions, dependencies.SessionCookie)
 	return &groupHandler{
+		auth:          newAuthHandler(renderer, dependencies),
 		renderer:      renderer,
 		settings:      NewSettingsRenderer(renderer, dependencies),
 		dependencies:  dependencies,
@@ -229,7 +231,7 @@ func (h *groupHandler) rename(writer http.ResponseWriter, request *http.Request)
 		h.renderGroupWriteError(writer, request, language, user, groupID, err, FormData{Submitted: true, Values: map[string]string{"name": name}})
 		return
 	}
-	h.detail(writer, request)
+	h.renderDetail(writer, request, language, user, groupID, FormData{}, nil, http.StatusOK)
 }
 
 func (h *groupHandler) rotateInvite(writer http.ResponseWriter, request *http.Request) {
@@ -255,7 +257,7 @@ func (h *groupHandler) rotateInvite(writer http.ResponseWriter, request *http.Re
 		h.renderGroupWriteError(writer, request, language, user, groupID, err, FormData{})
 		return
 	}
-	h.detail(writer, request)
+	h.renderDetail(writer, request, language, user, groupID, FormData{}, []Alert{{Level: "success", Message: h.t(language, "groups.invite.rotated")}}, http.StatusOK)
 }
 
 func (h *groupHandler) changeRole(writer http.ResponseWriter, request *http.Request) {
@@ -288,7 +290,7 @@ func (h *groupHandler) changeRole(writer http.ResponseWriter, request *http.Requ
 		h.renderGroupWriteError(writer, request, language, user, groupID, err, FormData{})
 		return
 	}
-	h.detail(writer, request)
+	h.renderDetail(writer, request, language, user, groupID, FormData{}, []Alert{{Level: "success", Message: h.t(language, "groups.roster.updated")}}, http.StatusOK)
 }
 
 func (h *groupHandler) removeMember(writer http.ResponseWriter, request *http.Request) {
@@ -321,7 +323,7 @@ func (h *groupHandler) removeMember(writer http.ResponseWriter, request *http.Re
 		h.renderGroupWriteError(writer, request, language, user, groupID, err, FormData{})
 		return
 	}
-	h.detail(writer, request)
+	h.renderDetail(writer, request, language, user, groupID, FormData{}, []Alert{{Level: "success", Message: h.t(language, "groups.roster.removed")}}, http.StatusOK)
 }
 
 func (h *groupHandler) leave(writer http.ResponseWriter, request *http.Request) {
@@ -401,6 +403,7 @@ func (h *groupHandler) renderGroups(writer http.ResponseWriter, request *http.Re
 		Template:         "groups",
 		FragmentTemplate: "groups-fragment",
 		Alerts:           alerts,
+		Labels:           h.auth.formLabels(language),
 		Account:          h.accountMenu(language, user),
 		Groups: &GroupsView{
 			ListURL:     h.path(language, "/groups"),
@@ -418,6 +421,7 @@ func (h *groupHandler) renderGroups(writer http.ResponseWriter, request *http.Re
 }
 
 func (h *groupHandler) renderGroupDetail(writer http.ResponseWriter, request *http.Request, language locale.Code, user service.User, detail service.GroupDetail, form FormData, alerts []Alert, status int) {
+	request = loweredRequest(request)
 	page := PageData{
 		Language:         string(language),
 		Title:            detail.Group.Name + " | " + h.t(language, "groups.title"),
@@ -428,12 +432,34 @@ func (h *groupHandler) renderGroupDetail(writer http.ResponseWriter, request *ht
 		Template:         "groups",
 		FragmentTemplate: "groups-fragment",
 		Alerts:           alerts,
+		Labels:           h.auth.formLabels(language),
 		Account:          h.accountMenu(language, user),
 		Group:            h.groupDetailView(language, user, detail),
 	}
 	if err := h.settings.Render(writer, request, page, status); err != nil {
 		h.renderError(writer, request, http.StatusInternalServerError)
 	}
+}
+
+// renderDetail re-reads the group and renders the detail view for a
+// non-GET request. It never exposes the mutation request as a read.
+func (h *groupHandler) renderDetail(writer http.ResponseWriter, request *http.Request, language locale.Code, user service.User, groupID int64, form FormData, alerts []Alert, status int) {
+	if h.dependencies.Groups == nil {
+		h.renderError(writer, request, http.StatusInternalServerError)
+		return
+	}
+	detail, err := h.dependencies.Groups.Detail(request.Context(), user.ID, groupID)
+	if err != nil {
+		h.renderGroupError(writer, request, language, user, err)
+		return
+	}
+	h.renderGroupDetail(writer, request, language, user, detail, form, alerts, status)
+}
+
+func loweredRequest(request *http.Request) *http.Request {
+	clone := request.Clone(request.Context())
+	clone.Method = http.MethodGet
+	return clone
 }
 
 func (h *groupHandler) groupDetailView(language locale.Code, user service.User, detail service.GroupDetail) *GroupDetailView {

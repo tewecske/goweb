@@ -219,3 +219,64 @@ func insertIntegrationUser(t *testing.T, harness *postgres.Harness, email string
 	}
 	return id
 }
+
+func TestGroupServiceRotateInviteChangesCode(t *testing.T) {
+	ctx := context.Background()
+	harness := migratedHarness(t)
+	groups := mustGroupRepository(t, harness)
+	memberships := mustMembershipRepository(t, harness)
+	ownerID := insertIntegrationUser(t, harness, "rotate@example.test")
+
+	group, _, err := memberships.CreateGroupWithAdmin(ctx, service.Group{
+		Name: "Rotate", NameNorm: "rotate", InviteCode: "INVITE000099", CreatedBy: &ownerID, CreatedAt: 100,
+	}, ownerID, service.GroupRoleAdmin)
+	if err != nil {
+		t.Fatalf("CreateGroupWithAdmin() error = %v", err)
+	}
+	serviceGroups, err := service.NewGroupService(groups, memberships, &singleUserRepository{userID: ownerID})
+	if err != nil {
+		t.Fatalf("NewGroupService() error = %v", err)
+	}
+	before := group.InviteCode
+	after, err := serviceGroups.RotateInvite(ctx, ownerID, group.ID)
+	if err != nil {
+		t.Fatalf("RotateInvite() error = %v", err)
+	}
+	if after == before || after == "" {
+		t.Fatalf("rotated code = %q, want a new code different from %q", after, before)
+	}
+	persisted, err := groups.FindGroupByID(ctx, group.ID)
+	if err != nil {
+		t.Fatalf("FindGroupByID() error = %v", err)
+	}
+	if persisted.InviteCode != after {
+		t.Fatalf("persisted invite code = %q, want %q", persisted.InviteCode, after)
+	}
+	if _, err := groups.FindGroupByInviteCode(ctx, before); err == nil {
+		t.Fatal("previous invite code is still redeemable")
+	}
+}
+
+type singleUserRepository struct{ userID int64 }
+
+func (r *singleUserRepository) CreateUser(context.Context, service.User) (service.User, error) {
+	return service.User{}, nil
+}
+
+func (r *singleUserRepository) FindUserByID(context.Context, int64) (service.User, error) {
+	return service.User{ID: r.userID}, nil
+}
+
+func (r *singleUserRepository) FindUserByEmail(context.Context, string) (service.User, error) {
+	return service.User{}, service.ErrUserNotFound
+}
+
+func (r *singleUserRepository) FindUserByUsername(context.Context, string) (service.User, error) {
+	return service.User{}, service.ErrUserNotFound
+}
+
+func (r *singleUserRepository) UpdateUser(context.Context, service.User, int64) (service.User, error) {
+	return service.User{}, service.ErrUserNotFound
+}
+
+func (r *singleUserRepository) DeleteUser(context.Context, int64, int64) error { return nil }

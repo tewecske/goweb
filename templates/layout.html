@@ -7,6 +7,19 @@
     <meta name="csrf-token" content="{{.CSRFToken}}">
     <link rel="stylesheet" href="/static/app.css">
     <script src="/static/htmx.min.js" defer></script>
+    <script>
+      // Treat validation responses as swappable fragments so field and form
+      // errors rendered by the server replace the current content region.
+      document.addEventListener("DOMContentLoaded", () => {
+        if (!window.htmx) return;
+        window.htmx.config.responseHandling = [
+          { code: "204", swap: false },
+          { code: "[23]..", swap: true },
+          { code: "422", swap: true },
+          { code: "[45]..", swap: false, error: true }
+        ];
+      });
+    </script>
     <title>{{.Title}}</title>
     <script>
       (() => {
@@ -62,11 +75,7 @@
     <main class="mx-auto w-full max-w-5xl px-4 py-8">
       <section aria-labelledby="page-heading">
         <div id="alerts" class="mb-6 space-y-2" role="region" aria-live="polite" aria-atomic="true">
-          {{range .Alerts}}
-            <div class="alert {{if eq .Level "error"}}alert-error{{else if eq .Level "success"}}alert-success{{else if eq .Level "warning"}}alert-warning{{else}}alert-info{{end}}" role="{{if eq .Level "error"}}alert{{else}}status{{end}}">
-              <span>{{.Message}}</span>
-            </div>
-          {{end}}
+          {{template "alerts-inner" .}}
         </div>
         {{if .Form.HasErrors}}
           <div id="form-errors" class="alert alert-error mb-6" role="alert">
