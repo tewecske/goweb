@@ -46,6 +46,8 @@ Use Go 1.26 language features only. Prefer standard-library packages. Add third-
 - Use `html/template` for user-controlled HTML output. Keep authorization, CSRF protection, and validation server-side.
 - State-changing form and HTMX requests require a server-validated CSRF token; compare tokens in constant time.
 - Protected routes must use authentication middleware explicitly.
+- Revision-checked writes go through `ClassifyStaleWrite`/`IsWriteConflict`: a stale revision is a conflict, a vanished record is not-found. Do not show a conflict for a deleted record.
+- HTMX fragments repeat authorization, include their own headings and alerts, and carry an out-of-band `#alerts` region. The layout configures `htmx.config.responseHandling` so `422` validation fragments swap; other `4xx`/`5xx` stay errors.
 
 ## Tests and CI
 

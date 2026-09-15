@@ -28,5 +28,17 @@ Rules:
 - `cmd/web` owns process lifecycle and does not contain business logic.
 - `internal/app` owns manual service/repository composition and does not close shared resources.
 - Configured database connections are opened and migrated before HTTP serving begins; the server closes them during shutdown.
+- Editable records use optimistic locking: reads carry a revision, revision-checked writes report a stale version as a conflict and a vanished record as not-found.
+- HTTP handlers render a full document for navigations and a self-contained fragment for HTMX requests. Fragments repeat authorization and carry an out-of-band alerts region so server errors remain visible after a swap.
+- Validation failures return `422`; the client is configured to swap those fragments, while other `4xx`/`5xx` responses are treated as errors.
 
-Foundation currently exposes only `GET /healthz`. Feature work adds domain behavior and ports as real use cases require them; empty abstraction packages are intentionally avoided.
+Delivered feature areas:
+
+- `internal/service/settings.go` and `password_settings.go` own profile, password, and locale changes.
+- `internal/service/group.go` and `group_join.go` own group creation, listing, membership visibility, invite joining/rotation, role changes, removal, and voluntary leave.
+- `internal/service/repository.go` provides `ClassifyStaleWrite`, `IsWriteConflict`, and `ErrRecordNotFound` for revision-checked writes.
+- `internal/store/postgres` implements the user, session, token, OAuth, group, and membership ports; `UpdateGroup` persists names and invite codes under a revision check.
+- `templates/settings.html`, `templates/groups.html`, and `templates/alerts.html` back the account-settings and group interfaces.
+- Localized routes live under `/{language}/account/settings`, `/{language}/account/theme`, and `/{language}/groups`.
+
+The public foundation route remains `GET /healthz`.
