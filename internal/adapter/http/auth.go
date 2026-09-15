@@ -256,7 +256,17 @@ func (h *authHandler) formLabels(language locale.Code) map[string]string {
 		"or": "form.or", "transfer_code": "form.transfer_code", "save": "form.save", "request_transfer": "form.request_transfer",
 		"redeem": "form.redeem", "upgrade": "form.upgrade", "sign_in": "form.sign_in", "create_account": "form.create_account",
 		"already_account": "form.already_account", "need_account": "form.need_account",
-		"continue": "form.continue",
+		"continue":     "form.continue",
+		"display_name": "form.display_name", "current_password": "form.current_password",
+		"settings_profile": "settings.profile.heading", "settings_profile_help": "settings.profile.help",
+		"settings_username_help": "settings.profile.username_help", "settings_label_help": "settings.profile.label_help",
+		"settings_password": "settings.password.heading", "settings_password_change_help": "settings.password.change_help",
+		"settings_password_set_help": "settings.password.set_help", "settings_password_submit": "settings.password.submit",
+		"settings_preferences": "settings.preferences.heading", "settings_language": "settings.preferences.language",
+		"settings_theme": "settings.preferences.theme", "settings_theme_toggle": "settings.preferences.theme_toggle",
+		"settings_identities": "settings.identities.heading", "settings_identities_help": "settings.identities.help",
+		"settings_identities_empty": "settings.identities.empty", "settings_identities_add": "settings.identities.add",
+		"settings_identity_provider": "settings.identities.provider", "settings_identity_account": "settings.identities.account",
 	} {
 		labels[name] = h.translate(language, id)
 	}

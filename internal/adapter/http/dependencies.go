@@ -39,6 +39,14 @@ type Dependencies struct {
 	GuestClaimer         GuestClaimer
 	GuestRedeemer        GuestRedeemer
 	GuestUpgrader        GuestUpgrader
+
+	ProfileSettings  ProfileSettingsUpdater
+	PasswordSettings PasswordSettingsUpdater
+	LocaleSettings   LocaleSettingsUpdater
+	ThemeUpdater     AccountThemeUpdater
+	IdentityLister   IdentityLister
+	IdentityUnlinker IdentityUnlinker
+	IdentityLink     IdentityLinkStarter
 }
 
 // UserFinder resolves an account for an authenticated session.

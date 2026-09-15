@@ -1,0 +1,150 @@
+{{define "settings"}}
+  {{template "layout" .}}
+{{end}}
+
+{{define "settings-fragment"}}
+  <section id="page-content" aria-labelledby="page-heading">
+    <h1 id="page-heading" class="text-3xl font-semibold tracking-tight">{{.Heading}}</h1>
+    {{template "settings-content" .}}
+  </section>
+{{end}}
+
+{{define "settings-content"}}
+  <div id="page-content" class="grid gap-6 mt-6 w-full max-w-3xl">
+    {{with .Settings}}
+    <div role="tablist" class="tabs tabs-box" aria-label="Account settings sections">
+      <input id="settings-tab-profile" type="radio" name="settings-tabs" class="tab" aria-label="{{$.Labels.settings_profile}}" checked>
+      <input id="settings-tab-password" type="radio" name="settings-tabs" class="tab" aria-label="{{$.Labels.settings_password}}">
+      <input id="settings-tab-preferences" type="radio" name="settings-tabs" class="tab" aria-label="{{$.Labels.settings_preferences}}">
+      <input id="settings-tab-identities" type="radio" name="settings-tabs" class="tab" aria-label="{{$.Labels.settings_identities}}">
+    </div>
+
+    <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="profile-heading">
+      <div class="card-body">
+        <h2 id="profile-heading" class="card-title">{{$.Labels.settings_profile}}</h2>
+        <p>{{$.Labels.settings_profile_help}}</p>
+        <form class="grid gap-4" method="post" action="{{.ProfileAction}}" hx-post="{{.ProfileAction}}" hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this" hx-indicator=".htmx-indicator">
+          <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+          <fieldset class="fieldset">
+            <label class="fieldset-legend" for="settings-username">{{$.Labels.username}}</label>
+            <input id="settings-username" class="input w-full" name="username" autocomplete="username" value="{{ .Username | or ($.Form.Value "username") }}" aria-describedby="settings-username-error">
+            <p class="label">{{$.Labels.settings_username_help}}</p>
+            {{with $.Form.Error "username"}}<p id="settings-username-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
+          </fieldset>
+          <fieldset class="fieldset">
+            <label class="fieldset-legend" for="settings-display-name">{{$.Labels.display_name}}</label>
+            <input id="settings-display-name" class="input w-full" name="display_name" autocomplete="name" value="{{ .DisplayName | or ($.Form.Value "display_name") }}" aria-describedby="settings-display-name-error">
+            {{with $.Form.Error "display_name"}}<p id="settings-display-name-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
+          </fieldset>
+          <p class="text-sm opacity-70">{{$.Labels.settings_label_help}}</p>
+          <div>
+            <button class="btn btn-primary" type="submit">{{$.Labels.save}}</button>
+            <span class="htmx-indicator loading loading-spinner" aria-hidden="true"></span>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="password-heading">
+      <div class="card-body">
+        <h2 id="password-heading" class="card-title">{{$.Labels.settings_password}}</h2>
+        <p>{{if .HasPassword}}{{$.Labels.settings_password_change_help}}{{else}}{{$.Labels.settings_password_set_help}}{{end}}</p>
+        <form class="grid gap-4" method="post" action="{{.PasswordAction}}" hx-post="{{.PasswordAction}}" hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this" hx-indicator=".htmx-indicator">
+          <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+          {{if .HasPassword}}
+          <fieldset class="fieldset">
+            <label class="fieldset-legend" for="settings-current-password">{{$.Labels.current_password}}</label>
+            <input id="settings-current-password" class="input w-full" name="current_password" type="password" autocomplete="current-password" aria-describedby="settings-current-password-error">
+            {{with $.Form.Error "current_password"}}<p id="settings-current-password-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
+          </fieldset>
+          {{end}}
+          <fieldset class="fieldset">
+            <label class="fieldset-legend" for="settings-new-password">{{$.Labels.new_password}}</label>
+            <input id="settings-new-password" class="input w-full" name="new_password" type="password" autocomplete="new-password" aria-describedby="settings-new-password-error">
+            {{with $.Form.Error "new_password"}}<p id="settings-new-password-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
+          </fieldset>
+          <div>
+            <button class="btn btn-primary" type="submit">{{$.Labels.settings_password_submit}}</button>
+            <span class="htmx-indicator loading loading-spinner" aria-hidden="true"></span>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="preferences-heading">
+      <div class="card-body">
+        <h2 id="preferences-heading" class="card-title">{{$.Labels.settings_preferences}}</h2>
+        <form class="grid gap-4" method="post" action="{{.LocaleAction}}" hx-post="{{.LocaleAction}}" hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this" hx-indicator=".htmx-indicator">
+          <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+          <fieldset class="fieldset">
+            <label class="fieldset-legend" for="settings-locale">{{$.Labels.settings_language}}</label>
+            <select id="settings-locale" class="select w-full" name="locale" aria-describedby="settings-locale-error">
+              {{range .Languages}}
+                <option value="{{.Code}}" {{if .Current}}selected{{end}}>{{.Label}}</option>
+              {{end}}
+            </select>
+            {{with $.Form.Error "locale"}}<p id="settings-locale-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
+          </fieldset>
+          <div>
+            <button class="btn btn-primary" type="submit">{{$.Labels.save}}</button>
+            <span class="htmx-indicator loading loading-spinner" aria-hidden="true"></span>
+          </div>
+        </form>
+        <div class="divider"></div>
+        <h3 class="font-semibold">{{$.Labels.settings_theme}}</h3>
+        <label class="flex items-center gap-3">
+          <input class="toggle" id="settings-theme-toggle" type="checkbox" {{if eq .Theme "dark"}}checked{{end}} aria-label="{{$.Labels.settings_theme}}">
+          <span>{{$.Labels.settings_theme_toggle}}</span>
+        </label>
+      </div>
+    </section>
+
+    <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="identities-heading">
+      <div class="card-body">
+        <h2 id="identities-heading" class="card-title">{{$.Labels.settings_identities}}</h2>
+        <p>{{$.Labels.settings_identities_help}}</p>
+        {{if .Identities}}
+          <div class="overflow-x-auto">
+            <table class="table">
+              <thead>
+                <tr><th scope="col">{{$.Labels.settings_identity_provider}}</th><th scope="col">{{$.Labels.settings_identity_account}}</th><th scope="col"></th></tr>
+              </thead>
+              <tbody>
+                {{range .Identities}}
+                <tr>
+                  <td>{{.Provider}}</td>
+                  <td>{{.Label}}</td>
+                  <td class="text-right">
+                    {{if .Removable}}
+                    <form method="post" action="{{$.Settings.IdentityAction}}" hx-post="{{$.Settings.IdentityAction}}" hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this">
+                      <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+                      <input type="hidden" name="identity_id" value="{{.ID}}">
+                      <button class="btn btn-sm btn-error btn-outline" type="submit" aria-label="{{$.Settings.UnlinkLabel}} {{.Provider}}">{{$.Settings.UnlinkLabel}}</button>
+                    </form>
+                    {{end}}
+                  </td>
+                </tr>
+                {{end}}
+              </tbody>
+            </table>
+          </div>
+        {{else}}
+          <p class="text-sm opacity-70">{{$.Labels.settings_identities_empty}}</p>
+        {{end}}
+        {{if .Providers}}
+          <div class="divider">{{$.Labels.settings_identities_add}}</div>
+          <div class="flex flex-wrap gap-2">
+            {{range .Providers}}
+            <form method="post" action="{{$.Settings.LinkAction}}" hx-post="{{$.Settings.LinkAction}}" hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this">
+              <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+              <input type="hidden" name="provider" value="{{.Name}}">
+              <button class="btn btn-outline" type="submit" aria-label="{{$.Settings.LinkLabel}} {{.Name}}">{{$.Settings.LinkLabel}} {{.Name}}</button>
+            </form>
+            {{end}}
+          </div>
+        {{end}}
+      </div>
+    </section>
+    {{end}}
+  </div>
+{{end}}

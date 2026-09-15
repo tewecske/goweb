@@ -86,6 +86,13 @@ func main() {
 			GuestClaimer:         applicationGraph.GuestClaim,
 			GuestRedeemer:        applicationGraph.GuestRateLimited,
 			GuestUpgrader:        applicationGraph.GuestUpgrade,
+			ProfileSettings:      applicationGraph.ProfileSettings,
+			PasswordSettings:     applicationGraph.PasswordSettings,
+			LocaleSettings:       applicationGraph.LocaleSettings,
+			ThemeUpdater:         applicationGraph.Theme,
+			IdentityLister:       applicationGraph.OAuthIdentities,
+			IdentityUnlinker:     applicationGraph.OAuth,
+			IdentityLink:         applicationGraph.OAuth,
 		})
 	}
 

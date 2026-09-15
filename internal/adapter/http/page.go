@@ -59,6 +59,44 @@ type PageData struct {
 	GuestTransferCode string
 	Labels            map[string]string
 	Alerts            []Alert
+	Settings          *SettingsView
+}
+
+// SettingsView contains server-owned account settings data for rendering.
+type SettingsView struct {
+	Username       string
+	DisplayName    string
+	HasPassword    bool
+	Locale         string
+	Theme          string
+	Languages      []LanguageOption
+	Identities     []IdentityView
+	Providers      []OAuthProviderView
+	FormActionBase string
+	ProfileAction  string
+	PasswordAction string
+	LocaleAction   string
+	IdentityAction string
+	LinkAction     string
+	ThemeURL       string
+	UnlinkLabel    string
+	LinkLabel      string
+}
+
+// LanguageOption is one selectable account language.
+type LanguageOption struct {
+	Code    string
+	Label   string
+	Current bool
+}
+
+// IdentityView is one linked external identity for display. The permanent
+// provider subject is never part of this value.
+type IdentityView struct {
+	ID        int64
+	Provider  string
+	Label     string
+	Removable bool
 }
 
 // NavigationItem describes one internal navigation link.

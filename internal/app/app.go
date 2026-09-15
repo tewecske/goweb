@@ -48,6 +48,9 @@ type Graph struct {
 	GuestRateLimited     *service.RateLimitedGuestService
 	GuestCleanup         *service.GuestCleanupService
 	Theme                *service.ThemeService
+	ProfileSettings      *service.ProfileSettingsService
+	PasswordSettings     *service.PasswordSettingsService
+	LocaleSettings       *service.LocaleSettingsService
 }
 
 // New constructs the service graph over one migrated database. It performs no
@@ -183,6 +186,18 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct theme service: %w", err)
 	}
+	profileSettings, err := service.NewProfileSettingsService(users)
+	if err != nil {
+		return nil, fmt.Errorf("construct profile settings service: %w", err)
+	}
+	passwordSettings, err := service.NewPasswordSettingsService(users, passwordHasher, passwordHasher)
+	if err != nil {
+		return nil, fmt.Errorf("construct password settings service: %w", err)
+	}
+	localeSettings, err := service.NewLocaleSettingsService(users)
+	if err != nil {
+		return nil, fmt.Errorf("construct locale settings service: %w", err)
+	}
 
 	return &Graph{
 		Database: database, Users: users, Sessions: sessionsRepository,
@@ -197,6 +212,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		GuestSession: guestSession, GuestClaim: guestClaims,
 		GuestRedemption: guestRedemption, GuestUpgrade: guestUpgrade,
 		GuestRateLimited: guestRateLimited, GuestCleanup: guestCleanup, Theme: theme,
+		ProfileSettings: profileSettings, PasswordSettings: passwordSettings, LocaleSettings: localeSettings,
 	}, nil
 }
 

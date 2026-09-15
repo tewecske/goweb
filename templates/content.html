@@ -19,6 +19,8 @@
     {{template "guest-content" .}}
   {{else if eq .Kind "guest-upgrade"}}
     {{template "guest-content" .}}
+  {{else if eq .Kind "settings"}}
+    {{template "settings-content" .}}
   {{else}}
     {{template "state-content" .}}
   {{end}}
