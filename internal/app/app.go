@@ -32,6 +32,7 @@ type Graph struct {
 	OAuthIdentities      *postgresstore.OAuthIdentityRepository
 	Groups               *postgresstore.GroupRepository
 	GroupMemberships     *postgresstore.GroupMembershipRepository
+	AdminUsers           *postgresstore.AdminUserRepository
 	Providers            *service.ProviderRegistry
 	SessionService       *service.SessionService
 	PasswordHasher       *service.PasswordHasher
@@ -55,6 +56,7 @@ type Graph struct {
 	LocaleSettings       *service.LocaleSettingsService
 	Group                *service.GroupService
 	GroupJoin            *service.RateLimitedGroupJoiner
+	AdminAccounts        *service.AdminAccountService
 }
 
 // New constructs the service graph over one migrated database. It performs no
@@ -102,6 +104,10 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	groupMembershipsRepository, err := postgresstore.NewGroupMembershipRepository(database)
 	if err != nil {
 		return nil, fmt.Errorf("construct group membership repository: %w", err)
+	}
+	adminUsersRepository, err := postgresstore.NewAdminUserRepository(database)
+	if err != nil {
+		return nil, fmt.Errorf("construct admin user repository: %w", err)
 	}
 
 	sessionService, err := service.NewSessionService(sessionsRepository, appConfig.SessionLifetime)
@@ -224,6 +230,10 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct group join service: %w", err)
 	}
+	adminAccounts, err := service.NewAdminAccountService(users, adminUsersRepository)
+	if err != nil {
+		return nil, fmt.Errorf("construct admin account service: %w", err)
+	}
 
 	return &Graph{
 		Database: database, Users: users, Sessions: sessionsRepository,
@@ -240,6 +250,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		GuestRateLimited: guestRateLimited, GuestCleanup: guestCleanup, Theme: theme,
 		ProfileSettings: profileSettings, PasswordSettings: passwordSettings, LocaleSettings: localeSettings,
 		Groups: groupsRepository, GroupMemberships: groupMembershipsRepository, Group: groupService, GroupJoin: groupJoinService,
+		AdminUsers: adminUsersRepository, AdminAccounts: adminAccounts,
 	}, nil
 }
 
