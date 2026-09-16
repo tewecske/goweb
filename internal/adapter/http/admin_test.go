@@ -1369,3 +1369,98 @@ func (s adminDatastoreStatsStub) Counts(context.Context) (service.DatastoreCount
 	}
 	return s.counts, nil
 }
+
+func TestAdminRateLimitsListsRedactedBuckets(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminRateLimits = &adminRateLimitStub{
+		overview: []service.RateLimitActionInfo{{Action: "signin.identifier", Limit: 5, Window: time.Minute, Buckets: 1, Locked: 1}},
+		buckets:  []service.RateLimitBucketInfo{{Action: "signin.identifier", KeyHint: "s***********t", Count: 5, Limit: 5, RetryAfter: 30 * time.Second}},
+	}
+	handler := newAdminTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.rateLimits(response, authenticatedRequest(http.MethodGet, "/en/admin/ratelimits", 7, ""))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	body := response.Body.String()
+	for _, want := range []string{"Rate limits", "signin.identifier", "s***********t", "Locked"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("rate-limit body missing %q", want)
+		}
+	}
+	if strings.Contains(body, "sensitive@example.test") {
+		t.Errorf("rate-limit body leaked a raw limiter key")
+	}
+}
+
+func TestAdminRateLimitClearIsAuditedThroughService(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	manager := &adminRateLimitStub{}
+	dependencies.AdminRateLimits = manager
+	handler := newAdminTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.clearRateLimit(response, authenticatedRequest(http.MethodPost, "/en/admin/ratelimits/clear", 7, "_csrf=token&action=signin.identifier"))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if manager.clearedAction != "signin.identifier" {
+		t.Fatalf("cleared action = %q, want signin.identifier", manager.clearedAction)
+	}
+	if !strings.Contains(response.Body.String(), "Rate-limit budgets cleared.") {
+		t.Errorf("body missing cleared alert")
+	}
+}
+
+func TestAdminRateLimitClearAllClearsEveryBudget(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	manager := &adminRateLimitStub{}
+	dependencies.AdminRateLimits = manager
+	handler := newAdminTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.clearRateLimit(response, authenticatedRequest(http.MethodPost, "/en/admin/ratelimits/clear", 7, "_csrf=token"))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if manager.clearAllCalls != 1 {
+		t.Fatalf("ClearAll calls = %d, want 1", manager.clearAllCalls)
+	}
+}
+
+func TestAdminRateLimitUnknownActionReturnsNotFound(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminRateLimits = &adminRateLimitStub{clearErr: service.ErrUnknownRateLimitAction}
+	handler := newAdminTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.clearRateLimit(response, authenticatedRequest(http.MethodPost, "/en/admin/ratelimits/clear", 7, "_csrf=token&action=missing.action"))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
+	}
+}
+
+type adminRateLimitStub struct {
+	overview      []service.RateLimitActionInfo
+	buckets       []service.RateLimitBucketInfo
+	clearedAction string
+	clearErr      error
+	clearAllCalls int
+}
+
+func (s *adminRateLimitStub) Overview() []service.RateLimitActionInfo { return s.overview }
+
+func (s *adminRateLimitStub) Buckets(string) ([]service.RateLimitBucketInfo, error) {
+	return s.buckets, nil
+}
+
+func (s *adminRateLimitStub) ClearAction(_ context.Context, _ service.AdminActionContext, action string) (int, error) {
+	s.clearedAction = action
+	return 1, s.clearErr
+}
+
+func (s *adminRateLimitStub) ClearAll(context.Context, service.AdminActionContext) (int, error) {
+	s.clearAllCalls++
+	return 1, nil
+}

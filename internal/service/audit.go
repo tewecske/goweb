@@ -29,6 +29,7 @@ const (
 	AuditActionIdentityRemoved  = "admin.identity.removed"
 	AuditActionLockoutCleared   = "admin.lockout.cleared"
 	AuditActionMaintenanceRun   = "admin.maintenance.run"
+	AuditActionRateLimitCleared = "admin.ratelimit.cleared"
 )
 
 var (

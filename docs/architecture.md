@@ -44,6 +44,7 @@ Delivered feature areas:
 - `internal/service/system.go` produces the credential-free deployment configuration rendered on `/{language}/admin/system`; connection addresses are reduced to scheme and host.
 - `internal/service/runtime.go` reports live version, uptime, runtime, and migration state on the same page; `internal/app` adapts the migration runner so the HTTP adapter never imports the store package.
 - `internal/service/stats.go` and `internal/store/postgres/stats.go` supply cached aggregate data-store counts for the system page while current lockouts stay live.
+- `internal/service/rate_limit_admin.go` lists live budgets with redacted key hints and clears them through a separate, confirmed, audited action on `/{language}/admin/ratelimits`.
 - Localized routes live under `/{language}/account/settings`, `/{language}/account/theme`, and `/{language}/groups`.
 
 The public foundation route remains `GET /healthz`.

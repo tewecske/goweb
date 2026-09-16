@@ -17,6 +17,8 @@
     {{template "admin-audit-content" .}}
   {{else if and .Admin (eq .Admin.Page "system")}}
     {{template "admin-system-content" .}}
+  {{else if and .Admin (eq .Admin.Page "ratelimits")}}
+    {{template "admin-ratelimits-content" .}}
   {{else if and .Admin (eq .Admin.Page "users")}}
     {{template "admin-users-content" .}}
   {{else}}
@@ -247,6 +249,60 @@
            hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_next}}</a>
       {{end}}
     </nav>
+  </div>
+  {{end}}
+{{end}}
+
+{{define "admin-ratelimits-content"}}
+  {{with .Admin.Limits}}
+  <div id="page-content" class="mt-6 grid gap-6 w-full max-w-5xl">
+    <p class="text-sm opacity-70">{{$.Description}}</p>
+
+    <div class="flex justify-end">
+      <form method="post" action="{{.ClearAllURL}}" hx-post="{{.ClearAllURL}}"
+            hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this"
+            hx-confirm="{{.ClearConfirm}}">
+        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+        <button class="btn btn-sm btn-warning" type="submit">{{$.Labels.admin_ratelimits_clear_all}}</button>
+      </form>
+    </div>
+
+    {{range .Actions}}
+      <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="admin-ratelimit-{{.Action}}">
+        <div class="card-body">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 id="admin-ratelimit-{{.Action}}" class="card-title">{{.Action}}</h2>
+            <div class="flex items-center gap-2">
+              <span class="badge badge-neutral" data-testid="ratelimit-buckets">{{.Buckets}}</span>
+              {{if .Locked}}<span class="badge badge-warning">{{$.Labels.admin_ratelimits_locked}}: {{.Locked}}</span>{{end}}
+              <form method="post" action="{{.ClearURL}}" hx-post="{{.ClearURL}}"
+                    hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this"
+                    hx-confirm="{{$.Labels.admin_ratelimits_clear}}">
+                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+                <input type="hidden" name="action" value="{{.Action}}">
+                <button class="btn btn-xs btn-warning" type="submit">{{$.Labels.admin_ratelimits_clear}}</button>
+              </form>
+            </div>
+          </div>
+          <dl class="grid grid-cols-1 gap-2 md:grid-cols-3">
+            <div><dt class="text-sm opacity-70">{{$.Labels.admin_ratelimits_limit}}</dt><dd>{{.Limit}}</dd></div>
+            <div><dt class="text-sm opacity-70">{{$.Labels.admin_ratelimits_window}}</dt><dd>{{.Window}}</dd></div>
+          </dl>
+          {{if .Entries}}
+            <div class="overflow-x-auto">
+              <table class="table">
+                <thead><tr><th scope="col">{{$.Labels.admin_ratelimits_key}}</th><th scope="col">{{$.Labels.admin_ratelimits_count}}</th><th scope="col">{{$.Labels.admin_ratelimits_limit}}</th><th scope="col">{{$.Labels.admin_ratelimits_retry}}</th></tr></thead>
+                <tbody>
+                  {{range .Entries}}<tr><td>{{.KeyHint}}</td><td>{{.Count}}</td><td>{{.Limit}}</td><td>{{.Retry}}</td></tr>{{end}}
+                </tbody>
+              </table>
+            </div>
+          {{else}}
+            <p class="text-sm opacity-70">{{$.Labels.admin_ratelimits_empty}}</p>
+          {{end}}
+        </div>
+      </section>
+    {{end}}
   </div>
   {{end}}
 {{end}}

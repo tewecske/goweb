@@ -121,6 +121,7 @@ func main() {
 			AdminSystemConfig:    applicationGraph.SystemInfo,
 			AdminRuntime:         applicationGraph.RuntimeInfo,
 			AdminDatastoreStats:  applicationGraph.DatastoreStatsService,
+			AdminRateLimits:      applicationGraph.RateLimits,
 		})
 	}
 

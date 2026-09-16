@@ -66,6 +66,7 @@ type Dependencies struct {
 	AdminSystemConfig   service.SystemConfigurationProvider
 	AdminRuntime        AdminRuntimeProvider
 	AdminDatastoreStats AdminDatastoreStatsReader
+	AdminRateLimits     AdminRateLimitManager
 }
 
 // AdminAccountLister lists accounts for the administrator area.
@@ -141,6 +142,14 @@ type AdminRuntimeProvider interface {
 // AdminDatastoreStatsReader reports safe aggregate data-store counts.
 type AdminDatastoreStatsReader interface {
 	Counts(context.Context) (service.DatastoreCounts, error)
+}
+
+// AdminRateLimitManager lists and clears live rate-limit budgets.
+type AdminRateLimitManager interface {
+	Overview() []service.RateLimitActionInfo
+	Buckets(string) ([]service.RateLimitBucketInfo, error)
+	ClearAction(context.Context, service.AdminActionContext, string) (int, error)
+	ClearAll(context.Context, service.AdminActionContext) (int, error)
 }
 
 // UserFinder resolves an account for an authenticated session.

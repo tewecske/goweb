@@ -77,6 +77,7 @@ type AdminView struct {
 	Detail   *AdminDetailView
 	Audit    *AdminAuditView
 	System   *AdminSystemView
+	Limits   *AdminRateLimitView
 }
 
 // AdminSystemView contains administrator system health data. It never carries
@@ -89,6 +90,33 @@ type AdminSystemView struct {
 	Runtime       *AdminSystemRuntimeView
 	Migrations    []AdminMigrationView
 	Counts        *AdminDatastoreCountsView
+}
+
+// AdminRateLimitView is the live rate-limit page state.
+type AdminRateLimitView struct {
+	ClearURL     string
+	ClearAllURL  string
+	ClearConfirm string
+	Actions      []AdminRateLimitActionView
+}
+
+// AdminRateLimitActionView is one live rate-limit action.
+type AdminRateLimitActionView struct {
+	Action   string
+	Limit    int
+	Window   string
+	Buckets  int
+	Locked   int
+	ClearURL string
+	Entries  []AdminRateLimitBucketView
+}
+
+// AdminRateLimitBucketView is one redacted live budget.
+type AdminRateLimitBucketView struct {
+	KeyHint string
+	Count   int
+	Limit   int
+	Retry   string
 }
 
 // AdminDatastoreCountsView is the safe data-store health summary.

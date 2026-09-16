@@ -56,3 +56,38 @@ test.describe("M8 system maintenance", () => {
     await expect(page).toHaveURL(/\/en\/sign-in$/);
   });
 });
+
+test.describe("M8 rate-limit administration", () => {
+  test.skip(!enabled, "set GOWEB_BROWSER_E2E=1 to run browser acceptance specs");
+  test.skip(!adminEnabled, "requires database and bootstrap administrator fixture");
+
+  test("lists redacted live budgets and clears them as an audited action", async ({ browser, page }) => {
+    const anon = await browser.newContext();
+    try {
+      const anonPage = await anon.newPage();
+      await anonPage.goto("/en/sign-in");
+      const csrf = await anonPage.locator('input[name="_csrf"]').first().inputValue();
+      for (const attempt of ["first", "second"]) {
+        const response = await anonPage.request.post("/en/sign-in", {
+          form: { _csrf: csrf, identifier: `${attempt}-unknown@example.test`, password: "wrong-password-value" },
+        });
+        expect(response.status()).toBe(401);
+      }
+    } finally {
+      await anon.close();
+    }
+
+    await signInAdmin(page);
+    await page.goto("/en/admin/ratelimits");
+    await expect(page.getByRole("heading", { level: 1, name: /rate limits/i })).toBeVisible();
+    await expect(page.locator('section[aria-labelledby^="admin-ratelimit-"]').first()).toBeVisible();
+    await expect(page.locator("body")).not.toContainText(/-unknown@example\.test/);
+
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: /clear this action/i }).first().click();
+    await expect(page.getByText(/rate-limit budgets cleared\./i)).toBeVisible();
+
+    await page.goto("/en/admin/audit?action=admin.ratelimit.cleared");
+    await expect(page.locator("tbody tr").first()).toContainText("admin.ratelimit.cleared");
+  });
+});

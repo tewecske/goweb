@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +25,9 @@ var (
 	ErrRateLimitCapacity = errors.New("service: rate limit capacity reached")
 	// ErrRateLimited identifies a caller over an authentication budget.
 	ErrRateLimited = errors.New("service: rate limited")
+	// ErrUnknownRateLimitAction identifies an inspect request for an action
+	// with no live budgets.
+	ErrUnknownRateLimitAction = errors.New("service: unknown rate limit action")
 )
 
 // RateLimitConfig controls one fixed-window budget shared by independent keys.
@@ -61,6 +65,8 @@ func (e RateLimitError) Unwrap() error {
 }
 
 type rateLimitBucket struct {
+	action  string
+	key     string
 	started time.Time
 	count   int
 }
@@ -108,10 +114,10 @@ func (l *RateLimiter) Allow(action, key string) (RateLimitDecision, error) {
 		if len(l.buckets) >= l.config.MaxKeys {
 			return RateLimitDecision{}, ErrRateLimitCapacity
 		}
-		bucket = rateLimitBucket{started: now}
+		bucket = rateLimitBucket{action: action, key: key, started: now}
 	}
 	if now.Sub(bucket.started) >= l.config.Window {
-		bucket = rateLimitBucket{started: now}
+		bucket = rateLimitBucket{action: action, key: key, started: now}
 	}
 	if bucket.count >= l.config.Limit {
 		return RateLimitDecision{
@@ -163,6 +169,128 @@ func (l *RateLimiter) LockedCount() int {
 		}
 	}
 	return locked
+}
+
+// RateLimitActionInfo is one action's live budget summary. It never carries
+// limiter keys.
+type RateLimitActionInfo struct {
+	Action  string
+	Limit   int
+	Window  time.Duration
+	Buckets int
+	Locked  int
+}
+
+// RateLimitBucketInfo is one live budget with a redacted key hint.
+type RateLimitBucketInfo struct {
+	Action     string
+	KeyHint    string
+	Count      int
+	Limit      int
+	RetryAfter time.Duration
+}
+
+// Actions returns one summary per action currently held by the limiter.
+func (l *RateLimiter) Actions() []RateLimitActionInfo {
+	if l == nil || l.now == nil || l.buckets == nil {
+		return nil
+	}
+	now := l.now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.pruneExpired(now)
+	index := make(map[string]int)
+	actions := make([]RateLimitActionInfo, 0)
+	for _, bucket := range l.buckets {
+		position, exists := index[bucket.action]
+		if !exists {
+			position = len(actions)
+			index[bucket.action] = position
+			actions = append(actions, RateLimitActionInfo{
+				Action: bucket.action,
+				Limit:  l.config.Limit,
+				Window: l.config.Window,
+			})
+		}
+		actions[position].Buckets++
+		if bucket.count >= l.config.Limit {
+			actions[position].Locked++
+		}
+	}
+	sort.Slice(actions, func(i, j int) bool { return actions[i].Action < actions[j].Action })
+	return actions
+}
+
+// Buckets returns redacted live budgets for one action.
+func (l *RateLimiter) Buckets(action string) ([]RateLimitBucketInfo, error) {
+	if l == nil || l.now == nil || l.buckets == nil {
+		return nil, ErrInvalidRateLimitConfig
+	}
+	if err := validateRateLimitKey(action); err != nil {
+		return nil, err
+	}
+	now := l.now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.pruneExpired(now)
+	buckets := make([]RateLimitBucketInfo, 0)
+	for _, bucket := range l.buckets {
+		if bucket.action != action {
+			continue
+		}
+		buckets = append(buckets, RateLimitBucketInfo{
+			Action:     bucket.action,
+			KeyHint:    redactRateLimitKey(bucket.key),
+			Count:      bucket.count,
+			Limit:      l.config.Limit,
+			RetryAfter: l.config.Window - now.Sub(bucket.started),
+		})
+	}
+	sort.Slice(buckets, func(i, j int) bool { return buckets[i].Count > buckets[j].Count })
+	return buckets, nil
+}
+
+// ClearAction removes every budget for one action and returns the removed
+// count. Clearing an unknown action is a successful no-op.
+func (l *RateLimiter) ClearAction(action string) (int, error) {
+	if l == nil || l.buckets == nil {
+		return 0, ErrInvalidRateLimitConfig
+	}
+	if err := validateRateLimitKey(action); err != nil {
+		return 0, err
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	removed := 0
+	for key, bucket := range l.buckets {
+		if bucket.action == action {
+			delete(l.buckets, key)
+			removed++
+		}
+	}
+	return removed, nil
+}
+
+// ClearAll removes every live budget and returns the removed count.
+func (l *RateLimiter) ClearAll() int {
+	if l == nil || l.buckets == nil {
+		return 0
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	removed := len(l.buckets)
+	l.buckets = make(map[string]rateLimitBucket)
+	return removed
+}
+
+// redactRateLimitKey keeps a short, non-reversible hint so administrators can
+// distinguish budgets without exposing an email address or request origin.
+func redactRateLimitKey(key string) string {
+	runes := []rune(key)
+	if len(runes) <= 2 {
+		return strings.Repeat("*", len(runes))
+	}
+	return string(runes[0]) + strings.Repeat("*", len(runes)-2) + string(runes[len(runes)-1])
 }
 
 // RateLimitSnapshot is the read-only state of one action/key budget used for

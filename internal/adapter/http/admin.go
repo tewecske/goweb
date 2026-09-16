@@ -988,6 +988,7 @@ func (h *adminHandler) renderAdmin(writer http.ResponseWriter, request *http.Req
 				{ID: "accounts", Label: h.t(language, "admin.nav.accounts"), URL: localizedPath(language, "/admin/users")},
 				{ID: "audit", Label: h.t(language, "admin.nav.audit"), URL: localizedPath(language, "/admin/audit")},
 				{ID: "system", Label: h.t(language, "admin.nav.system"), URL: localizedPath(language, "/admin/system")},
+				{ID: "ratelimits", Label: h.t(language, "admin.nav.ratelimits"), URL: localizedPath(language, "/admin/ratelimits")},
 			},
 		},
 	}
@@ -1161,6 +1162,17 @@ func (h *adminHandler) labels(language locale.Code) map[string]string {
 		"admin_system_counts_failed_signins":   h.t(language, "admin.system.counts.failed_signins"),
 		"admin_system_counts_lockouts":         h.t(language, "admin.system.counts.lockouts"),
 		"admin_system_counts_error":            h.t(language, "admin.system.counts.error"),
+		"admin_ratelimits_action":              h.t(language, "admin.ratelimits.action"),
+		"admin_ratelimits_limit":               h.t(language, "admin.ratelimits.limit"),
+		"admin_ratelimits_window":              h.t(language, "admin.ratelimits.window"),
+		"admin_ratelimits_buckets":             h.t(language, "admin.ratelimits.buckets"),
+		"admin_ratelimits_locked":              h.t(language, "admin.ratelimits.locked"),
+		"admin_ratelimits_key":                 h.t(language, "admin.ratelimits.key"),
+		"admin_ratelimits_count":               h.t(language, "admin.ratelimits.count"),
+		"admin_ratelimits_retry":               h.t(language, "admin.ratelimits.retry"),
+		"admin_ratelimits_clear":               h.t(language, "admin.ratelimits.clear"),
+		"admin_ratelimits_clear_all":           h.t(language, "admin.ratelimits.clear_all"),
+		"admin_ratelimits_empty":               h.t(language, "admin.ratelimits.empty"),
 	}
 }
 
@@ -1187,6 +1199,113 @@ func (h *adminHandler) system(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 	h.renderSystem(writer, request, language, user, nil, http.StatusOK)
+}
+
+// rateLimits renders the live rate-limit list for administrators.
+func (h *adminHandler) rateLimits(writer http.ResponseWriter, request *http.Request) {
+	user, language, ok := h.authorize(writer, request)
+	if !ok {
+		return
+	}
+	if request.Method != http.MethodGet {
+		writer.Header().Set("Allow", http.MethodGet)
+		writer.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	h.renderRateLimits(writer, request, language, user, nil, http.StatusOK)
+}
+
+// clearRateLimit clears one action's budgets or every live budget as a
+// separate, confirmed, and audited administrator action.
+func (h *adminHandler) clearRateLimit(writer http.ResponseWriter, request *http.Request) {
+	user, language, ok := h.authorize(writer, request)
+	if !ok {
+		return
+	}
+	if request.Method != http.MethodPost {
+		writer.Header().Set("Allow", http.MethodPost)
+		writer.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if h.dependencies.AdminRateLimits == nil {
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+		return
+	}
+	action := strings.TrimSpace(request.PostFormValue("action"))
+	var (
+		removed int
+		err     error
+	)
+	if action == "" {
+		removed, err = h.dependencies.AdminRateLimits.ClearAll(request.Context(), adminActionContext(user, request))
+	} else {
+		removed, err = h.dependencies.AdminRateLimits.ClearAction(request.Context(), adminActionContext(user, request), action)
+	}
+	if err != nil && !errors.Is(err, service.ErrUnknownRateLimitAction) {
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+		return
+	}
+	_ = removed
+	alerts := []Alert{{Level: "success", Message: h.t(language, "admin.ratelimits.cleared")}}
+	status := http.StatusOK
+	if errors.Is(err, service.ErrUnknownRateLimitAction) {
+		alerts = []Alert{{Level: "error", Message: h.t(language, "admin.ratelimits.unknown")}}
+		status = http.StatusNotFound
+	}
+	h.renderRateLimits(writer, request, language, user, alerts, status)
+}
+
+func (h *adminHandler) renderRateLimits(writer http.ResponseWriter, request *http.Request, language locale.Code, user service.User, alerts []Alert, status int) {
+	base := localizedPath(language, "/admin/ratelimits")
+	view := &AdminRateLimitView{
+		ClearURL:     base + "/clear",
+		ClearAllURL:  base + "/clear",
+		ClearConfirm: h.t(language, "admin.ratelimits.clear_confirm"),
+	}
+	if h.dependencies.AdminRateLimits != nil {
+		for _, action := range h.dependencies.AdminRateLimits.Overview() {
+			actionView := AdminRateLimitActionView{
+				Action:   action.Action,
+				Limit:    action.Limit,
+				Window:   formatAdminDuration(action.Window),
+				Buckets:  action.Buckets,
+				Locked:   action.Locked,
+				ClearURL: base + "/clear",
+			}
+			if buckets, err := h.dependencies.AdminRateLimits.Buckets(action.Action); err == nil {
+				for _, bucket := range buckets {
+					actionView.Entries = append(actionView.Entries, AdminRateLimitBucketView{
+						KeyHint: bucket.KeyHint,
+						Count:   bucket.Count,
+						Limit:   bucket.Limit,
+						Retry:   formatAdminDuration(bucket.RetryAfter),
+					})
+				}
+			}
+			view.Actions = append(view.Actions, actionView)
+		}
+	}
+	pageData := PageData{
+		Language:         string(language),
+		Title:            h.t(language, "admin.ratelimits.title"),
+		Heading:          h.t(language, "admin.ratelimits.heading"),
+		Description:      h.t(language, "admin.ratelimits.description"),
+		Kind:             "admin",
+		CSRFToken:        csrfToken(request),
+		Template:         "admin",
+		FragmentTemplate: "admin-fragment",
+		Alerts:           alerts,
+		Labels:           h.labels(language),
+		Account:          settingsAccountMenu(language, user),
+		Admin: &AdminView{
+			IsAdmin: true,
+			Page:    "ratelimits",
+			Limits:  view,
+		},
+	}
+	if err := h.settings.Render(writer, request, pageData, status); err != nil {
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+	}
 }
 
 // runMaintenance executes every scheduled cleanup job immediately as a separate,

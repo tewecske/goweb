@@ -71,6 +71,7 @@ type Graph struct {
 	SystemInfo            *service.SystemInfoService
 	RuntimeInfo           *service.RuntimeInfoService
 	DatastoreStatsService *service.DatastoreStatsService
+	RateLimits            *service.RateLimitAdminService
 }
 
 // New constructs the service graph over one migrated database. It performs no
@@ -291,6 +292,17 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct datastore stats service: %w", err)
 	}
+	rateLimits, err := service.NewRateLimitAdminService(
+		auditService,
+		signInLimiter,
+		confirmationLimiter,
+		passwordResetLimiter,
+		guestLimiter,
+		groupJoinLimiter,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("construct rate limit admin service: %w", err)
+	}
 	maintenanceWorker, err := service.NewMaintenanceWorker(
 		service.DefaultMaintenanceInterval,
 		service.MaintenanceJob{Name: service.MaintenanceJobGuestCleanup, Run: guestCleanup.Cleanup},
@@ -343,6 +355,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		RuntimeInfo:           runtimeInfo,
 		DatastoreStats:        datastoreStatsRepository,
 		DatastoreStatsService: datastoreStats,
+		RateLimits:            rateLimits,
 	}, nil
 }
 
