@@ -78,5 +78,7 @@ make check
 The complete application requirements are in [gptsummary.md](gptsummary.md).
 
 See [local development setup](docs/local-development.md) for tool requirements,
-database status, development commands, and project conventions. Contributions
-follow [CONTRIBUTING.md](CONTRIBUTING.md).
+database status, development commands, and project conventions. Production
+rollout, migrations, rollback limits, backups, and recovery are covered by the
+[deployment and migration runbook](docs/deployment.md). Contributions follow
+[CONTRIBUTING.md](CONTRIBUTING.md).
