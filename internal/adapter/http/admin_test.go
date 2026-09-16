@@ -825,3 +825,94 @@ func (s *adminConfirmationStub) SendConfirmation(_ context.Context, _ service.Ad
 	s.sendID = id
 	return s.err
 }
+
+func TestAdminRemoveIdentitySucceeds(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminUserDetailer = &adminUserDetailerStub{detail: service.AdminUserDetail{User: service.User{ID: 9, Email: strPtr("target@example.test")}}}
+	identity := &adminIdentityStub{}
+	dependencies.AdminIdentity = identity
+	handler := newAdminTestHandler(t, dependencies)
+
+	request := authenticatedRequest(http.MethodPost, "/en/admin/users/9/identities/4/remove", 7, "")
+	request.SetPathValue("id", "9")
+	request.SetPathValue("identityID", "4")
+	response := httptest.NewRecorder()
+	handler.removeIdentity(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if identity.accountID != 9 || identity.identityID != 4 {
+		t.Fatalf("remove = account %d identity %d, want 9/4", identity.accountID, identity.identityID)
+	}
+	if !strings.Contains(response.Body.String(), "Linked provider removed") {
+		t.Errorf("body missing removal message")
+	}
+}
+
+func TestAdminRemoveIdentityErrors(t *testing.T) {
+	tests := []struct {
+		name   string
+		err    error
+		status int
+	}{
+		{name: "missing account", err: service.ErrRecordNotFound, status: http.StatusNotFound},
+		{name: "last method", err: service.ErrOAuthLastSignInMethod, status: http.StatusUnprocessableEntity},
+		{name: "missing identity", err: service.ErrOAuthIdentityNotFound, status: http.StatusNotFound},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dependencies := adminStubDependencies(t, true)
+			dependencies.AdminUserDetailer = &adminUserDetailerStub{}
+			dependencies.AdminIdentity = &adminIdentityStub{err: test.err}
+			handler := newAdminTestHandler(t, dependencies)
+			request := authenticatedRequest(http.MethodPost, "/en/admin/users/9/identities/4/remove", 7, "")
+			request.SetPathValue("id", "9")
+			request.SetPathValue("identityID", "4")
+			response := httptest.NewRecorder()
+			handler.removeIdentity(response, request)
+			if response.Code != test.status {
+				t.Fatalf("status = %d, want %d", response.Code, test.status)
+			}
+		})
+	}
+}
+
+func TestAdminRemoveIdentityInvalidIdentityID(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminIdentity = &adminIdentityStub{}
+	handler := newAdminTestHandler(t, dependencies)
+	request := authenticatedRequest(http.MethodPost, "/en/admin/users/9/identities/abc/remove", 7, "")
+	request.SetPathValue("id", "9")
+	request.SetPathValue("identityID", "abc")
+	response := httptest.NewRecorder()
+	handler.removeIdentity(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
+	}
+}
+
+func TestAdminRemoveIdentityRejectsNonAdmin(t *testing.T) {
+	dependencies := adminStubDependencies(t, false)
+	dependencies.AdminIdentity = &adminIdentityStub{}
+	handler := newAdminTestHandler(t, dependencies)
+	request := authenticatedRequest(http.MethodPost, "/en/admin/users/9/identities/4/remove", 7, "")
+	request.SetPathValue("id", "9")
+	request.SetPathValue("identityID", "4")
+	response := httptest.NewRecorder()
+	handler.removeIdentity(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+}
+
+type adminIdentityStub struct {
+	accountID  int64
+	identityID int64
+	err        error
+}
+
+func (s *adminIdentityStub) RemoveIdentity(_ context.Context, _ service.AdminActionContext, accountID, identityID int64) error {
+	s.accountID = accountID
+	s.identityID = identityID
+	return s.err
+}

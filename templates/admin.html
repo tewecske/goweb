@@ -122,9 +122,24 @@
         {{if .Identities}}
           <div class="overflow-x-auto">
             <table class="table">
-              <thead><tr><th scope="col">{{$.Labels.admin_providers_provider}}</th><th scope="col">{{$.Labels.admin_providers_account}}</th></tr></thead>
+              <thead><tr><th scope="col">{{$.Labels.admin_providers_provider}}</th><th scope="col">{{$.Labels.admin_providers_account}}</th><th scope="col"></th></tr></thead>
               <tbody>
-                {{range .Identities}}<tr><td>{{.Provider}}</td><td>{{.Label}}</td></tr>{{end}}
+                {{range .Identities}}
+                  <tr>
+                    <td>{{.Provider}}</td>
+                    <td>{{.Label}}</td>
+                    <td class="text-right">
+                      {{if .Removable}}
+                        <form method="post" action="{{.RemoveURL}}" hx-post="{{.RemoveURL}}"
+                              hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this"
+                              hx-confirm="{{$.Labels.admin_identity_remove}}">
+                          <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+                          <button class="btn btn-xs btn-error btn-outline" type="submit">{{$.Labels.admin_identity_remove}}</button>
+                        </form>
+                      {{end}}
+                    </td>
+                  </tr>
+                {{end}}
               </tbody>
             </table>
           </div>

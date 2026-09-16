@@ -58,6 +58,7 @@ type Dependencies struct {
 	AdminUserDetailer   AdminUserDetailer
 	AdminSessionRevoker AdminSessionRevoker
 	AdminConfirmation   AdminConfirmationManager
+	AdminIdentity       AdminIdentityManager
 }
 
 // AdminAccountLister lists accounts for the administrator area.
@@ -93,6 +94,11 @@ type AdminSessionRevoker interface {
 type AdminConfirmationManager interface {
 	ConfirmEmail(context.Context, service.AdminActionContext, int64) error
 	SendConfirmation(context.Context, service.AdminActionContext, int64) error
+}
+
+// AdminIdentityManager removes a linked external identity from an account.
+type AdminIdentityManager interface {
+	RemoveIdentity(context.Context, service.AdminActionContext, int64, int64) error
 }
 
 // UserFinder resolves an account for an authenticated session.

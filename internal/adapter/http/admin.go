@@ -176,6 +176,56 @@ func (h *adminHandler) adminConfirmationAction(writer http.ResponseWriter, reque
 	}
 }
 
+// removeIdentity removes a linked provider while enforcing the last-credential
+// rule on the server.
+func (h *adminHandler) removeIdentity(writer http.ResponseWriter, request *http.Request) {
+	user, language, ok := h.authorize(writer, request)
+	if !ok {
+		return
+	}
+	if request.Method != http.MethodPost {
+		writer.Header().Set("Allow", http.MethodPost)
+		writer.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	accountID, err := pathID(request)
+	if err != nil {
+		h.renderState(writer, request, language, PageStateNotFound)
+		return
+	}
+	identityID, err := pathIdentityID(request)
+	if err != nil {
+		h.renderState(writer, request, language, PageStateNotFound)
+		return
+	}
+	if h.dependencies.AdminIdentity == nil {
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+		return
+	}
+	err = h.dependencies.AdminIdentity.RemoveIdentity(request.Context(), adminActionContext(user, request), accountID, identityID)
+	switch {
+	case err == nil:
+		h.renderDetail(writer, request, language, user, accountID, []Alert{{Level: "success", Message: h.t(language, "admin.identity.removed")}}, http.StatusOK)
+	case errors.Is(err, service.ErrRecordNotFound):
+		h.renderState(writer, request, language, PageStateNotFound)
+	case errors.Is(err, service.ErrOAuthLastSignInMethod):
+		h.renderDetail(writer, request, language, user, accountID, []Alert{{Level: "error", Message: h.t(language, "admin.error.last_identity")}}, http.StatusUnprocessableEntity)
+	case errors.Is(err, service.ErrOAuthIdentityNotFound):
+		h.renderDetail(writer, request, language, user, accountID, []Alert{{Level: "error", Message: h.t(language, "admin.error.identity_not_found")}}, http.StatusNotFound)
+	default:
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+	}
+}
+
+func pathIdentityID(request *http.Request) (int64, error) {
+	value := strings.TrimSpace(request.PathValue("identityID"))
+	id, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, service.ErrOAuthIdentityNotFound
+	}
+	return id, nil
+}
+
 // renderDetail re-reads authoritative diagnostics and renders them.
 func (h *adminHandler) renderDetail(writer http.ResponseWriter, request *http.Request, language locale.Code, user service.User, accountID int64, alerts []Alert, status int) {
 	if h.dependencies.AdminUserDetailer == nil {
@@ -268,6 +318,7 @@ func (h *adminHandler) detailView(language locale.Code, detail service.AdminUser
 			Provider:  identity.Provider,
 			Label:     identityLabelFor(identity),
 			Removable: true,
+			RemoveURL: localizedPath(language, "/admin/users/"+strconv.FormatInt(account.ID, 10)+"/identities/"+strconv.FormatInt(identity.ID, 10)+"/remove"),
 		})
 	}
 	return view

@@ -259,6 +259,7 @@ type IdentityView struct {
 	Provider  string
 	Label     string
 	Removable bool
+	RemoveURL string
 }
 
 // NavigationItem describes one internal navigation link.

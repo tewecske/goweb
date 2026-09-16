@@ -102,6 +102,7 @@ func main() {
 			AdminUserDetailer:    applicationGraph.AdminDiagnostics,
 			AdminSessionRevoker:  applicationGraph.AdminAccounts,
 			AdminConfirmation:    applicationGraph.AdminConfirmation,
+			AdminIdentity:        applicationGraph.AdminIdentity,
 		})
 	}
 
