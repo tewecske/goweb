@@ -80,4 +80,4 @@ Tests must cover success and failure paths, remain isolated and repeatable, and 
 
 ## Documentation
 
-Read `docs/architecture.md`, `docs/dependency-policy.md`, `docs/local-development.md`, and `docs/deployment.md` before changing related boundaries. Update documentation when commands, configuration, package responsibilities, or deployment steps change.
+Read `docs/architecture.md`, `docs/dependency-policy.md`, `docs/local-development.md`, `docs/deployment.md`, `docs/bootstrap-admin.md`, `docs/backup-retention.md`, and `docs/threat-model.md` before changing related boundaries. Update documentation when commands, configuration, package responsibilities, deployment steps, or security controls change.

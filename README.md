@@ -83,5 +83,6 @@ rollout, migrations, rollback limits, backups, and recovery are covered by the
 [deployment and migration runbook](docs/deployment.md), and first-admin setup by
 the [bootstrap administrator procedure](docs/bootstrap-admin.md). Data
 retention and datastore backups are described in
-[backup and retention](docs/backup-retention.md). Contributions follow
-[CONTRIBUTING.md](CONTRIBUTING.md).
+[backup and retention](docs/backup-retention.md), and trust boundaries and
+bearer credentials in the [security threat model](docs/threat-model.md).
+Contributions follow [CONTRIBUTING.md](CONTRIBUTING.md).
