@@ -44,6 +44,8 @@ var (
 	ErrInvalidAdminQuery = errors.New("service: invalid admin query")
 	// ErrNilAdminUserRepository identifies missing administrator list persistence.
 	ErrNilAdminUserRepository = errors.New("service: nil admin user repository")
+	// ErrAdminSelfAction identifies an administrator action against their own account that is refused.
+	ErrAdminSelfAction = errors.New("service: administrator self-protection")
 )
 
 // AdminUserQuery is the bounded, server-validated account-list query. Page,
@@ -237,6 +239,9 @@ func (s *AdminAccountService) Update(ctx context.Context, actor AdminActionConte
 	if actor.ActorID <= 0 || targetID <= 0 || input.Version < 0 {
 		return User{}, ErrInvalidAdminQuery
 	}
+	if actor.ActorID == targetID && !input.IsAdmin {
+		return User{}, ErrAdminSelfAction
+	}
 	email, err := NormalizeEmail(input.Email)
 	if err != nil || email == "" {
 		return User{}, ErrInvalidEmail
@@ -278,6 +283,54 @@ func (s *AdminAccountService) Update(ctx context.Context, actor AdminActionConte
 	updated.PasswordHash = nil
 	s.record(ctx, actor, AuditActionAccountUpdated, updated, email)
 	return updated, nil
+}
+
+// Delete removes an account and its dependent credentials after an explicit
+// confirmation. Owned records cascade at the data store, while historical
+// audit and sign-in records survive with nullable references. An administrator
+// can never delete their own account.
+func (s *AdminAccountService) Delete(ctx context.Context, actor AdminActionContext, targetID, expectedVersion int64) error {
+	if s == nil || s.users == nil || s.adminUsers == nil {
+		return ErrInvalidAdminQuery
+	}
+	if ctx == nil {
+		return errors.New("service: nil admin delete context")
+	}
+	if actor.ActorID <= 0 || targetID <= 0 || expectedVersion < 0 {
+		return ErrInvalidAdminQuery
+	}
+	if actor.ActorID == targetID {
+		return ErrAdminSelfAction
+	}
+	target, err := s.users.FindUserByID(ctx, targetID)
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			return ErrRecordNotFound
+		}
+		return err
+	}
+	if err := s.users.DeleteUser(ctx, targetID, expectedVersion); err != nil {
+		switch {
+		case errors.Is(err, ErrUserNotFound):
+			return ErrRecordNotFound
+		case errors.Is(err, ErrOptimisticLockConflict):
+			return err
+		default:
+			return err
+		}
+	}
+	s.record(ctx, actor, AuditActionAccountDeleted, target, adminAccountDetail(target))
+	return nil
+}
+
+func adminAccountDetail(user User) string {
+	if user.Email != nil {
+		return *user.Email
+	}
+	if user.Username != nil {
+		return *user.Username
+	}
+	return strconv.FormatInt(user.ID, 10)
 }
 
 // record stores one administrator action as a best-effort audit event. A

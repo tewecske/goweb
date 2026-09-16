@@ -123,6 +123,8 @@ type AdminAccountFormView struct {
 	IsAdmin     bool
 	Version     int64
 	SubmitLabel string
+	DeleteURL   string
+	IsSelf      bool
 }
 
 // AdminUserRowView is one account row in the administrator list.

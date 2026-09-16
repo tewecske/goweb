@@ -67,10 +67,12 @@ type AdminAccountCreator interface {
 	Create(context.Context, service.AdminActionContext, service.AdminAccountInput) (service.User, error)
 }
 
-// AdminAccountEditor reads and atomically updates an account for an administrator.
+// AdminAccountEditor reads, atomically updates, and deletes an account for an
+// administrator.
 type AdminAccountEditor interface {
 	Find(context.Context, int64) (service.User, error)
 	Update(context.Context, service.AdminActionContext, int64, service.AdminAccountUpdateInput) (service.User, error)
+	Delete(context.Context, service.AdminActionContext, int64, int64) error
 }
 
 // UserFinder resolves an account for an authenticated session.

@@ -68,6 +68,22 @@
           <span class="htmx-indicator loading loading-spinner" aria-hidden="true"></span>
         </div>
       </form>
+      {{if and .Admin.List.Form.DeleteURL (not .Admin.List.Form.IsSelf)}}
+        <div class="divider"></div>
+        <form class="grid gap-3" method="post" action="{{.Admin.List.Form.DeleteURL}}"
+              hx-post="{{.Admin.List.Form.DeleteURL}}" hx-target="#page-content" hx-swap="outerHTML"
+              hx-disabled-elt="this" hx-confirm="{{.Labels.admin_account_delete_confirm}}">
+          <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+          <input type="hidden" name="version" value="{{.Admin.List.Form.Version}}">
+          <label class="label cursor-pointer justify-start gap-3" for="admin-account-confirm-delete">
+            <input id="admin-account-confirm-delete" class="checkbox checkbox-error" type="checkbox" name="confirm" value="true" required>
+            <span class="label-text">{{.Labels.admin_account_confirm_delete}}</span>
+          </label>
+          <div>
+            <button class="btn btn-error" type="submit">{{.Labels.admin_account_delete}}</button>
+          </div>
+        </form>
+      {{end}}
     </div>
   </section>
 {{end}}

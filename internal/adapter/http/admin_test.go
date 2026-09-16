@@ -474,14 +474,103 @@ func TestAdminEditAccountRejectsNonAdmin(t *testing.T) {
 	}
 }
 
+func TestAdminDeleteAccountSucceeds(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	editor := &adminAccountEditorStub{}
+	dependencies.AdminAccountEditor = editor
+	handler := newAdminTestHandler(t, dependencies)
+
+	request := authenticatedRequest(http.MethodPost, "/en/admin/users/9/delete", 7, "version=3&confirm=true")
+	request.SetPathValue("id", "9")
+	response := httptest.NewRecorder()
+	handler.deleteAccount(response, request)
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusSeeOther)
+	}
+	if location := response.Header().Get("Location"); location != "/en/admin/users" {
+		t.Fatalf("redirect = %q, want /en/admin/users", location)
+	}
+	if editor.deleteID != 9 || editor.deleteVer != 3 {
+		t.Fatalf("delete = id %d version %d, want 9/3", editor.deleteID, editor.deleteVer)
+	}
+}
+
+func TestAdminDeleteAccountRequiresConfirmation(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	editor := &adminAccountEditorStub{}
+	dependencies.AdminAccountEditor = editor
+	handler := newAdminTestHandler(t, dependencies)
+
+	request := authenticatedRequest(http.MethodPost, "/en/admin/users/9/delete", 7, "version=3")
+	request.SetPathValue("id", "9")
+	response := httptest.NewRecorder()
+	handler.deleteAccount(response, request)
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnprocessableEntity)
+	}
+	if !strings.Contains(response.Body.String(), "Confirm the deletion") {
+		t.Errorf("body missing confirmation message")
+	}
+	if editor.deleteCalls != 0 {
+		t.Fatal("Delete called without confirmation")
+	}
+}
+
+func TestAdminDeleteAccountErrors(t *testing.T) {
+	tests := []struct {
+		name   string
+		err    error
+		status int
+	}{
+		{name: "self", err: service.ErrAdminSelfAction, status: http.StatusUnprocessableEntity},
+		{name: "conflict", err: service.ErrOptimisticLockConflict, status: http.StatusConflict},
+		{name: "missing", err: service.ErrRecordNotFound, status: http.StatusNotFound},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dependencies := adminStubDependencies(t, true)
+			dependencies.AdminAccountEditor = &adminAccountEditorStub{deleteErr: test.err}
+			handler := newAdminTestHandler(t, dependencies)
+			request := authenticatedRequest(http.MethodPost, "/en/admin/users/9/delete", 7, "version=3&confirm=true")
+			request.SetPathValue("id", "9")
+			response := httptest.NewRecorder()
+			handler.deleteAccount(response, request)
+			if response.Code != test.status {
+				t.Fatalf("status = %d, want %d", response.Code, test.status)
+			}
+		})
+	}
+}
+
+func TestAdminEditAccountHidesSelfDelete(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminAccountEditor = &adminAccountEditorStub{found: service.User{ID: 7, Email: strPtr("self@example.test"), IsAdmin: true, Version: 1}}
+	handler := newAdminTestHandler(t, dependencies)
+
+	request := authenticatedRequest(http.MethodGet, "/en/admin/users/7/edit", 7, "")
+	request.SetPathValue("id", "7")
+	response := httptest.NewRecorder()
+	handler.editAccount(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if strings.Contains(response.Body.String(), `name="confirm"`) {
+		t.Errorf("self account exposes a delete confirmation control")
+	}
+}
+
 type adminAccountEditorStub struct {
-	found     service.User
-	findErr   error
-	updated   service.User
-	updateErr error
-	actor     service.AdminActionContext
-	targetID  int64
-	received  service.AdminAccountUpdateInput
+	found       service.User
+	findErr     error
+	updated     service.User
+	updateErr   error
+	deleteErr   error
+	actor       service.AdminActionContext
+	targetID    int64
+	deleteID    int64
+	deleteVer   int64
+	deleteCalls int
+	received    service.AdminAccountUpdateInput
 }
 
 func (s *adminAccountEditorStub) Find(context.Context, int64) (service.User, error) {
@@ -499,4 +588,12 @@ func (s *adminAccountEditorStub) Update(_ context.Context, actor service.AdminAc
 		return service.User{}, s.updateErr
 	}
 	return s.updated, nil
+}
+
+func (s *adminAccountEditorStub) Delete(_ context.Context, actor service.AdminActionContext, targetID, version int64) error {
+	s.actor = actor
+	s.deleteID = targetID
+	s.deleteVer = version
+	s.deleteCalls++
+	return s.deleteErr
 }

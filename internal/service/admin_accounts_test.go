@@ -340,6 +340,78 @@ func TestAdminAccountServiceFindMapsMissingAccount(t *testing.T) {
 	}
 }
 
+func TestAdminAccountServiceDeleteRemovesAccountAndRecordsAudit(t *testing.T) {
+	users := &userRepositoryStub{created: User{ID: 9, Email: strPtr("gone@example.test")}}
+	auditor := &auditRecorderStub{}
+	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, auditor)
+	if err != nil {
+		t.Fatalf("NewAdminAccountService() error = %v", err)
+	}
+	if err := service.Delete(context.Background(), AdminActionContext{ActorID: 1}, 9, 5); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	if users.deletedID != 9 || users.deletedVersion != 5 {
+		t.Fatalf("delete = id %d version %d, want 9/5", users.deletedID, users.deletedVersion)
+	}
+	if len(auditor.records) != 1 || auditor.records[0].Action != AuditActionAccountDeleted {
+		t.Fatalf("audit records = %+v, want one account-deleted record", auditor.records)
+	}
+}
+
+func TestAdminAccountServiceDeleteRefusesSelf(t *testing.T) {
+	users := &userRepositoryStub{created: User{ID: 9}}
+	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil)
+	if err != nil {
+		t.Fatalf("NewAdminAccountService() error = %v", err)
+	}
+	if err := service.Delete(context.Background(), AdminActionContext{ActorID: 9}, 9, 0); !errors.Is(err, ErrAdminSelfAction) {
+		t.Fatalf("Delete(own) error = %v, want %v", err, ErrAdminSelfAction)
+	}
+	if users.deleteCalls != 0 {
+		t.Fatal("DeleteUser called for a self-delete")
+	}
+}
+
+func TestAdminAccountServiceDeleteClassifiesFailures(t *testing.T) {
+	tests := []struct {
+		name    string
+		findErr error
+		err     error
+		want    error
+	}{
+		{name: "missing on find", findErr: ErrUserNotFound, want: ErrRecordNotFound},
+		{name: "missing on delete", err: ErrUserNotFound, want: ErrRecordNotFound},
+		{name: "stale revision", err: ErrOptimisticLockConflict, want: ErrOptimisticLockConflict},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			users := &userRepositoryStub{created: User{ID: 9}, findErr: test.findErr, deleteErr: test.err}
+			service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil)
+			if err != nil {
+				t.Fatalf("NewAdminAccountService() error = %v", err)
+			}
+			if err := service.Delete(context.Background(), AdminActionContext{ActorID: 1}, 9, 0); !errors.Is(err, test.want) {
+				t.Fatalf("Delete() error = %v, want %v", err, test.want)
+			}
+		})
+	}
+}
+
+func TestAdminAccountServiceUpdateRefusesSelfDemotion(t *testing.T) {
+	users := &userRepositoryStub{created: User{ID: 9}}
+	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil)
+	if err != nil {
+		t.Fatalf("NewAdminAccountService() error = %v", err)
+	}
+	_, err = service.Update(context.Background(), AdminActionContext{ActorID: 9}, 9, AdminAccountUpdateInput{Email: "self@example.test", IsAdmin: false})
+	if !errors.Is(err, ErrAdminSelfAction) {
+		t.Fatalf("Update(self demotion) error = %v, want %v", err, ErrAdminSelfAction)
+	}
+	if users.updateVersion != 0 {
+		t.Fatal("UpdateUser called for a refused self-demotion")
+	}
+}
+
 type adminUserRepositoryStub struct {
 	received AdminUserQuery
 	total    int
@@ -364,6 +436,10 @@ type userRepositoryStub struct {
 	updateVersion         int64
 	lastUpdated           User
 	updatedPasswordCalled bool
+	deleteErr             error
+	deleteCalls           int
+	deletedID             int64
+	deletedVersion        int64
 }
 
 func (s *userRepositoryStub) CreateUser(_ context.Context, user User) (User, error) {
@@ -407,7 +483,12 @@ func (s *userRepositoryStub) UpdateUser(_ context.Context, user User, expectedVe
 	}
 	return user, nil
 }
-func (s *userRepositoryStub) DeleteUser(context.Context, int64, int64) error { return nil }
+func (s *userRepositoryStub) DeleteUser(_ context.Context, id, expectedVersion int64) error {
+	s.deleteCalls++
+	s.deletedID = id
+	s.deletedVersion = expectedVersion
+	return s.deleteErr
+}
 
 type adminPasswordHasherStub struct{ err error }
 
