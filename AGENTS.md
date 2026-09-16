@@ -36,6 +36,7 @@ Use Go 1.26 language features only. Prefer standard-library packages. Add third-
 - Close registered dependencies after HTTP shutdown, even when startup fails.
 - When `GOWEB_DATABASE_URL` is configured, startup opens PostgreSQL and applies migrations before serving requests. Local no-database startup remains supported until persistence-backed features require the store.
 - `GOWEB_BOOTSTRAP_ADMIN_EMAIL` and `GOWEB_BOOTSTRAP_ADMIN_PASSWORD` seed one confirmed administrator on startup when both are set in non-production; never configure them in production.
+- Production startup fails through `config.ErrUnsafeProductionConfig` unless `GOWEB_SESSION_COOKIE_SECURE` is true, `GOWEB_PUBLIC_URL` uses HTTPS, `GOWEB_DATABASE_URL` and `GOWEB_SESSION_SECRET` are set, and `GOWEB_MAIL_RELAY` is set whenever email confirmation is required.
 - A background maintenance worker runs scheduled cleanup jobs through `internal/service`; `cmd/web` starts it with the signal context so it stops on shutdown. Job status is live process state and never stores credentials.
 - Retention for guests, sign-in history, and usage events is configured through `GOWEB_GUEST_RETENTION`, `GOWEB_LOGIN_ATTEMPT_RETENTION`, and `GOWEB_USAGE_RETENTION`; cleanup only removes expired, consumed, or over-age records.
 

@@ -41,7 +41,7 @@ func TestLoadDefaults(t *testing.T) {
 func TestLoadConfiguredValues(t *testing.T) {
 	const sessionSecret = "01234567890123456789012345678901"
 	values := map[string]string{
-		EnvironmentEnv:               " production ",
+		EnvironmentEnv:               " test ",
 		HTTPAddressEnv:               "127.0.0.1:9090",
 		PublicURLEnv:                 "https://example.test/app",
 		SessionCookieSecureEnv:       "false",
@@ -56,8 +56,8 @@ func TestLoadConfiguredValues(t *testing.T) {
 		t.Fatalf("Load() error = %v, want nil", err)
 	}
 
-	if config.Environment != EnvironmentProduction {
-		t.Errorf("Environment = %q, want %q", config.Environment, EnvironmentProduction)
+	if config.Environment != EnvironmentTest {
+		t.Errorf("Environment = %q, want %q", config.Environment, EnvironmentTest)
 	}
 	if config.HTTPAddress != "127.0.0.1:9090" {
 		t.Errorf("HTTPAddress = %q, want 127.0.0.1:9090", config.HTTPAddress)
@@ -83,12 +83,13 @@ func TestLoadConfiguredValues(t *testing.T) {
 }
 
 func TestLoadProductionCookieDefault(t *testing.T) {
-	config, err := Load(func(name string) string {
-		if name == EnvironmentEnv {
-			return string(EnvironmentProduction)
-		}
-		return ""
-	})
+	values := map[string]string{
+		EnvironmentEnv:   string(EnvironmentProduction),
+		PublicURLEnv:     "https://example.test",
+		DatabaseURLEnv:   "postgres://user:password@example.test/app",
+		SessionSecretEnv: "01234567890123456789012345678901",
+	}
+	config, err := Load(func(name string) string { return values[name] })
 	if err != nil {
 		t.Fatalf("Load() error = %v, want nil", err)
 	}

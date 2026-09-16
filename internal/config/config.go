@@ -87,6 +87,9 @@ var (
 	ErrInvalidMailRelay = errors.New("config: invalid mail relay")
 	// ErrInvalidTrustedProxy identifies an unsupported trusted proxy value.
 	ErrInvalidTrustedProxy = errors.New("config: invalid trusted proxy")
+	// ErrUnsafeProductionConfig identifies deployment settings that are unsafe
+	// to start with in production.
+	ErrUnsafeProductionConfig = errors.New("config: unsafe production configuration")
 )
 
 // Environment identifies deployment behavior that may vary by environment.
@@ -261,7 +264,7 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("%w: %s must be an IP address or CIDR network", ErrInvalidTrustedProxy, TrustedProxyEnv)
 	}
 
-	return Config{
+	loaded := Config{
 		Environment:               environment,
 		HTTPAddress:               httpAddress,
 		PublicURL:                 publicURL,
@@ -277,7 +280,39 @@ func Load(getenv func(string) string) (Config, error) {
 		BootstrapAdminPassword:    bootstrapPassword,
 		MailRelay:                 mailRelay,
 		TrustedProxy:              trustedProxy,
-	}, nil
+	}
+	if err := validateProduction(loaded); err != nil {
+		return Config{}, err
+	}
+	return loaded, nil
+}
+
+// validateProduction rejects deployment settings that are unsafe to serve with
+// in production. It reports every problem at once without echoing values.
+func validateProduction(cfg Config) error {
+	if cfg.Environment != EnvironmentProduction {
+		return nil
+	}
+	var problems []string
+	if !cfg.SessionCookieSecure {
+		problems = append(problems, SessionCookieSecureEnv+" must be true")
+	}
+	if cfg.PublicURL.Scheme != "https" {
+		problems = append(problems, PublicURLEnv+" must use https")
+	}
+	if !cfg.DatabaseURL.IsSet() {
+		problems = append(problems, DatabaseURLEnv+" must be set")
+	}
+	if !cfg.SessionSecret.IsSet() {
+		problems = append(problems, SessionSecretEnv+" must be set")
+	}
+	if cfg.EmailConfirmationRequired && !cfg.MailRelay.IsSet() {
+		problems = append(problems, MailRelayEnv+" must be set when email confirmation is required")
+	}
+	if len(problems) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: %s", ErrUnsafeProductionConfig, strings.Join(problems, "; "))
 }
 
 func parseEnvironment(raw string) (Environment, error) {
