@@ -1214,6 +1214,12 @@ func (h *adminHandler) jobLabel(language locale.Code, job string) string {
 	switch job {
 	case service.MaintenanceJobGuestCleanup:
 		return h.t(language, "admin.system.job.guest_cleanup")
+	case service.MaintenanceJobTokenRetention:
+		return h.t(language, "admin.system.job.token_retention")
+	case service.MaintenanceJobLoginAttemptRetention:
+		return h.t(language, "admin.system.job.login_attempt_retention")
+	case service.MaintenanceJobUsageRetention:
+		return h.t(language, "admin.system.job.usage_retention")
 	default:
 		return job
 	}

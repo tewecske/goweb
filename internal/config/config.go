@@ -26,6 +26,12 @@ const (
 	EmailConfirmationRequiredEnv = "GOWEB_EMAIL_CONFIRMATION_REQUIRED"
 	// SessionLifetimeEnv names the session lifetime duration.
 	SessionLifetimeEnv = "GOWEB_SESSION_LIFETIME"
+	// GuestRetentionEnv names how long an empty abandoned guest is retained.
+	GuestRetentionEnv = "GOWEB_GUEST_RETENTION"
+	// LoginAttemptRetentionEnv names how long sign-in history is retained.
+	LoginAttemptRetentionEnv = "GOWEB_LOGIN_ATTEMPT_RETENTION"
+	// UsageRetentionEnv names how long usage events are retained.
+	UsageRetentionEnv = "GOWEB_USAGE_RETENTION"
 	// DatabaseURLEnv names the optional database connection URL.
 	DatabaseURLEnv = "GOWEB_DATABASE_URL"
 	// SessionSecretEnv names the optional session-signing secret.
@@ -46,6 +52,12 @@ const (
 	DefaultPublicURL = "http://localhost:8080"
 	// DefaultSessionLifetime is used when SessionLifetimeEnv is not set.
 	DefaultSessionLifetime = 24 * time.Hour
+	// DefaultGuestRetention is used when GuestRetentionEnv is not set.
+	DefaultGuestRetention = 30 * 24 * time.Hour
+	// DefaultLoginAttemptRetention is used when LoginAttemptRetentionEnv is not set.
+	DefaultLoginAttemptRetention = 30 * 24 * time.Hour
+	// DefaultUsageRetention is used when UsageRetentionEnv is not set.
+	DefaultUsageRetention = 90 * 24 * time.Hour
 	// MinimumSessionSecretLength prevents weak configured session secrets.
 	MinimumSessionSecretLength = 32
 )
@@ -127,6 +139,9 @@ type Config struct {
 	SessionCookieSecure       bool
 	EmailConfirmationRequired bool
 	SessionLifetime           time.Duration
+	GuestRetention            time.Duration
+	LoginAttemptRetention     time.Duration
+	UsageRetention            time.Duration
 	DatabaseURL               Secret
 	SessionSecret             Secret
 	BootstrapAdminEmail       string
@@ -142,13 +157,16 @@ func (c Config) BootstrapAdminConfigured() bool {
 // String returns a safe diagnostic summary without secret values.
 func (c Config) String() string {
 	return fmt.Sprintf(
-		"environment=%s http_address=%s public_url=%s session_cookie_secure=%t email_confirmation_required=%t session_lifetime=%s database_configured=%t session_secret_configured=%t bootstrap_admin_configured=%t",
+		"environment=%s http_address=%s public_url=%s session_cookie_secure=%t email_confirmation_required=%t session_lifetime=%s guest_retention=%s login_attempt_retention=%s usage_retention=%s database_configured=%t session_secret_configured=%t bootstrap_admin_configured=%t",
 		c.Environment,
 		c.HTTPAddress,
 		c.PublicURL.String(),
 		c.SessionCookieSecure,
 		c.EmailConfirmationRequired,
 		c.SessionLifetime,
+		c.GuestRetention,
+		c.LoginAttemptRetention,
+		c.UsageRetention,
 		c.DatabaseURL.IsSet(),
 		c.SessionSecret.IsSet(),
 		c.BootstrapAdminConfigured(),
@@ -187,6 +205,18 @@ func Load(getenv func(string) string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	guestRetention, err := parseRetention(GuestRetentionEnv, getenv(GuestRetentionEnv), DefaultGuestRetention)
+	if err != nil {
+		return Config{}, err
+	}
+	loginAttemptRetention, err := parseRetention(LoginAttemptRetentionEnv, getenv(LoginAttemptRetentionEnv), DefaultLoginAttemptRetention)
+	if err != nil {
+		return Config{}, err
+	}
+	usageRetention, err := parseRetention(UsageRetentionEnv, getenv(UsageRetentionEnv), DefaultUsageRetention)
+	if err != nil {
+		return Config{}, err
+	}
 	sessionSecret := Secret{value: getenv(SessionSecretEnv)}
 	if sessionSecret.IsSet() && len(sessionSecret.value) < MinimumSessionSecretLength {
 		return Config{}, fmt.Errorf("%w: %s must contain at least %d characters", ErrWeakSecret, SessionSecretEnv, MinimumSessionSecretLength)
@@ -215,6 +245,9 @@ func Load(getenv func(string) string) (Config, error) {
 		SessionCookieSecure:       cookieSecure,
 		EmailConfirmationRequired: emailConfirmationRequired,
 		SessionLifetime:           sessionLifetime,
+		GuestRetention:            guestRetention,
+		LoginAttemptRetention:     loginAttemptRetention,
+		UsageRetention:            usageRetention,
 		DatabaseURL:               Secret{value: getenv(DatabaseURLEnv)},
 		SessionSecret:             sessionSecret,
 		BootstrapAdminEmail:       bootstrapEmail,
@@ -278,6 +311,17 @@ func parseSessionLifetime(raw string) (time.Duration, error) {
 		return 0, fmt.Errorf("%w: %s must be a positive duration", ErrInvalidDuration, SessionLifetimeEnv)
 	}
 	return lifetime, nil
+}
+
+func parseRetention(name, raw string, fallback time.Duration) (time.Duration, error) {
+	if strings.TrimSpace(raw) == "" {
+		return fallback, nil
+	}
+	period, err := time.ParseDuration(raw)
+	if err != nil || period <= 0 {
+		return 0, fmt.Errorf("%w: %s must be a positive duration", ErrInvalidDuration, name)
+	}
+	return period, nil
 }
 
 func valueOrDefault(value, fallback string) string {

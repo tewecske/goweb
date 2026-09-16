@@ -35,6 +35,7 @@ type Graph struct {
 	AdminUsers           *postgresstore.AdminUserRepository
 	AuditLogs            *postgresstore.AuditLogRepository
 	LoginAttempts        *postgresstore.LoginAttemptRepository
+	Retention            *postgresstore.RetentionRepository
 	Providers            *service.ProviderRegistry
 	SessionService       *service.SessionService
 	PasswordHasher       *service.PasswordHasher
@@ -65,6 +66,7 @@ type Graph struct {
 	AdminDiagnostics     *service.AdminDiagnosticsService
 	Audit                *service.AuditService
 	Maintenance          *service.MaintenanceWorker
+	RetentionService     *service.RetentionService
 }
 
 // New constructs the service graph over one migrated database. It performs no
@@ -76,6 +78,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if appConfig.Environment == config.EnvironmentProduction {
 		return nil, ErrMailDeliveryNotConfigured
 	}
+	appConfig = withRetentionDefaults(appConfig)
 
 	users, err := postgresstore.NewUserRepository(database)
 	if err != nil {
@@ -124,6 +127,10 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	loginAttemptsRepository, err := postgresstore.NewLoginAttemptRepository(database)
 	if err != nil {
 		return nil, fmt.Errorf("construct login attempt repository: %w", err)
+	}
+	retentionRepository, err := postgresstore.NewRetentionRepository(database)
+	if err != nil {
+		return nil, fmt.Errorf("construct retention repository: %w", err)
 	}
 
 	sessionService, err := service.NewSessionService(sessionsRepository, appConfig.SessionLifetime)
@@ -212,7 +219,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct rate limited guest service: %w", err)
 	}
-	guestCleanup, err := service.NewGuestCleanupService(guestClaimsRepository, 30*24*time.Hour)
+	guestCleanup, err := service.NewGuestCleanupService(guestClaimsRepository, appConfig.GuestRetention)
 	if err != nil {
 		return nil, fmt.Errorf("construct guest cleanup service: %w", err)
 	}
@@ -270,9 +277,16 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct lockout service: %w", err)
 	}
+	retentionService, err := service.NewRetentionService(retentionRepository, appConfig.LoginAttemptRetention, appConfig.UsageRetention)
+	if err != nil {
+		return nil, fmt.Errorf("construct retention service: %w", err)
+	}
 	maintenanceWorker, err := service.NewMaintenanceWorker(
 		service.DefaultMaintenanceInterval,
 		service.MaintenanceJob{Name: service.MaintenanceJobGuestCleanup, Run: guestCleanup.Cleanup},
+		service.MaintenanceJob{Name: service.MaintenanceJobTokenRetention, Run: retentionService.CleanupTokens},
+		service.MaintenanceJob{Name: service.MaintenanceJobLoginAttemptRetention, Run: retentionService.CleanupLoginAttempts},
+		service.MaintenanceJob{Name: service.MaintenanceJobUsageRetention, Run: retentionService.CleanupUsageEvents},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("construct maintenance worker: %w", err)
@@ -297,7 +311,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		AuditLogs: auditLogRepository, Audit: auditService,
 		LoginAttempts: loginAttemptsRepository, AdminDiagnostics: adminDiagnostics,
 		AdminConfirmation: adminConfirmation, AdminIdentity: adminIdentity, Lockout: lockoutService,
-		Maintenance: maintenanceWorker,
+		Maintenance: maintenanceWorker, Retention: retentionRepository, RetentionService: retentionService,
 	}, nil
 }
 
@@ -308,4 +322,19 @@ func (noopFailedAttemptState) Clear(ctx context.Context, _ string) error {
 		return errors.New("app: nil failed-attempt context")
 	}
 	return nil
+}
+
+// withRetentionDefaults keeps graph construction usable when a caller provides
+// a partial configuration in tests or tooling.
+func withRetentionDefaults(appConfig config.Config) config.Config {
+	if appConfig.GuestRetention <= 0 {
+		appConfig.GuestRetention = config.DefaultGuestRetention
+	}
+	if appConfig.LoginAttemptRetention <= 0 {
+		appConfig.LoginAttemptRetention = config.DefaultLoginAttemptRetention
+	}
+	if appConfig.UsageRetention <= 0 {
+		appConfig.UsageRetention = config.DefaultUsageRetention
+	}
+	return appConfig
 }

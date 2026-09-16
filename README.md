@@ -32,6 +32,9 @@ Configuration comes from environment variables. Defaults keep local development 
 | `GOWEB_SESSION_COOKIE_SECURE` | `false`, or `true` in production |
 | `GOWEB_EMAIL_CONFIRMATION_REQUIRED` | `false` |
 | `GOWEB_SESSION_LIFETIME` | `24h` |
+| `GOWEB_GUEST_RETENTION` | `720h` (30 days) |
+| `GOWEB_LOGIN_ATTEMPT_RETENTION` | `720h` (30 days) |
+| `GOWEB_USAGE_RETENTION` | `2160h` (90 days) |
 | `GOWEB_BOOTSTRAP_ADMIN_EMAIL` | unset; non-production bootstrap administrator email |
 | `GOWEB_BOOTSTRAP_ADMIN_PASSWORD` | unset; non-production bootstrap administrator password |
 

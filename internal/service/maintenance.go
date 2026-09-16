@@ -11,6 +11,12 @@ import (
 const (
 	// MaintenanceJobGuestCleanup removes empty, abandoned guest accounts.
 	MaintenanceJobGuestCleanup = "guest_cleanup"
+	// MaintenanceJobTokenRetention removes expired or consumed credentials.
+	MaintenanceJobTokenRetention = "token_retention"
+	// MaintenanceJobLoginAttemptRetention removes old sign-in history.
+	MaintenanceJobLoginAttemptRetention = "login_attempt_retention"
+	// MaintenanceJobUsageRetention removes old usage events.
+	MaintenanceJobUsageRetention = "usage_retention"
 	// DefaultMaintenanceInterval is the baseline delay between scheduled runs.
 	DefaultMaintenanceInterval = 6 * time.Hour
 	maxMaintenanceJobName      = 64
