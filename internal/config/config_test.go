@@ -257,3 +257,86 @@ func TestLoadBootstrapAdminRejectsInvalidValues(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadRetentionDefaults(t *testing.T) {
+	config, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if config.GuestRetention != DefaultGuestRetention ||
+		config.LoginAttemptRetention != DefaultLoginAttemptRetention ||
+		config.UsageRetention != DefaultUsageRetention {
+		t.Fatalf("retention defaults = %s/%s/%s", config.GuestRetention, config.LoginAttemptRetention, config.UsageRetention)
+	}
+}
+
+func TestLoadConfiguredRetention(t *testing.T) {
+	values := map[string]string{
+		GuestRetentionEnv:        "48h",
+		LoginAttemptRetentionEnv: "72h",
+		UsageRetentionEnv:        "168h",
+	}
+	config, err := Load(func(name string) string { return values[name] })
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if config.GuestRetention != 48*time.Hour || config.LoginAttemptRetention != 72*time.Hour || config.UsageRetention != 168*time.Hour {
+		t.Fatalf("retention = %s/%s/%s", config.GuestRetention, config.LoginAttemptRetention, config.UsageRetention)
+	}
+}
+
+func TestLoadRejectsInvalidRetention(t *testing.T) {
+	if _, err := Load(func(name string) string {
+		if name == UsageRetentionEnv {
+			return "-1h"
+		}
+		return ""
+	}); !errors.Is(err, ErrInvalidDuration) {
+		t.Fatalf("Load(invalid retention) error = %v, want %v", err, ErrInvalidDuration)
+	}
+}
+
+func TestLoadRejectsCredentialBearingMailRelay(t *testing.T) {
+	if _, err := Load(func(name string) string {
+		if name == MailRelayEnv {
+			return "smtp://user:password@mail.example.test"
+		}
+		return ""
+	}); !errors.Is(err, ErrInvalidMailRelay) {
+		t.Fatalf("Load(credential relay) error = %v, want %v", err, ErrInvalidMailRelay)
+	}
+	config, err := Load(func(name string) string {
+		if name == MailRelayEnv {
+			return "smtp://mail.example.test:587"
+		}
+		return ""
+	})
+	if err != nil || !config.MailRelay.IsSet() {
+		t.Fatalf("Load(valid relay) = %+v, %v", config, err)
+	}
+	if strings.Contains(config.String(), "mail.example.test") {
+		t.Fatalf("config summary leaked relay address: %s", config.String())
+	}
+}
+
+func TestLoadValidatesTrustedProxy(t *testing.T) {
+	if _, err := Load(func(name string) string {
+		if name == TrustedProxyEnv {
+			return "not-an-address"
+		}
+		return ""
+	}); !errors.Is(err, ErrInvalidTrustedProxy) {
+		t.Fatalf("Load(invalid proxy) error = %v, want %v", err, ErrInvalidTrustedProxy)
+	}
+	for _, valid := range []string{"10.0.0.1", "10.0.0.0/8", "2001:db8::/32"} {
+		config, err := Load(func(name string) string {
+			if name == TrustedProxyEnv {
+				return valid
+			}
+			return ""
+		})
+		if err != nil || config.TrustedProxy != valid {
+			t.Fatalf("Load(proxy=%q) = %q, %v", valid, config.TrustedProxy, err)
+		}
+	}
+}

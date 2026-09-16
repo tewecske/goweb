@@ -41,6 +41,7 @@ Delivered feature areas:
 - `templates/settings.html`, `templates/groups.html`, and `templates/alerts.html` back the account-settings and group interfaces.
 - `internal/service/maintenance.go` owns the interval worker that runs registered cleanup jobs, retains per-job last-run state, and survives an individual job failure. `cmd/web` starts it with the signal context.
 - `internal/service/retention.go` and `internal/store/postgres/retention.go` remove expired or consumed tokens, expired OAuth states, and login/usage history past the configured retention.
+- `internal/service/system.go` produces the credential-free deployment configuration rendered on `/{language}/admin/system`; connection addresses are reduced to scheme and host.
 - Localized routes live under `/{language}/account/settings`, `/{language}/account/theme`, and `/{language}/groups`.
 
 The public foundation route remains `GET /healthz`.

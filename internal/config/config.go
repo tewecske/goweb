@@ -32,6 +32,10 @@ const (
 	LoginAttemptRetentionEnv = "GOWEB_LOGIN_ATTEMPT_RETENTION"
 	// UsageRetentionEnv names how long usage events are retained.
 	UsageRetentionEnv = "GOWEB_USAGE_RETENTION"
+	// MailRelayEnv names the optional outgoing mail relay.
+	MailRelayEnv = "GOWEB_MAIL_RELAY"
+	// TrustedProxyEnv names the optional trusted proxy address or network.
+	TrustedProxyEnv = "GOWEB_TRUSTED_PROXY"
 	// DatabaseURLEnv names the optional database connection URL.
 	DatabaseURLEnv = "GOWEB_DATABASE_URL"
 	// SessionSecretEnv names the optional session-signing secret.
@@ -79,6 +83,10 @@ var (
 	ErrInvalidBootstrapAdmin = errors.New("config: invalid bootstrap administrator")
 	// ErrBootstrapAdminForbidden identifies bootstrap seeding in production.
 	ErrBootstrapAdminForbidden = errors.New("config: bootstrap administrator is not allowed in production")
+	// ErrInvalidMailRelay identifies a malformed outgoing mail relay.
+	ErrInvalidMailRelay = errors.New("config: invalid mail relay")
+	// ErrInvalidTrustedProxy identifies an unsupported trusted proxy value.
+	ErrInvalidTrustedProxy = errors.New("config: invalid trusted proxy")
 )
 
 // Environment identifies deployment behavior that may vary by environment.
@@ -146,6 +154,8 @@ type Config struct {
 	SessionSecret             Secret
 	BootstrapAdminEmail       string
 	BootstrapAdminPassword    Secret
+	MailRelay                 Secret
+	TrustedProxy              string
 }
 
 // BootstrapAdminConfigured reports whether both bootstrap administrator values
@@ -157,7 +167,7 @@ func (c Config) BootstrapAdminConfigured() bool {
 // String returns a safe diagnostic summary without secret values.
 func (c Config) String() string {
 	return fmt.Sprintf(
-		"environment=%s http_address=%s public_url=%s session_cookie_secure=%t email_confirmation_required=%t session_lifetime=%s guest_retention=%s login_attempt_retention=%s usage_retention=%s database_configured=%t session_secret_configured=%t bootstrap_admin_configured=%t",
+		"environment=%s http_address=%s public_url=%s session_cookie_secure=%t email_confirmation_required=%t session_lifetime=%s guest_retention=%s login_attempt_retention=%s usage_retention=%s database_configured=%t session_secret_configured=%t bootstrap_admin_configured=%t mail_relay_configured=%t trusted_proxy_configured=%t",
 		c.Environment,
 		c.HTTPAddress,
 		c.PublicURL.String(),
@@ -170,6 +180,8 @@ func (c Config) String() string {
 		c.DatabaseURL.IsSet(),
 		c.SessionSecret.IsSet(),
 		c.BootstrapAdminConfigured(),
+		c.MailRelay.IsSet(),
+		c.TrustedProxy != "",
 	)
 }
 
@@ -237,6 +249,17 @@ func Load(getenv func(string) string) (Config, error) {
 			return Config{}, ErrBootstrapAdminForbidden
 		}
 	}
+	mailRelay := Secret{value: getenv(MailRelayEnv)}
+	if mailRelay.IsSet() {
+		parsed, err := url.Parse(strings.TrimSpace(mailRelay.value))
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return Config{}, fmt.Errorf("%w: %s must be a host address without credentials", ErrInvalidMailRelay, MailRelayEnv)
+		}
+	}
+	trustedProxy := strings.TrimSpace(getenv(TrustedProxyEnv))
+	if trustedProxy != "" && !validProxyAddress(trustedProxy) {
+		return Config{}, fmt.Errorf("%w: %s must be an IP address or CIDR network", ErrInvalidTrustedProxy, TrustedProxyEnv)
+	}
 
 	return Config{
 		Environment:               environment,
@@ -252,6 +275,8 @@ func Load(getenv func(string) string) (Config, error) {
 		SessionSecret:             sessionSecret,
 		BootstrapAdminEmail:       bootstrapEmail,
 		BootstrapAdminPassword:    bootstrapPassword,
+		MailRelay:                 mailRelay,
+		TrustedProxy:              trustedProxy,
 	}, nil
 }
 
@@ -322,6 +347,14 @@ func parseRetention(name, raw string, fallback time.Duration) (time.Duration, er
 		return 0, fmt.Errorf("%w: %s must be a positive duration", ErrInvalidDuration, name)
 	}
 	return period, nil
+}
+
+func validProxyAddress(raw string) bool {
+	if net.ParseIP(raw) != nil {
+		return true
+	}
+	_, _, err := net.ParseCIDR(raw)
+	return err == nil
 }
 
 func valueOrDefault(value, fallback string) string {

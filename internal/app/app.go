@@ -67,6 +67,7 @@ type Graph struct {
 	Audit                *service.AuditService
 	Maintenance          *service.MaintenanceWorker
 	RetentionService     *service.RetentionService
+	SystemInfo           *service.SystemInfoService
 }
 
 // New constructs the service graph over one migrated database. It performs no
@@ -142,9 +143,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		return nil, fmt.Errorf("construct password hasher: %w", err)
 	}
 	mailSender := &mailadapter.DevelopmentSender{}
-	signInLimiter, err := service.NewRateLimiter(service.RateLimitConfig{
-		Limit: 10, Window: time.Minute, MaxKeys: 10_000,
-	})
+	signInLimiter, err := service.NewRateLimiter(service.DefaultAuthenticationRateLimitConfig)
 	if err != nil {
 		return nil, fmt.Errorf("construct signin rate limiter: %w", err)
 	}
@@ -291,6 +290,22 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct maintenance worker: %w", err)
 	}
+	systemInfo := service.NewSystemInfoService(service.SystemInfoSettings{
+		Environment:               string(appConfig.Environment),
+		PublicAddress:             appConfig.HTTPAddress,
+		PublicURL:                 appConfig.PublicURL.String(),
+		EmailConfirmationRequired: appConfig.EmailConfirmationRequired,
+		SecureSessionCookies:      appConfig.SessionCookieSecure,
+		Providers:                 providers.Names(),
+		MailConfigured:            true,
+		MailRelay:                 appConfig.MailRelay.Reveal(),
+		SessionLifetime:           appConfig.SessionLifetime,
+		GuestRetention:            appConfig.GuestRetention,
+		LoginAttemptRetention:     appConfig.LoginAttemptRetention,
+		UsageRetention:            appConfig.UsageRetention,
+		MaintenanceInterval:       maintenanceWorker.Interval(),
+		TrustedProxy:              appConfig.TrustedProxy,
+	})
 
 	return &Graph{
 		Database: database, Users: users, Sessions: sessionsRepository,
@@ -312,6 +327,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		LoginAttempts: loginAttemptsRepository, AdminDiagnostics: adminDiagnostics,
 		AdminConfirmation: adminConfirmation, AdminIdentity: adminIdentity, Lockout: lockoutService,
 		Maintenance: maintenanceWorker, Retention: retentionRepository, RetentionService: retentionService,
+		SystemInfo: systemInfo,
 	}, nil
 }
 

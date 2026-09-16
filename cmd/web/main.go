@@ -117,6 +117,7 @@ func main() {
 			AdminAudit:           applicationGraph.Audit,
 			AdminMaintenance:     applicationGraph.Maintenance,
 			AdminAuditRecorder:   applicationGraph.Audit,
+			AdminSystemConfig:    applicationGraph.SystemInfo,
 		})
 	}
 

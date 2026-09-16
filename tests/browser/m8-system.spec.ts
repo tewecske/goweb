@@ -27,6 +27,8 @@ test.describe("M8 system maintenance", () => {
     await page.goto("/en/admin/system");
     await expect(page.getByRole("heading", { level: 1, name: /^system$/i })).toBeVisible();
     await expect(page.getByRole("heading", { name: /background jobs/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /configuration/i })).toBeVisible();
+    await expect(page.getByText(/sign-in rate limit/i)).toBeVisible();
     await expect(page.locator('tr[data-job="guest_cleanup"]')).toBeVisible();
     await expect(page.locator('tr[data-job="token_retention"]')).toBeVisible();
     await expect(page.locator('tr[data-job="login_attempt_retention"]')).toBeVisible();

@@ -82,9 +82,29 @@ type AdminView struct {
 // AdminSystemView contains administrator system health data. It never carries
 // credentials; each ticket adds one section as it lands.
 type AdminSystemView struct {
-	RunURL     string
-	Jobs       []AdminMaintenanceJobView
-	RunConfirm string
+	RunURL        string
+	Jobs          []AdminMaintenanceJobView
+	RunConfirm    string
+	Configuration *AdminSystemConfigView
+}
+
+// AdminSystemConfigView contains credential-free deployment configuration.
+type AdminSystemConfigView struct {
+	Environment               string
+	PublicAddress             string
+	PublicURL                 string
+	EmailConfirmationRequired bool
+	SecureSessionCookies      bool
+	Providers                 string
+	MailConfigured            bool
+	MailRelay                 string
+	SessionLifetime           string
+	GuestRetention            string
+	LoginAttemptRetention     string
+	UsageRetention            string
+	MaintenanceInterval       string
+	AuthRateLimit             string
+	TrustedProxy              string
 }
 
 // AdminMaintenanceJobView is one background job's retained last-run state.

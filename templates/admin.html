@@ -29,6 +29,31 @@
   <div id="page-content" class="mt-6 grid gap-6 w-full max-w-5xl">
     <p class="text-sm opacity-70">{{$.Description}}</p>
 
+    {{with .Configuration}}
+    <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="admin-system-config-heading">
+      <div class="card-body">
+        <h2 id="admin-system-config-heading" class="card-title">{{$.Labels.admin_system_config_heading}}</h2>
+        <dl class="grid grid-cols-1 gap-2 md:grid-cols-2">
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_environment}}</dt><dd>{{.Environment}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_public_address}}</dt><dd>{{.PublicAddress}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_public_url}}</dt><dd>{{.PublicURL}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_email}}</dt><dd>{{if .EmailConfirmationRequired}}{{$.Labels.admin_system_yes}}{{else}}{{$.Labels.admin_system_no}}{{end}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_secure_cookies}}</dt><dd>{{if .SecureSessionCookies}}{{$.Labels.admin_system_yes}}{{else}}{{$.Labels.admin_system_no}}{{end}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_providers}}</dt><dd>{{if .Providers}}{{.Providers}}{{else}}{{$.Labels.admin_system_config_not_configured}}{{end}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_mail}}</dt><dd>{{if .MailConfigured}}{{$.Labels.admin_system_yes}}{{else}}{{$.Labels.admin_system_no}}{{end}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_mail_relay}}</dt><dd>{{if .MailRelay}}{{.MailRelay}}{{else}}{{$.Labels.admin_system_config_not_configured}}{{end}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_rate_limit}}</dt><dd>{{.AuthRateLimit}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_trusted_proxy}}</dt><dd>{{if .TrustedProxy}}{{.TrustedProxy}}{{else}}{{$.Labels.admin_system_config_not_configured}}{{end}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_session}}</dt><dd>{{.SessionLifetime}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_interval}}</dt><dd>{{.MaintenanceInterval}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_guest}}</dt><dd>{{.GuestRetention}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_login}}</dt><dd>{{.LoginAttemptRetention}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_usage}}</dt><dd>{{.UsageRetention}}</dd></div>
+        </dl>
+      </div>
+    </section>
+    {{end}}
+
     <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="admin-system-jobs-heading">
       <div class="card-body">
         <h2 id="admin-system-jobs-heading" class="card-title">{{$.Labels.admin_system_jobs_heading}}</h2>

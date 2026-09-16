@@ -2,6 +2,7 @@ package httpadapter
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -1105,6 +1106,25 @@ func (h *adminHandler) labels(language locale.Code) map[string]string {
 		"admin_system_job_empty":             h.t(language, "admin.system.jobs.empty"),
 		"admin_system_run":                   h.t(language, "admin.system.maintenance.run"),
 		"admin_system_run_confirm":           h.t(language, "admin.system.maintenance.run_confirm"),
+		"admin_system_config_heading":        h.t(language, "admin.system.config.heading"),
+		"admin_system_config_environment":    h.t(language, "admin.system.config.environment"),
+		"admin_system_config_public_address": h.t(language, "admin.system.config.public_address"),
+		"admin_system_config_public_url":     h.t(language, "admin.system.config.public_url"),
+		"admin_system_config_email":          h.t(language, "admin.system.config.email_confirmation"),
+		"admin_system_config_secure_cookies": h.t(language, "admin.system.config.secure_cookies"),
+		"admin_system_config_providers":      h.t(language, "admin.system.config.providers"),
+		"admin_system_config_mail":           h.t(language, "admin.system.config.mail"),
+		"admin_system_config_mail_relay":     h.t(language, "admin.system.config.mail_relay"),
+		"admin_system_config_session":        h.t(language, "admin.system.config.session_lifetime"),
+		"admin_system_config_guest":          h.t(language, "admin.system.config.guest_retention"),
+		"admin_system_config_login":          h.t(language, "admin.system.config.login_retention"),
+		"admin_system_config_usage":          h.t(language, "admin.system.config.usage_retention"),
+		"admin_system_config_interval":       h.t(language, "admin.system.config.maintenance_interval"),
+		"admin_system_config_rate_limit":     h.t(language, "admin.system.config.rate_limit"),
+		"admin_system_config_trusted_proxy":  h.t(language, "admin.system.config.trusted_proxy"),
+		"admin_system_config_not_configured": h.t(language, "admin.system.config.not_configured"),
+		"admin_system_yes":                   h.t(language, "admin.system.yes"),
+		"admin_system_no":                    h.t(language, "admin.system.no"),
 	}
 }
 
@@ -1170,6 +1190,10 @@ func (h *adminHandler) renderSystem(writer http.ResponseWriter, request *http.Re
 			view.Jobs = append(view.Jobs, adminMaintenanceJobView(h, language, job))
 		}
 	}
+	if h.dependencies.AdminSystemConfig != nil {
+		configuration := h.dependencies.AdminSystemConfig.SystemConfiguration()
+		view.Configuration = adminSystemConfigView(configuration)
+	}
 	pageData := PageData{
 		Language:         string(language),
 		Title:            h.t(language, "admin.system.title"),
@@ -1208,6 +1232,26 @@ func adminMaintenanceJobView(h *adminHandler, language locale.Code, status servi
 	}
 	view.Label = h.jobLabel(language, status.Job)
 	return view
+}
+
+func adminSystemConfigView(configuration service.SystemConfiguration) *AdminSystemConfigView {
+	return &AdminSystemConfigView{
+		Environment:               configuration.Environment,
+		PublicAddress:             configuration.PublicAddress,
+		PublicURL:                 configuration.PublicURL,
+		EmailConfirmationRequired: configuration.EmailConfirmationRequired,
+		SecureSessionCookies:      configuration.SecureSessionCookies,
+		Providers:                 strings.Join(configuration.Providers, ", "),
+		MailConfigured:            configuration.MailConfigured,
+		MailRelay:                 configuration.MailRelay,
+		SessionLifetime:           configuration.SessionLifetime.String(),
+		GuestRetention:            configuration.GuestRetention.String(),
+		LoginAttemptRetention:     configuration.LoginAttemptRetention.String(),
+		UsageRetention:            configuration.UsageRetention.String(),
+		MaintenanceInterval:       configuration.MaintenanceInterval.String(),
+		AuthRateLimit:             fmt.Sprintf("%d / %s", configuration.AuthRateLimit, configuration.AuthRateLimitWindow),
+		TrustedProxy:              configuration.TrustedProxy,
+	}
 }
 
 func (h *adminHandler) jobLabel(language locale.Code, job string) string {

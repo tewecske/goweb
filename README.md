@@ -35,6 +35,8 @@ Configuration comes from environment variables. Defaults keep local development 
 | `GOWEB_GUEST_RETENTION` | `720h` (30 days) |
 | `GOWEB_LOGIN_ATTEMPT_RETENTION` | `720h` (30 days) |
 | `GOWEB_USAGE_RETENTION` | `2160h` (90 days) |
+| `GOWEB_MAIL_RELAY` | unset; optional credential-free relay used by the system overview |
+| `GOWEB_TRUSTED_PROXY` | unset; optional trusted proxy IP or CIDR network |
 | `GOWEB_BOOTSTRAP_ADMIN_EMAIL` | unset; non-production bootstrap administrator email |
 | `GOWEB_BOOTSTRAP_ADMIN_PASSWORD` | unset; non-production bootstrap administrator password |
 

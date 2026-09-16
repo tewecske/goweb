@@ -1227,3 +1227,49 @@ func (s *adminAuditRecorderStub) Record(_ context.Context, record service.AuditR
 	s.records = append(s.records, record)
 	return s.err
 }
+
+func TestAdminSystemRendersSanitizedConfiguration(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminSystemConfig = adminSystemConfigStub{configuration: service.SystemConfiguration{
+		Environment:               "production",
+		PublicAddress:             ":8443",
+		PublicURL:                 "https://example.test",
+		EmailConfirmationRequired: true,
+		SecureSessionCookies:      true,
+		Providers:                 []string{"example"},
+		MailConfigured:            true,
+		MailRelay:                 "smtp://mail.example.test:587",
+		SessionLifetime:           24 * time.Hour,
+		GuestRetention:            720 * time.Hour,
+		LoginAttemptRetention:     720 * time.Hour,
+		UsageRetention:            2160 * time.Hour,
+		MaintenanceInterval:       6 * time.Hour,
+		AuthRateLimit:             10,
+		AuthRateLimitWindow:       time.Minute,
+		TrustedProxy:              "10.0.0.0/8",
+	}}
+	handler := newAdminTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.system(response, authenticatedRequest(http.MethodGet, "/en/admin/system", 7, ""))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	body := response.Body.String()
+	for _, want := range []string{"Configuration", "https://example.test", "smtp://mail.example.test:587", "10.0.0.0/8", "example"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("system body missing %q", want)
+		}
+	}
+	if strings.Contains(body, "password") || strings.Contains(body, "user:") {
+		t.Errorf("system body leaked a credential")
+	}
+}
+
+type adminSystemConfigStub struct {
+	configuration service.SystemConfiguration
+}
+
+func (s adminSystemConfigStub) SystemConfiguration() service.SystemConfiguration {
+	return s.configuration
+}

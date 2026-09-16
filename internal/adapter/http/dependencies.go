@@ -63,6 +63,7 @@ type Dependencies struct {
 	AdminAudit          AdminAuditReader
 	AdminMaintenance    AdminMaintenanceRunner
 	AdminAuditRecorder  AdminActionRecorder
+	AdminSystemConfig   service.SystemConfigurationProvider
 }
 
 // AdminAccountLister lists accounts for the administrator area.
