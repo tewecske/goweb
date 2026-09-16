@@ -105,6 +105,7 @@ func main() {
 			AdminConfirmation:    applicationGraph.AdminConfirmation,
 			AdminIdentity:        applicationGraph.AdminIdentity,
 			AdminLockout:         applicationGraph.Lockout,
+			AdminAudit:           applicationGraph.Audit,
 		})
 	}
 

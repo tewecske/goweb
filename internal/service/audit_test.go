@@ -82,6 +82,7 @@ func TestNewAuditServiceRejectsNilRepository(t *testing.T) {
 
 type auditRepositoryStub struct {
 	entries []AuditEntry
+	page    AuditPage
 	err     error
 }
 
@@ -91,6 +92,16 @@ func (s *auditRepositoryStub) CreateAuditEntry(_ context.Context, entry AuditEnt
 	}
 	s.entries = append(s.entries, entry)
 	return nil
+}
+
+func (s *auditRepositoryStub) ListAuditEntries(_ context.Context, query AuditQuery) (AuditPage, error) {
+	if s.err != nil {
+		return AuditPage{}, s.err
+	}
+	page := s.page
+	page.Page = query.Page
+	page.Size = query.Size
+	return page, nil
 }
 
 func TestAuditServiceRecordEmitsToSink(t *testing.T) {
@@ -135,3 +146,35 @@ func (s *auditSinkStub) AuditRecorded(_ context.Context, record AuditRecord) {
 type erroringAuditSink struct{}
 
 func (erroringAuditSink) AuditRecorded(context.Context, AuditRecord) {}
+
+func TestAuditQueryNormalizeBoundsValues(t *testing.T) {
+	got := (AuditQuery{Action: " created ", Actor: "a@example.test", Target: "9", Page: -2, Size: 1000}).Normalize()
+	if got.Action != "created" || got.Actor != "a@example.test" || got.Target != "9" {
+		t.Fatalf("normalize filters = %+v, want trimmed values", got)
+	}
+	if got.Page != 1 || got.Size != MaxAuditPageSize {
+		t.Fatalf("normalize page/size = %d/%d, want 1/%d", got.Page, got.Size, MaxAuditPageSize)
+	}
+	defaults := (AuditQuery{}).Normalize()
+	if defaults.Page != 1 || defaults.Size != DefaultAuditPageSize {
+		t.Fatalf("defaults = %+v, want page 1 size %d", defaults, DefaultAuditPageSize)
+	}
+	if (AuditQuery{Page: 3, Size: 20}).Offset() != 40 {
+		t.Fatal("Offset() = wrong offset")
+	}
+}
+
+func TestAuditServiceListNormalizesAndCountsPages(t *testing.T) {
+	repository := &auditRepositoryStub{page: AuditPage{Total: 45, Entries: []AuditEntry{{ID: 1, Action: "x"}}}}
+	audit, err := NewAuditService(repository)
+	if err != nil {
+		t.Fatalf("NewAuditService() error = %v", err)
+	}
+	page, err := audit.List(context.Background(), AuditQuery{Size: 1000})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if page.Size != MaxAuditPageSize || page.Total != 45 || page.Pages != 1 {
+		t.Fatalf("page = %+v, want size %d total 45 pages 1", page, MaxAuditPageSize)
+	}
+}

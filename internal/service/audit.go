@@ -55,6 +55,57 @@ type AuditEntry struct {
 // cascade-deleted when an actor or target account is removed.
 type AuditRepository interface {
 	CreateAuditEntry(context.Context, AuditEntry) error
+	ListAuditEntries(context.Context, AuditQuery) (AuditPage, error)
+}
+
+const (
+	// DefaultAuditPageSize is used when a request omits a page size.
+	DefaultAuditPageSize = 20
+	// MaxAuditPageSize bounds every audit list request.
+	MaxAuditPageSize = 100
+)
+
+// AuditQuery is the bounded, server-validated audit-list query.
+type AuditQuery struct {
+	Action string
+	Actor  string
+	Target string
+	Page   int
+	Size   int
+}
+
+// AuditPage is one page of audit entries plus its total count.
+type AuditPage struct {
+	Entries []AuditEntry
+	Total   int
+	Page    int
+	Size    int
+	Pages   int
+}
+
+// Normalize returns a copy with every field bounded to a supported value.
+func (q AuditQuery) Normalize() AuditQuery {
+	q.Action = normalizeAdminSearch(q.Action)
+	q.Actor = normalizeAdminSearch(q.Actor)
+	q.Target = normalizeAdminSearch(q.Target)
+	if q.Page < 1 {
+		q.Page = 1
+	}
+	if q.Size < 1 {
+		q.Size = DefaultAuditPageSize
+	}
+	if q.Size > MaxAuditPageSize {
+		q.Size = MaxAuditPageSize
+	}
+	return q
+}
+
+// Offset returns the zero-based row offset for the normalized page.
+func (q AuditQuery) Offset() int {
+	if q.Page < 1 {
+		return 0
+	}
+	return (q.Page - 1) * q.Size
 }
 
 // AuditRecord is the safe, validated input for one administrator action. It
@@ -127,6 +178,29 @@ func (s *AuditService) Record(ctx context.Context, record AuditRecord) error {
 		s.sink.AuditRecorded(ctx, record)
 	}
 	return nil
+}
+
+// List returns one bounded page of administrator action history, newest first.
+func (s *AuditService) List(ctx context.Context, query AuditQuery) (AuditPage, error) {
+	if s == nil || s.repository == nil {
+		return AuditPage{}, ErrInvalidAuditEntry
+	}
+	if ctx == nil {
+		return AuditPage{}, errors.New("service: nil audit context")
+	}
+	normalized := query.Normalize()
+	page, err := s.repository.ListAuditEntries(ctx, normalized)
+	if err != nil {
+		return AuditPage{}, err
+	}
+	if page.Size < 1 {
+		page.Size = normalized.Size
+	}
+	if page.Page < 1 {
+		page.Page = normalized.Page
+	}
+	page.Pages = adminPageCount(page.Total, page.Size)
+	return page, nil
 }
 
 func buildAuditEntry(record AuditRecord, occurredAt int64) (AuditEntry, error) {

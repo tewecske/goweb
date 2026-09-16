@@ -77,3 +77,91 @@ func TestAuditLogRepositoryPreservesHistoryAfterActorDeletion(t *testing.T) {
 		t.Fatalf("actor_email snapshot = %v, want %q", snapshot, actorEmail)
 	}
 }
+
+func TestAuditLogRepositoryFiltersAndPaginates(t *testing.T) {
+	harness := testpostgres.New(t)
+	runner, err := store.NewMigrator(harness.DB, migrations.FS)
+	if err != nil {
+		t.Fatalf("NewMigrator() error = %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := runner.Apply(ctx); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	users, err := NewUserRepository(harness.DB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actorEmail := "actor@example.test"
+	actor, err := users.CreateUser(ctx, service.User{Email: &actorEmail, Theme: "light", Locale: "en", CreatedAt: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository, err := NewAuditLogRepository(harness.DB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actorID := actor.ID
+	targetType := "user"
+	for index, action := range []string{service.AuditActionAccountCreated, service.AuditActionAccountUpdated, service.AuditActionAccountDeleted} {
+		targetID := "10" + string(rune('0'+index))
+		if err := repository.CreateAuditEntry(ctx, service.AuditEntry{
+			OccurredAt:  int64(200 + index),
+			ActorUserID: &actorID,
+			ActorEmail:  &actorEmail,
+			Action:      action,
+			TargetType:  &targetType,
+			TargetID:    &targetID,
+		}); err != nil {
+			t.Fatalf("CreateAuditEntry(%s) error = %v", action, err)
+		}
+	}
+
+	page, err := repository.ListAuditEntries(ctx, service.AuditQuery{Size: 2})
+	if err != nil {
+		t.Fatalf("ListAuditEntries() error = %v", err)
+	}
+	if page.Total != 3 || len(page.Entries) != 2 {
+		t.Fatalf("page = total %d rows %d, want 3/2", page.Total, len(page.Entries))
+	}
+	if page.Entries[0].Action != service.AuditActionAccountDeleted {
+		t.Fatalf("newest entry = %q, want deleted first", page.Entries[0].Action)
+	}
+
+	filtered, err := repository.ListAuditEntries(ctx, service.AuditQuery{Action: "updated", Size: 10})
+	if err != nil {
+		t.Fatalf("ListAuditEntries(action) error = %v", err)
+	}
+	if filtered.Total != 1 || filtered.Entries[0].Action != service.AuditActionAccountUpdated {
+		t.Fatalf("action filter = %+v, want one updated entry", filtered)
+	}
+
+	byActor, err := repository.ListAuditEntries(ctx, service.AuditQuery{Actor: "ACTOR@example", Size: 10})
+	if err != nil {
+		t.Fatalf("ListAuditEntries(actor) error = %v", err)
+	}
+	if byActor.Total != 3 {
+		t.Fatalf("actor filter total = %d, want 3", byActor.Total)
+	}
+
+	byTarget, err := repository.ListAuditEntries(ctx, service.AuditQuery{Target: "101", Size: 10})
+	if err != nil {
+		t.Fatalf("ListAuditEntries(target) error = %v", err)
+	}
+	if byTarget.Total != 1 {
+		t.Fatalf("target filter total = %d, want 1", byTarget.Total)
+	}
+
+	// History survives actor deletion: the snapshot email remains filterable.
+	if err := users.DeleteUser(ctx, actor.ID, actor.Version); err != nil {
+		t.Fatalf("DeleteUser() error = %v", err)
+	}
+	afterDelete, err := repository.ListAuditEntries(ctx, service.AuditQuery{Actor: "actor@example.test", Size: 10})
+	if err != nil {
+		t.Fatalf("ListAuditEntries(after delete) error = %v", err)
+	}
+	if afterDelete.Total != 3 {
+		t.Fatalf("after-delete total = %d, want 3", afterDelete.Total)
+	}
+}

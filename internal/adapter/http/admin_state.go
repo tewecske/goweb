@@ -139,3 +139,67 @@ func defaultAdminDirection(sort string) string {
 	}
 	return service.AdminDirectionAsc
 }
+
+// Audit list URL parameter names.
+const (
+	auditParamAction = "action"
+	auditParamActor  = "actor"
+	auditParamTarget = "target"
+)
+
+// auditListState holds the normalized audit-list query and converts it to and
+// from URL parameters.
+type auditListState struct {
+	Query service.AuditQuery
+}
+
+// parseAuditListState reads bounded audit-list state from the request query.
+func parseAuditListState(request *http.Request) auditListState {
+	if request == nil {
+		return auditListState{Query: service.AuditQuery{}.Normalize()}
+	}
+	values := request.URL.Query()
+	page, _ := strconv.Atoi(values.Get(adminParamPage))
+	size, _ := strconv.Atoi(values.Get(adminParamSize))
+	query := service.AuditQuery{
+		Action: values.Get(auditParamAction),
+		Actor:  values.Get(auditParamActor),
+		Target: values.Get(auditParamTarget),
+		Page:   page,
+		Size:   size,
+	}
+	return auditListState{Query: query.Normalize()}
+}
+
+// Values renders the normalized state as URL parameters.
+func (s auditListState) Values() url.Values {
+	query := s.Query.Normalize()
+	values := url.Values{}
+	if query.Action != "" {
+		values.Set(auditParamAction, query.Action)
+	}
+	if query.Actor != "" {
+		values.Set(auditParamActor, query.Actor)
+	}
+	if query.Target != "" {
+		values.Set(auditParamTarget, query.Target)
+	}
+	values.Set(adminParamPage, strconv.Itoa(query.Page))
+	values.Set(adminParamSize, strconv.Itoa(query.Size))
+	return values
+}
+
+// URL renders the state relative to the audit list base path.
+func (s auditListState) URL(base string) string {
+	encoded := s.Values().Encode()
+	if encoded == "" {
+		return base
+	}
+	return base + "?" + encoded
+}
+
+// WithPage returns the state for another one-based page.
+func (s auditListState) WithPage(page int) auditListState {
+	s.Query.Page = page
+	return auditListState{Query: s.Query.Normalize()}
+}

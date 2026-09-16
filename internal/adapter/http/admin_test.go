@@ -1009,3 +1009,88 @@ func (s *adminLockoutStub) Clear(_ context.Context, _ service.AdminActionContext
 	s.clearedID = account.ID
 	return nil
 }
+
+func TestAdminAuditRendersEntries(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	actorEmail := "actor@example.test"
+	targetType, targetID, detail, ip := "user", "9", "created account", "203.0.113.1"
+	dependencies.AdminAudit = &adminAuditReaderStub{page: service.AuditPage{
+		Total: 1, Page: 1, Size: 20, Pages: 1,
+		Entries: []service.AuditEntry{{
+			ID: 1, OccurredAt: 1700000000, ActorEmail: &actorEmail, Action: service.AuditActionAccountCreated,
+			TargetType: &targetType, TargetID: &targetID, Detail: &detail, IP: &ip,
+		}},
+	}}
+	handler := newAdminTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.audit(response, authenticatedRequest(http.MethodGet, "/en/admin/audit?action=created&actor=actor", 7, ""))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	body := response.Body.String()
+	for _, want := range []string{"actor@example.test", service.AuditActionAccountCreated, "created account", "203.0.113.1"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("audit body missing %q", want)
+		}
+	}
+}
+
+func TestAdminAuditRendersEmptyState(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminAudit = &adminAuditReaderStub{page: service.AuditPage{Total: 0, Page: 1, Size: 20, Pages: 0}}
+	handler := newAdminTestHandler(t, dependencies)
+	response := httptest.NewRecorder()
+	handler.audit(response, authenticatedRequest(http.MethodGet, "/en/admin/audit", 7, ""))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if !strings.Contains(response.Body.String(), "No audit entries match") {
+		t.Errorf("body missing empty-state message")
+	}
+}
+
+func TestAdminAuditFragmentAndPaging(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminAudit = &adminAuditReaderStub{page: service.AuditPage{Total: 60, Page: 2, Size: 20, Pages: 3}}
+	handler := newAdminTestHandler(t, dependencies)
+	request := authenticatedRequest(http.MethodGet, "/en/admin/audit?page=2", 7, "")
+	request.Header.Set("HX-Request", "true")
+	response := httptest.NewRecorder()
+	handler.audit(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	body := response.Body.String()
+	if strings.Contains(body, "<!doctype html>") {
+		t.Errorf("HTMX request returned a full document")
+	}
+	if !strings.Contains(body, "Previous") || !strings.Contains(body, "Next") {
+		t.Errorf("audit fragment missing pagination controls")
+	}
+}
+
+func TestAdminAuditRejectsNonAdmin(t *testing.T) {
+	dependencies := adminStubDependencies(t, false)
+	dependencies.AdminAudit = &adminAuditReaderStub{}
+	handler := newAdminTestHandler(t, dependencies)
+	response := httptest.NewRecorder()
+	handler.audit(response, authenticatedRequest(http.MethodGet, "/en/admin/audit", 7, ""))
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+}
+
+type adminAuditReaderStub struct {
+	page     service.AuditPage
+	err      error
+	received service.AuditQuery
+}
+
+func (s *adminAuditReaderStub) List(_ context.Context, query service.AuditQuery) (service.AuditPage, error) {
+	s.received = query
+	if s.err != nil {
+		return service.AuditPage{}, s.err
+	}
+	return s.page, nil
+}

@@ -13,10 +13,83 @@
 {{define "admin-content"}}
   {{if and .Admin (eq .Admin.Page "detail")}}
     {{template "admin-detail-content" .}}
+  {{else if and .Admin (eq .Admin.Page "audit")}}
+    {{template "admin-audit-content" .}}
   {{else if and .Admin (eq .Admin.Page "users")}}
     {{template "admin-users-content" .}}
   {{else}}
     {{template "admin-overview-content" .}}
+  {{end}}
+{{end}}
+
+{{define "admin-audit-content"}}
+  {{with .Admin.Audit}}
+  <div id="page-content" class="mt-6 grid gap-6 w-full max-w-5xl">
+    <p class="text-sm opacity-70">{{$.Description}}</p>
+    <form class="grid gap-4 md:grid-cols-3" method="get" action="{{.BaseURL}}"
+          hx-get="{{.BaseURL}}" hx-target="#page-content" hx-swap="outerHTML"
+          hx-push-url="true" hx-trigger="submit">
+      <input type="hidden" name="size" value="{{.Size}}">
+      <fieldset class="fieldset">
+        <label class="fieldset-legend" for="audit-action">{{$.Labels.admin_audit_action}}</label>
+        <input id="audit-action" class="input w-full" name="action" value="{{.ActionFilter}}">
+      </fieldset>
+      <fieldset class="fieldset">
+        <label class="fieldset-legend" for="audit-actor">{{$.Labels.admin_audit_actor}}</label>
+        <input id="audit-actor" class="input w-full" name="actor" value="{{.ActorFilter}}">
+      </fieldset>
+      <fieldset class="fieldset">
+        <label class="fieldset-legend" for="audit-target">{{$.Labels.admin_audit_target}}</label>
+        <input id="audit-target" class="input w-full" name="target" value="{{.TargetFilter}}">
+      </fieldset>
+      <div class="flex gap-2 md:col-span-3">
+        <button class="btn btn-primary" type="submit">{{$.Labels.admin_audit_apply}}</button>
+        <a class="btn btn-ghost" href="{{.BaseURL}}" hx-get="{{.BaseURL}}"
+           hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_audit_clear}}</a>
+      </div>
+    </form>
+
+    <div class="overflow-x-auto">
+      <table class="table" aria-label="{{$.Labels.admin_audit_heading}}">
+        <thead>
+          <tr>
+            <th scope="col">{{$.Labels.admin_audit_time}}</th>
+            <th scope="col">{{$.Labels.admin_audit_actor_column}}</th>
+            <th scope="col">{{$.Labels.admin_audit_action_column}}</th>
+            <th scope="col">{{$.Labels.admin_audit_target_column}}</th>
+            <th scope="col">{{$.Labels.admin_audit_detail_column}}</th>
+            <th scope="col">{{$.Labels.admin_audit_origin_column}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Entries}}
+            <tr>
+              <td>{{.Time}}</td>
+              <td>{{.Actor}}</td>
+              <td>{{.Action}}</td>
+              <td>{{.Target}}</td>
+              <td>{{.Detail}}</td>
+              <td>{{.Origin}}</td>
+            </tr>
+          {{else}}
+            <tr><td colspan="6" class="text-sm opacity-70">{{$.Labels.admin_audit_empty}}</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+
+    <nav class="flex items-center gap-3" aria-label="pagination">
+      {{if .HasPrevious}}
+        <a class="btn btn-sm" href="{{.PreviousURL}}" hx-get="{{.PreviousURL}}"
+           hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_prev}}</a>
+      {{end}}
+      <span class="text-sm opacity-70">{{.Page}} / {{.Pages}}</span>
+      {{if .HasNext}}
+        <a class="btn btn-sm" href="{{.NextURL}}" hx-get="{{.NextURL}}"
+           hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_next}}</a>
+      {{end}}
+    </nav>
+  </div>
   {{end}}
 {{end}}
 

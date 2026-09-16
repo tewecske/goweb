@@ -75,6 +75,34 @@ type AdminView struct {
 	Sections []AdminSectionView
 	List     *AdminListView
 	Detail   *AdminDetailView
+	Audit    *AdminAuditView
+}
+
+// AdminAuditView contains one page of administrator action history.
+type AdminAuditView struct {
+	BaseURL      string
+	ActionFilter string
+	ActorFilter  string
+	TargetFilter string
+	Page         int
+	Size         int
+	Total        int
+	Pages        int
+	HasPrevious  bool
+	HasNext      bool
+	PreviousURL  string
+	NextURL      string
+	Entries      []AdminAuditEntryView
+}
+
+// AdminAuditEntryView is one audit row's safe fields.
+type AdminAuditEntryView struct {
+	Time   string
+	Actor  string
+	Action string
+	Target string
+	Detail string
+	Origin string
 }
 
 // AdminDetailView contains safe account diagnostics for one account.

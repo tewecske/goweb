@@ -60,6 +60,7 @@ type Dependencies struct {
 	AdminConfirmation   AdminConfirmationManager
 	AdminIdentity       AdminIdentityManager
 	AdminLockout        AdminLockoutManager
+	AdminAudit          AdminAuditReader
 }
 
 // AdminAccountLister lists accounts for the administrator area.
@@ -106,6 +107,11 @@ type AdminIdentityManager interface {
 type AdminLockoutManager interface {
 	Status(context.Context, service.User) (service.LockoutStatus, error)
 	Clear(context.Context, service.AdminActionContext, service.User) error
+}
+
+// AdminAuditReader lists administrator action history.
+type AdminAuditReader interface {
+	List(context.Context, service.AuditQuery) (service.AuditPage, error)
 }
 
 // UserFinder resolves an account for an authenticated session.

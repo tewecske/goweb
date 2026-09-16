@@ -80,6 +80,100 @@ func (h *adminHandler) list(writer http.ResponseWriter, request *http.Request) {
 	h.renderUsers(writer, request, language, user, adminUsersRequest{state: state, page: page, form: FormData{}, mode: adminModeList, status: http.StatusOK})
 }
 
+// audit renders one bounded, filtered page of administrator action history.
+func (h *adminHandler) audit(writer http.ResponseWriter, request *http.Request) {
+	user, language, ok := h.authorize(writer, request)
+	if !ok {
+		return
+	}
+	if request.Method != http.MethodGet {
+		writer.Header().Set("Allow", http.MethodGet)
+		writer.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if h.dependencies.AdminAudit == nil {
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+		return
+	}
+	state := parseAuditListState(request)
+	page, err := h.dependencies.AdminAudit.List(request.Context(), state.Query)
+	alerts := []Alert(nil)
+	status := http.StatusOK
+	if err != nil {
+		alerts = []Alert{{Level: "error", Message: h.t(language, "admin.error.generic")}}
+		status = http.StatusInternalServerError
+	}
+	h.renderAudit(writer, request, language, user, state, page, alerts, status)
+}
+
+func (h *adminHandler) renderAudit(writer http.ResponseWriter, request *http.Request, language locale.Code, user service.User, state auditListState, page service.AuditPage, alerts []Alert, status int) {
+	base := localizedPath(language, "/admin/audit")
+	view := &AdminAuditView{
+		BaseURL:      base,
+		ActionFilter: state.Query.Action,
+		ActorFilter:  state.Query.Actor,
+		TargetFilter: state.Query.Target,
+		Page:         state.Query.Page,
+		Size:         state.Query.Size,
+		Total:        page.Total,
+		Pages:        page.Pages,
+	}
+	view.HasPrevious = state.Query.Page > 1
+	view.HasNext = page.Pages > 0 && state.Query.Page < page.Pages
+	if view.HasPrevious {
+		view.PreviousURL = state.WithPage(state.Query.Page - 1).URL(base)
+	}
+	if view.HasNext {
+		view.NextURL = state.WithPage(state.Query.Page + 1).URL(base)
+	}
+	for _, entry := range page.Entries {
+		view.Entries = append(view.Entries, adminAuditEntryView(entry))
+	}
+	pageData := PageData{
+		Language:         string(language),
+		Title:            h.t(language, "admin.audit.title"),
+		Heading:          h.t(language, "admin.audit.heading"),
+		Description:      h.t(language, "admin.audit.description"),
+		Kind:             "admin",
+		CSRFToken:        csrfToken(request),
+		Template:         "admin",
+		FragmentTemplate: "admin-fragment",
+		Alerts:           alerts,
+		Labels:           h.labels(language),
+		Account:          settingsAccountMenu(language, user),
+		Admin: &AdminView{
+			IsAdmin: true,
+			Page:    "audit",
+			Audit:   view,
+		},
+	}
+	if err := h.settings.Render(writer, request, pageData, status); err != nil {
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+	}
+}
+
+func adminAuditEntryView(entry service.AuditEntry) AdminAuditEntryView {
+	view := AdminAuditEntryView{
+		Time:   formatAdminTime(entry.OccurredAt),
+		Action: entry.Action,
+	}
+	if entry.ActorEmail != nil {
+		view.Actor = *entry.ActorEmail
+	}
+	if entry.TargetType != nil && entry.TargetID != nil {
+		view.Target = *entry.TargetType + " " + *entry.TargetID
+	} else if entry.TargetID != nil {
+		view.Target = *entry.TargetID
+	}
+	if entry.Detail != nil {
+		view.Detail = *entry.Detail
+	}
+	if entry.IP != nil {
+		view.Origin = *entry.IP
+	}
+	return view
+}
+
 // detail renders one account's safe diagnostics.
 func (h *adminHandler) detail(writer http.ResponseWriter, request *http.Request) {
 	user, language, ok := h.authorize(writer, request)
@@ -891,6 +985,7 @@ func (h *adminHandler) renderAdmin(writer http.ResponseWriter, request *http.Req
 			Page:    "overview",
 			Sections: []AdminSectionView{
 				{ID: "accounts", Label: h.t(language, "admin.nav.accounts"), URL: localizedPath(language, "/admin/users")},
+				{ID: "audit", Label: h.t(language, "admin.nav.audit"), URL: localizedPath(language, "/admin/audit")},
 			},
 		},
 	}
@@ -978,6 +1073,19 @@ func (h *adminHandler) labels(language locale.Code) map[string]string {
 		"admin_lockout_clear":                h.t(language, "admin.lockout.clear"),
 		"admin_lockout_clear_confirm":        h.t(language, "admin.lockout.clear_confirm"),
 		"admin_lockout_none":                 h.t(language, "admin.lockout.none"),
+		"admin_audit_action":                 h.t(language, "admin.audit.filter_action"),
+		"admin_audit_actor":                  h.t(language, "admin.audit.filter_actor"),
+		"admin_audit_target":                 h.t(language, "admin.audit.filter_target"),
+		"admin_audit_apply":                  h.t(language, "admin.audit.apply"),
+		"admin_audit_clear":                  h.t(language, "admin.audit.clear"),
+		"admin_audit_time":                   h.t(language, "admin.audit.column.time"),
+		"admin_audit_actor_column":           h.t(language, "admin.audit.column.actor"),
+		"admin_audit_action_column":          h.t(language, "admin.audit.column.action"),
+		"admin_audit_target_column":          h.t(language, "admin.audit.column.target"),
+		"admin_audit_detail_column":          h.t(language, "admin.audit.column.detail"),
+		"admin_audit_origin_column":          h.t(language, "admin.audit.column.origin"),
+		"admin_audit_empty":                  h.t(language, "admin.audit.empty"),
+		"admin_audit_heading":                h.t(language, "admin.audit.heading"),
 		"admin_attempt_time":                 h.t(language, "admin.attempt.time"),
 		"admin_attempt_outcome":              h.t(language, "admin.attempt.outcome"),
 		"admin_attempt_origin":               h.t(language, "admin.attempt.origin"),
