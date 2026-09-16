@@ -1326,3 +1326,46 @@ func (s adminRuntimeStub) Migrations(context.Context) ([]service.MigrationInfo, 
 	}
 	return s.migrations, nil
 }
+
+func TestAdminSystemRendersDatastoreCounts(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminDatastoreStats = adminDatastoreStatsStub{counts: service.DatastoreCounts{
+		TotalAccounts:              12,
+		GuestAccounts:              3,
+		AdministratorAccounts:      2,
+		UnconfirmedAccounts:        4,
+		AccountsWithoutPassword:    5,
+		ActiveSessions:             6,
+		ExpiredSessions:            1,
+		ExpiredEmailTokens:         2,
+		ExpiredPasswordResetTokens: 3,
+		ExpiredOAuthStates:         4,
+		RecentFailedSignIns:        7,
+		CurrentLockouts:            1,
+	}}
+	handler := newAdminTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.system(response, authenticatedRequest(http.MethodGet, "/en/admin/system", 7, ""))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	body := response.Body.String()
+	for _, want := range []string{"Data store", "Accounts", "Guests", "Current lockouts", "Failed sign-ins"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("system body missing %q", want)
+		}
+	}
+}
+
+type adminDatastoreStatsStub struct {
+	counts service.DatastoreCounts
+	err    error
+}
+
+func (s adminDatastoreStatsStub) Counts(context.Context) (service.DatastoreCounts, error) {
+	if s.err != nil {
+		return service.DatastoreCounts{}, s.err
+	}
+	return s.counts, nil
+}

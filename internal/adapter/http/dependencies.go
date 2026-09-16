@@ -65,6 +65,7 @@ type Dependencies struct {
 	AdminAuditRecorder  AdminActionRecorder
 	AdminSystemConfig   service.SystemConfigurationProvider
 	AdminRuntime        AdminRuntimeProvider
+	AdminDatastoreStats AdminDatastoreStatsReader
 }
 
 // AdminAccountLister lists accounts for the administrator area.
@@ -135,6 +136,11 @@ type AdminMaintenanceRunner interface {
 type AdminRuntimeProvider interface {
 	RuntimeInfo() service.RuntimeInfo
 	Migrations(context.Context) ([]service.MigrationInfo, error)
+}
+
+// AdminDatastoreStatsReader reports safe aggregate data-store counts.
+type AdminDatastoreStatsReader interface {
+	Counts(context.Context) (service.DatastoreCounts, error)
 }
 
 // UserFinder resolves an account for an authenticated session.

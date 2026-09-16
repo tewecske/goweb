@@ -88,6 +88,23 @@ type AdminSystemView struct {
 	Configuration *AdminSystemConfigView
 	Runtime       *AdminSystemRuntimeView
 	Migrations    []AdminMigrationView
+	Counts        *AdminDatastoreCountsView
+}
+
+// AdminDatastoreCountsView is the safe data-store health summary.
+type AdminDatastoreCountsView struct {
+	TotalAccounts              int
+	GuestAccounts              int
+	AdministratorAccounts      int
+	UnconfirmedAccounts        int
+	AccountsWithoutPassword    int
+	ActiveSessions             int
+	ExpiredSessions            int
+	ExpiredEmailTokens         int
+	ExpiredPasswordResetTokens int
+	ExpiredOAuthStates         int
+	RecentFailedSignIns        int
+	CurrentLockouts            int
 }
 
 // AdminSystemRuntimeView contains live, credential-free process facts.

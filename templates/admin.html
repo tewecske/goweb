@@ -109,6 +109,28 @@
       </div>
     </section>
 
+    {{with .Counts}}
+    <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="admin-system-counts-heading">
+      <div class="card-body">
+        <h2 id="admin-system-counts-heading" class="card-title">{{$.Labels.admin_system_counts_heading}}</h2>
+        <dl class="grid grid-cols-1 gap-2 md:grid-cols-3">
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_counts_total_accounts}}</dt><dd>{{.TotalAccounts}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_counts_guests}}</dt><dd>{{.GuestAccounts}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_counts_admins}}</dt><dd>{{.AdministratorAccounts}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_counts_unconfirmed}}</dt><dd>{{.UnconfirmedAccounts}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_counts_no_password}}</dt><dd>{{.AccountsWithoutPassword}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_counts_active_sessions}}</dt><dd>{{.ActiveSessions}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_counts_expired_sessions}}</dt><dd>{{.ExpiredSessions}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_counts_expired_email}}</dt><dd>{{.ExpiredEmailTokens}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_counts_expired_reset}}</dt><dd>{{.ExpiredPasswordResetTokens}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_counts_expired_states}}</dt><dd>{{.ExpiredOAuthStates}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_counts_failed_signins}}</dt><dd>{{.RecentFailedSignIns}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_counts_lockouts}}</dt><dd>{{.CurrentLockouts}}</dd></div>
+        </dl>
+      </div>
+    </section>
+    {{end}}
+
     <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="admin-system-jobs-heading">
       <div class="card-body">
         <h2 id="admin-system-jobs-heading" class="card-title">{{$.Labels.admin_system_jobs_heading}}</h2>

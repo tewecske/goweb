@@ -23,52 +23,54 @@ var ErrMailDeliveryNotConfigured = errors.New("app: mail delivery not configured
 type Graph struct {
 	Database *sql.DB
 
-	Users                *postgresstore.UserRepository
-	Sessions             *postgresstore.SessionRepository
-	GuestClaimRepository *postgresstore.GuestClaimCodeRepository
-	EmailTokens          *postgresstore.EmailConfirmationTokenRepository
-	PasswordReset        *postgresstore.PasswordResetTokenRepository
-	OAuthStates          *postgresstore.OAuthStateRepository
-	OAuthIdentities      *postgresstore.OAuthIdentityRepository
-	Groups               *postgresstore.GroupRepository
-	GroupMemberships     *postgresstore.GroupMembershipRepository
-	AdminUsers           *postgresstore.AdminUserRepository
-	AuditLogs            *postgresstore.AuditLogRepository
-	LoginAttempts        *postgresstore.LoginAttemptRepository
-	Retention            *postgresstore.RetentionRepository
-	Providers            *service.ProviderRegistry
-	SessionService       *service.SessionService
-	PasswordHasher       *service.PasswordHasher
-	Mail                 *mailadapter.DevelopmentSender
-	SignUp               *service.SignUpService
-	SignIn               *service.RateLimitedSignInService
-	Confirmation         *service.EmailConfirmationService
-	ConfirmationResend   *service.EmailConfirmationResender
-	PasswordResetter     *service.PasswordResetService
-	PasswordConsumer     *service.PasswordResetConsumer
-	OAuth                *service.OAuthSignInService
-	GuestSession         *service.GuestSessionService
-	GuestClaim           *service.GuestClaimService
-	GuestRedemption      *service.GuestRedemptionService
-	GuestUpgrade         *service.GuestUpgradeService
-	GuestRateLimited     *service.RateLimitedGuestService
-	GuestCleanup         *service.GuestCleanupService
-	Theme                *service.ThemeService
-	ProfileSettings      *service.ProfileSettingsService
-	PasswordSettings     *service.PasswordSettingsService
-	LocaleSettings       *service.LocaleSettingsService
-	Group                *service.GroupService
-	GroupJoin            *service.RateLimitedGroupJoiner
-	AdminAccounts        *service.AdminAccountService
-	AdminConfirmation    *service.AdminConfirmationService
-	AdminIdentity        *service.AdminIdentityService
-	Lockout              *service.LockoutService
-	AdminDiagnostics     *service.AdminDiagnosticsService
-	Audit                *service.AuditService
-	Maintenance          *service.MaintenanceWorker
-	RetentionService     *service.RetentionService
-	SystemInfo           *service.SystemInfoService
-	RuntimeInfo          *service.RuntimeInfoService
+	Users                 *postgresstore.UserRepository
+	Sessions              *postgresstore.SessionRepository
+	GuestClaimRepository  *postgresstore.GuestClaimCodeRepository
+	EmailTokens           *postgresstore.EmailConfirmationTokenRepository
+	PasswordReset         *postgresstore.PasswordResetTokenRepository
+	OAuthStates           *postgresstore.OAuthStateRepository
+	OAuthIdentities       *postgresstore.OAuthIdentityRepository
+	Groups                *postgresstore.GroupRepository
+	GroupMemberships      *postgresstore.GroupMembershipRepository
+	AdminUsers            *postgresstore.AdminUserRepository
+	AuditLogs             *postgresstore.AuditLogRepository
+	LoginAttempts         *postgresstore.LoginAttemptRepository
+	Retention             *postgresstore.RetentionRepository
+	DatastoreStats        *postgresstore.DatastoreStatsRepository
+	Providers             *service.ProviderRegistry
+	SessionService        *service.SessionService
+	PasswordHasher        *service.PasswordHasher
+	Mail                  *mailadapter.DevelopmentSender
+	SignUp                *service.SignUpService
+	SignIn                *service.RateLimitedSignInService
+	Confirmation          *service.EmailConfirmationService
+	ConfirmationResend    *service.EmailConfirmationResender
+	PasswordResetter      *service.PasswordResetService
+	PasswordConsumer      *service.PasswordResetConsumer
+	OAuth                 *service.OAuthSignInService
+	GuestSession          *service.GuestSessionService
+	GuestClaim            *service.GuestClaimService
+	GuestRedemption       *service.GuestRedemptionService
+	GuestUpgrade          *service.GuestUpgradeService
+	GuestRateLimited      *service.RateLimitedGuestService
+	GuestCleanup          *service.GuestCleanupService
+	Theme                 *service.ThemeService
+	ProfileSettings       *service.ProfileSettingsService
+	PasswordSettings      *service.PasswordSettingsService
+	LocaleSettings        *service.LocaleSettingsService
+	Group                 *service.GroupService
+	GroupJoin             *service.RateLimitedGroupJoiner
+	AdminAccounts         *service.AdminAccountService
+	AdminConfirmation     *service.AdminConfirmationService
+	AdminIdentity         *service.AdminIdentityService
+	Lockout               *service.LockoutService
+	AdminDiagnostics      *service.AdminDiagnosticsService
+	Audit                 *service.AuditService
+	Maintenance           *service.MaintenanceWorker
+	RetentionService      *service.RetentionService
+	SystemInfo            *service.SystemInfoService
+	RuntimeInfo           *service.RuntimeInfoService
+	DatastoreStatsService *service.DatastoreStatsService
 }
 
 // New constructs the service graph over one migrated database. It performs no
@@ -133,6 +135,10 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	retentionRepository, err := postgresstore.NewRetentionRepository(database)
 	if err != nil {
 		return nil, fmt.Errorf("construct retention repository: %w", err)
+	}
+	datastoreStatsRepository, err := postgresstore.NewDatastoreStatsRepository(database)
+	if err != nil {
+		return nil, fmt.Errorf("construct datastore stats repository: %w", err)
 	}
 
 	sessionService, err := service.NewSessionService(sessionsRepository, appConfig.SessionLifetime)
@@ -281,6 +287,10 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct retention service: %w", err)
 	}
+	datastoreStats, err := service.NewDatastoreStatsService(datastoreStatsRepository, signInLimiter, service.DefaultDatastoreStatsCacheTTL)
+	if err != nil {
+		return nil, fmt.Errorf("construct datastore stats service: %w", err)
+	}
 	maintenanceWorker, err := service.NewMaintenanceWorker(
 		service.DefaultMaintenanceInterval,
 		service.MaintenanceJob{Name: service.MaintenanceJobGuestCleanup, Run: guestCleanup.Cleanup},
@@ -329,8 +339,10 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		LoginAttempts: loginAttemptsRepository, AdminDiagnostics: adminDiagnostics,
 		AdminConfirmation: adminConfirmation, AdminIdentity: adminIdentity, Lockout: lockoutService,
 		Maintenance: maintenanceWorker, Retention: retentionRepository, RetentionService: retentionService,
-		SystemInfo:  systemInfo,
-		RuntimeInfo: runtimeInfo,
+		SystemInfo:            systemInfo,
+		RuntimeInfo:           runtimeInfo,
+		DatastoreStats:        datastoreStatsRepository,
+		DatastoreStatsService: datastoreStats,
 	}, nil
 }
 

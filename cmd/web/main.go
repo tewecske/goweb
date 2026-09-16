@@ -120,6 +120,7 @@ func main() {
 			AdminAuditRecorder:   applicationGraph.Audit,
 			AdminSystemConfig:    applicationGraph.SystemInfo,
 			AdminRuntime:         applicationGraph.RuntimeInfo,
+			AdminDatastoreStats:  applicationGraph.DatastoreStatsService,
 		})
 	}
 

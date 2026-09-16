@@ -146,6 +146,25 @@ func (l *RateLimiter) Clear(action, key string) error {
 	return nil
 }
 
+// LockedCount reports how many keys are currently at their fixed-window
+// limit. It never exposes the limited keys themselves.
+func (l *RateLimiter) LockedCount() int {
+	if l == nil || l.now == nil || l.buckets == nil {
+		return 0
+	}
+	now := l.now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.pruneExpired(now)
+	locked := 0
+	for _, bucket := range l.buckets {
+		if bucket.count >= l.config.Limit {
+			locked++
+		}
+	}
+	return locked
+}
+
 // RateLimitSnapshot is the read-only state of one action/key budget used for
 // administrator lockout diagnostics.
 type RateLimitSnapshot struct {
