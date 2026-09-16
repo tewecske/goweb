@@ -35,6 +35,26 @@ Configuration comes from environment variables. Defaults keep local development 
 
 `GOWEB_DATABASE_URL` and `GOWEB_SESSION_SECRET` are optional foundation inputs. Secret values are redacted from formatting and JSON diagnostics; callers must not log or return revealed values.
 
+Copy [.env.example](.env.example) to `.env` for local example values. It is not a
+secret file: every value is a throwaway example. `make run` sources `.env`
+automatically when the file exists; without `make`, export it first:
+
+```sh
+cp .env.example .env
+set -a; source .env; set +a
+```
+
+Start the local PostgreSQL from the committed [`compose.yaml`](compose.yaml):
+
+```sh
+make db-up
+```
+
+Stop it with `make db-down`. The container publishes `POSTGRES_PORT` (default
+`55432`) to avoid clashing with a PostgreSQL already on `5432`. `make run`
+sources `.env` automatically when the file exists. See
+[local development](docs/local-development.md) for the full workflow.
+
 ## Verify
 
 ```sh

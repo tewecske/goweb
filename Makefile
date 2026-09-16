@@ -1,7 +1,7 @@
 BINARY_NAME := goweb
 GO := go
 
-.PHONY: build clean fmt-check test vet assets check run
+.PHONY: build clean fmt-check test vet assets check run db-up db-down
 
 build:
 	mkdir -p bin
@@ -26,4 +26,10 @@ vet:
 check: assets fmt-check vet test
 
 run:
-	$(GO) run ./cmd/web
+	@set -a; if [ -f .env ]; then . ./.env; fi; set +a; $(GO) run ./cmd/web
+
+db-up:
+	docker compose up -d
+
+db-down:
+	docker compose down
