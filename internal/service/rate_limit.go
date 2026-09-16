@@ -146,6 +146,39 @@ func (l *RateLimiter) Clear(action, key string) error {
 	return nil
 }
 
+// RateLimitSnapshot is the read-only state of one action/key budget used for
+// administrator lockout diagnostics.
+type RateLimitSnapshot struct {
+	Count      int
+	Limit      int
+	RetryAfter time.Duration
+}
+
+// Snapshot returns the current budget for action/key without consuming it. It
+// is read-only so administrators can diagnose live lockout state.
+func (l *RateLimiter) Snapshot(action, key string) (RateLimitSnapshot, error) {
+	if l == nil || l.now == nil || l.buckets == nil {
+		return RateLimitSnapshot{}, ErrInvalidRateLimitConfig
+	}
+	if err := validateRateLimitKey(action); err != nil {
+		return RateLimitSnapshot{}, err
+	}
+	if err := validateRateLimitKey(key); err != nil {
+		return RateLimitSnapshot{}, err
+	}
+	now := l.now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	snapshot := RateLimitSnapshot{Limit: l.config.Limit}
+	bucket, exists := l.buckets[action+"\x00"+key]
+	if !exists || now.Sub(bucket.started) >= l.config.Window {
+		return snapshot, nil
+	}
+	snapshot.Count = bucket.count
+	snapshot.RetryAfter = l.config.Window - now.Sub(bucket.started)
+	return snapshot, nil
+}
+
 func (l *RateLimiter) pruneExpired(now time.Time) {
 	for key, bucket := range l.buckets {
 		if now.Sub(bucket.started) >= l.config.Window {

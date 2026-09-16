@@ -179,3 +179,33 @@ func TestEmailConfirmationTokenFinderReturnsOnlyActiveLinks(t *testing.T) {
 		t.Fatalf("consumed lookup error = %v, want not found", err)
 	}
 }
+
+func TestLoginAttemptRepositoryListsByEmail(t *testing.T) {
+	harness := testpostgres.New(t)
+	runner, err := store.NewMigrator(harness.DB, migrations.FS)
+	if err != nil {
+		t.Fatalf("NewMigrator() error = %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := runner.Apply(ctx); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	repository, err := NewLoginAttemptRepository(harness.DB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	email := "by-email@example.test"
+	ip := "203.0.113.77"
+	// Unknown-account attempt: no user_id, but the email is retained.
+	if err := repository.RecordLoginAttempt(ctx, service.LoginAttempt{Email: email, IP: &ip, Outcome: service.LoginOutcomeInvalidCredentials, CreatedAt: 300}); err != nil {
+		t.Fatalf("RecordLoginAttempt() error = %v", err)
+	}
+	attempts, err := repository.ListLoginAttemptsForEmail(ctx, email, 10)
+	if err != nil {
+		t.Fatalf("ListLoginAttemptsForEmail() error = %v", err)
+	}
+	if len(attempts) != 1 || attempts[0].UserID != nil || attempts[0].IP == nil || *attempts[0].IP != ip {
+		t.Fatalf("attempts = %+v, want one unknown-account attempt with origin", attempts)
+	}
+}

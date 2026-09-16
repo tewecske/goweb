@@ -217,6 +217,43 @@ func (h *adminHandler) removeIdentity(writer http.ResponseWriter, request *http.
 	}
 }
 
+// clearLockout removes every identifier and recent-origin budget for an
+// account as an audited action.
+func (h *adminHandler) clearLockout(writer http.ResponseWriter, request *http.Request) {
+	user, language, ok := h.authorize(writer, request)
+	if !ok {
+		return
+	}
+	if request.Method != http.MethodPost {
+		writer.Header().Set("Allow", http.MethodPost)
+		writer.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	accountID, err := pathID(request)
+	if err != nil {
+		h.renderState(writer, request, language, PageStateNotFound)
+		return
+	}
+	if h.dependencies.AdminLockout == nil || h.dependencies.AdminAccountEditor == nil {
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+		return
+	}
+	account, err := h.dependencies.AdminAccountEditor.Find(request.Context(), accountID)
+	if err != nil {
+		if errors.Is(err, service.ErrRecordNotFound) {
+			h.renderState(writer, request, language, PageStateNotFound)
+			return
+		}
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+		return
+	}
+	if err := h.dependencies.AdminLockout.Clear(request.Context(), adminActionContext(user, request), account); err != nil {
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+		return
+	}
+	h.renderDetail(writer, request, language, user, accountID, []Alert{{Level: "success", Message: h.t(language, "admin.lockout.cleared")}}, http.StatusOK)
+}
+
 func pathIdentityID(request *http.Request) (int64, error) {
 	value := strings.TrimSpace(request.PathValue("identityID"))
 	id, err := strconv.ParseInt(value, 10, 64)
@@ -241,6 +278,12 @@ func (h *adminHandler) renderDetail(writer http.ResponseWriter, request *http.Re
 		renderSimpleError(writer, request, http.StatusInternalServerError)
 		return
 	}
+	var lockout *service.LockoutStatus
+	if h.dependencies.AdminLockout != nil {
+		if status, err := h.dependencies.AdminLockout.Status(request.Context(), detail.User); err == nil {
+			lockout = &status
+		}
+	}
 	pageData := PageData{
 		Language:         string(language),
 		Title:            h.t(language, "admin.account.detail_title"),
@@ -256,7 +299,7 @@ func (h *adminHandler) renderDetail(writer http.ResponseWriter, request *http.Re
 		Admin: &AdminView{
 			IsAdmin: true,
 			Page:    "detail",
-			Detail:  h.detailView(language, detail),
+			Detail:  h.detailView(language, detail, lockout),
 		},
 	}
 	if err := h.settings.Render(writer, request, pageData, status); err != nil {
@@ -264,7 +307,7 @@ func (h *adminHandler) renderDetail(writer http.ResponseWriter, request *http.Re
 	}
 }
 
-func (h *adminHandler) detailView(language locale.Code, detail service.AdminUserDetail) *AdminDetailView {
+func (h *adminHandler) detailView(language locale.Code, detail service.AdminUserDetail, lockout *service.LockoutStatus) *AdminDetailView {
 	account := detail.User
 	view := &AdminDetailView{
 		UserID:    account.ID,
@@ -321,7 +364,33 @@ func (h *adminHandler) detailView(language locale.Code, detail service.AdminUser
 			RemoveURL: localizedPath(language, "/admin/users/"+strconv.FormatInt(account.ID, 10)+"/identities/"+strconv.FormatInt(identity.ID, 10)+"/remove"),
 		})
 	}
+	if lockout != nil {
+		lockoutView := &AdminLockoutView{
+			Locked:          lockout.Locked,
+			IdentifierKey:   lockout.IdentifierKey,
+			IdentifierCount: lockout.IdentifierCount,
+			IdentifierLimit: lockout.IdentifierLimit,
+			IdentifierRetry: formatAdminDuration(lockout.IdentifierRetryAfter),
+			ClearURL:        localizedPath(language, "/admin/users/"+strconv.FormatInt(account.ID, 10)+"/lockout/clear"),
+		}
+		for _, origin := range lockout.Origins {
+			lockoutView.Origins = append(lockoutView.Origins, AdminLockoutOriginView{
+				Key:   origin.Key,
+				Count: origin.Count,
+				Limit: origin.Limit,
+				Retry: formatAdminDuration(origin.RetryAfter),
+			})
+		}
+		view.Lockout = lockoutView
+	}
 	return view
+}
+
+func formatAdminDuration(value time.Duration) string {
+	if value <= 0 {
+		return ""
+	}
+	return value.Round(time.Second).String()
 }
 
 func identityLabelFor(identity service.OAuthIdentity) string {
@@ -896,6 +965,19 @@ func (h *adminHandler) labels(language locale.Code) map[string]string {
 		"admin_confirmation_confirm_confirm": h.t(language, "admin.confirmation.confirm_confirm"),
 		"admin_detail_link_active":           h.t(language, "admin.detail.link_active"),
 		"admin_detail_link_none":             h.t(language, "admin.detail.link_none"),
+		"admin_identity_remove":              h.t(language, "admin.identity.remove"),
+		"admin_lockout_heading":              h.t(language, "admin.lockout.heading"),
+		"admin_lockout_locked":               h.t(language, "admin.lockout.locked"),
+		"admin_lockout_clear_state":          h.t(language, "admin.lockout.clear_state"),
+		"admin_lockout_attempts":             h.t(language, "admin.lockout.attempts"),
+		"admin_lockout_limit":                h.t(language, "admin.lockout.limit"),
+		"admin_lockout_retry":                h.t(language, "admin.lockout.retry"),
+		"admin_lockout_origins":              h.t(language, "admin.lockout.origins"),
+		"admin_lockout_origin":               h.t(language, "admin.lockout.origin"),
+		"admin_lockout_origin_attempts":      h.t(language, "admin.lockout.origin_attempts"),
+		"admin_lockout_clear":                h.t(language, "admin.lockout.clear"),
+		"admin_lockout_clear_confirm":        h.t(language, "admin.lockout.clear_confirm"),
+		"admin_lockout_none":                 h.t(language, "admin.lockout.none"),
 		"admin_attempt_time":                 h.t(language, "admin.attempt.time"),
 		"admin_attempt_outcome":              h.t(language, "admin.attempt.outcome"),
 		"admin_attempt_origin":               h.t(language, "admin.attempt.origin"),

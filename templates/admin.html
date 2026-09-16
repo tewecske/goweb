@@ -71,6 +71,39 @@
       </div>
     </section>
 
+    <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="admin-lockout-heading">
+      <div class="card-body">
+        <h2 id="admin-lockout-heading" class="card-title">{{$.Labels.admin_lockout_heading}}</h2>
+        {{with .Lockout}}
+          <p>{{if .Locked}}{{$.Labels.admin_lockout_locked}}{{else}}{{$.Labels.admin_lockout_clear_state}}{{end}}</p>
+          <dl class="grid grid-cols-1 gap-2 md:grid-cols-3">
+            <div><dt class="text-sm opacity-70">{{$.Labels.admin_lockout_attempts}}</dt><dd>{{.IdentifierCount}}</dd></div>
+            <div><dt class="text-sm opacity-70">{{$.Labels.admin_lockout_limit}}</dt><dd>{{.IdentifierLimit}}</dd></div>
+            <div><dt class="text-sm opacity-70">{{$.Labels.admin_lockout_retry}}</dt><dd>{{.IdentifierRetry}}</dd></div>
+          </dl>
+          <h3 class="mt-2 font-semibold">{{$.Labels.admin_lockout_origins}}</h3>
+          {{if .Origins}}
+            <div class="overflow-x-auto">
+              <table class="table">
+                <thead><tr><th scope="col">{{$.Labels.admin_lockout_origin}}</th><th scope="col">{{$.Labels.admin_lockout_origin_attempts}}</th><th scope="col">{{$.Labels.admin_lockout_limit}}</th><th scope="col">{{$.Labels.admin_lockout_retry}}</th></tr></thead>
+                <tbody>
+                  {{range .Origins}}<tr><td>{{.Key}}</td><td>{{.Count}}</td><td>{{.Limit}}</td><td>{{.Retry}}</td></tr>{{end}}
+                </tbody>
+              </table>
+            </div>
+          {{else}}
+            <p class="text-sm opacity-70">{{$.Labels.admin_lockout_none}}</p>
+          {{end}}
+          <form method="post" action="{{.ClearURL}}" hx-post="{{.ClearURL}}"
+                hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this"
+                hx-confirm="{{$.Labels.admin_lockout_clear_confirm}}">
+            <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+            <button class="btn btn-sm btn-warning" type="submit">{{$.Labels.admin_lockout_clear}}</button>
+          </form>
+        {{end}}
+      </div>
+    </section>
+
     <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="admin-sessions-heading">
       <div class="card-body">
         <div class="flex items-center justify-between">

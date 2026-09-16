@@ -102,6 +102,26 @@ type AdminDetailView struct {
 	Sessions               []AdminSessionView
 	LoginAttempts          []AdminLoginAttemptView
 	Identities             []IdentityView
+	Lockout                *AdminLockoutView
+}
+
+// AdminLockoutView is the live lockout state for one account.
+type AdminLockoutView struct {
+	Locked          bool
+	IdentifierKey   string
+	IdentifierCount int
+	IdentifierLimit int
+	IdentifierRetry string
+	Origins         []AdminLockoutOriginView
+	ClearURL        string
+}
+
+// AdminLockoutOriginView is one recent origin's live budget.
+type AdminLockoutOriginView struct {
+	Key   string
+	Count int
+	Limit int
+	Retry string
 }
 
 // AdminSessionView is one active session's safe timing.

@@ -59,6 +59,7 @@ type Dependencies struct {
 	AdminSessionRevoker AdminSessionRevoker
 	AdminConfirmation   AdminConfirmationManager
 	AdminIdentity       AdminIdentityManager
+	AdminLockout        AdminLockoutManager
 }
 
 // AdminAccountLister lists accounts for the administrator area.
@@ -99,6 +100,12 @@ type AdminConfirmationManager interface {
 // AdminIdentityManager removes a linked external identity from an account.
 type AdminIdentityManager interface {
 	RemoveIdentity(context.Context, service.AdminActionContext, int64, int64) error
+}
+
+// AdminLockoutManager reads and clears live lockout state for an account.
+type AdminLockoutManager interface {
+	Status(context.Context, service.User) (service.LockoutStatus, error)
+	Clear(context.Context, service.AdminActionContext, service.User) error
 }
 
 // UserFinder resolves an account for an authenticated session.

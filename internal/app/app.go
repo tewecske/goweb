@@ -61,6 +61,7 @@ type Graph struct {
 	AdminAccounts        *service.AdminAccountService
 	AdminConfirmation    *service.AdminConfirmationService
 	AdminIdentity        *service.AdminIdentityService
+	Lockout              *service.LockoutService
 	AdminDiagnostics     *service.AdminDiagnosticsService
 	Audit                *service.AuditService
 }
@@ -264,6 +265,10 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct admin identity service: %w", err)
 	}
+	lockoutService, err := service.NewLockoutService(signInLimiter, loginAttemptsRepository, auditService)
+	if err != nil {
+		return nil, fmt.Errorf("construct lockout service: %w", err)
+	}
 
 	return &Graph{
 		Database: database, Users: users, Sessions: sessionsRepository,
@@ -283,7 +288,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		AdminUsers: adminUsersRepository, AdminAccounts: adminAccounts,
 		AuditLogs: auditLogRepository, Audit: auditService,
 		LoginAttempts: loginAttemptsRepository, AdminDiagnostics: adminDiagnostics,
-		AdminConfirmation: adminConfirmation, AdminIdentity: adminIdentity,
+		AdminConfirmation: adminConfirmation, AdminIdentity: adminIdentity, Lockout: lockoutService,
 	}, nil
 }
 

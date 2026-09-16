@@ -69,9 +69,48 @@ func (r *LoginAttemptRepository) ListLoginAttemptsForUser(ctx context.Context, u
 	if err != nil {
 		return nil, wrapOperation("list login attempts", err)
 	}
-	defer func() { _ = rows.Close() }()
+	return scanLoginAttempts(rows)
+}
 
-	attempts := make([]service.LoginAttempt, 0, limit)
+// ListLoginAttemptsForEmail returns the most recent attempts for a normalized
+// email, newest first. It includes attempts against unknown accounts.
+func (r *LoginAttemptRepository) ListLoginAttemptsForEmail(ctx context.Context, email string, limit int) ([]service.LoginAttempt, error) {
+	db, err := r.database(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if email == "" {
+		return nil, ErrInvalidData
+	}
+	if limit <= 0 || limit > service.MaxAdminLoginAttempts {
+		limit = service.MaxAdminLoginAttempts
+	}
+	rows, err := db.QueryContext(ctx, `
+		SELECT id, email, user_id, ip, outcome, created_at
+		FROM login_attempts
+		WHERE email = $1
+		ORDER BY created_at DESC, id DESC
+		LIMIT $2
+	`, email, limit)
+	if err != nil {
+		return nil, wrapOperation("list login attempts by email", err)
+	}
+	return scanLoginAttempts(rows)
+}
+
+func (r *LoginAttemptRepository) database(ctx context.Context) (*sql.DB, error) {
+	if err := ValidateContext(ctx); err != nil {
+		return nil, err
+	}
+	if r == nil || r.adapter == nil {
+		return nil, ErrNilDatabase
+	}
+	return r.adapter.DB()
+}
+
+func scanLoginAttempts(rows *sql.Rows) ([]service.LoginAttempt, error) {
+	defer func() { _ = rows.Close() }()
+	attempts := make([]service.LoginAttempt, 0)
 	for rows.Next() {
 		var (
 			attempt service.LoginAttempt
@@ -92,14 +131,4 @@ func (r *LoginAttemptRepository) ListLoginAttemptsForUser(ctx context.Context, u
 		return nil, wrapOperation("iterate login attempts", err)
 	}
 	return attempts, nil
-}
-
-func (r *LoginAttemptRepository) database(ctx context.Context) (*sql.DB, error) {
-	if err := ValidateContext(ctx); err != nil {
-		return nil, err
-	}
-	if r == nil || r.adapter == nil {
-		return nil, ErrNilDatabase
-	}
-	return r.adapter.DB()
 }

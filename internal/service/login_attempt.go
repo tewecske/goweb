@@ -39,6 +39,7 @@ type LoginAttempt struct {
 type LoginAttemptRepository interface {
 	RecordLoginAttempt(context.Context, LoginAttempt) error
 	ListLoginAttemptsForUser(context.Context, int64, int) ([]LoginAttempt, error)
+	ListLoginAttemptsForEmail(context.Context, string, int) ([]LoginAttempt, error)
 }
 
 // LoginAttemptRecorder is the small port consumed by sign-in flows so history

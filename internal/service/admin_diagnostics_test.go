@@ -67,9 +67,10 @@ func (s *adminSessionRepositoryStub) CountActiveSessions(context.Context, int64)
 }
 
 type loginAttemptRepositoryStub struct {
-	attempts []LoginAttempt
-	listed   []LoginAttempt
-	err      error
+	attempts      []LoginAttempt
+	listed        []LoginAttempt
+	listedByEmail []LoginAttempt
+	err           error
 }
 
 func (s *loginAttemptRepositoryStub) RecordLoginAttempt(_ context.Context, attempt LoginAttempt) error {
@@ -85,4 +86,11 @@ func (s *loginAttemptRepositoryStub) ListLoginAttemptsForUser(context.Context, i
 		return nil, s.err
 	}
 	return s.listed, nil
+}
+
+func (s *loginAttemptRepositoryStub) ListLoginAttemptsForEmail(context.Context, string, int) ([]LoginAttempt, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.listedByEmail, nil
 }

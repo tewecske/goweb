@@ -5,10 +5,13 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/tewecske/goweb/internal/locale"
 	"github.com/tewecske/goweb/internal/service"
+	"github.com/tewecske/goweb/templates"
 )
 
 func newAdminTestHandler(t *testing.T, dependencies Dependencies) *adminHandler {
@@ -915,4 +918,94 @@ func (s *adminIdentityStub) RemoveIdentity(_ context.Context, _ service.AdminAct
 	s.accountID = accountID
 	s.identityID = identityID
 	return s.err
+}
+
+func TestAdminLabelsCoverTemplate(t *testing.T) {
+	handler := newAdminTestHandler(t, adminStubDependencies(t, true))
+	labels := handler.labels(locale.English)
+	raw, err := templates.FS.ReadFile("admin.html")
+	if err != nil {
+		t.Fatalf("read template: %v", err)
+	}
+	pattern := regexp.MustCompile(`\$?\.?Labels\.([a-z0-9_]+)`)
+	matches := pattern.FindAllStringSubmatch(string(raw), -1)
+	if len(matches) == 0 {
+		t.Fatal("no label references found in admin template")
+	}
+	for _, match := range matches {
+		if _, ok := labels[match[1]]; !ok {
+			t.Errorf("template references missing label %q", match[1])
+		}
+	}
+}
+
+func TestAdminClearLockoutSucceeds(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminAccountEditor = &adminAccountEditorStub{found: service.User{ID: 9, Email: strPtr("locked@example.test")}}
+	dependencies.AdminUserDetailer = &adminUserDetailerStub{detail: service.AdminUserDetail{User: service.User{ID: 9, Email: strPtr("locked@example.test")}}}
+	lockout := &adminLockoutStub{}
+	dependencies.AdminLockout = lockout
+	handler := newAdminTestHandler(t, dependencies)
+
+	request := authenticatedRequest(http.MethodPost, "/en/admin/users/9/lockout/clear", 7, "")
+	request.SetPathValue("id", "9")
+	response := httptest.NewRecorder()
+	handler.clearLockout(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if lockout.clearedID != 9 {
+		t.Fatalf("cleared id = %d, want 9", lockout.clearedID)
+	}
+	if !strings.Contains(response.Body.String(), "Lockout cleared") {
+		t.Errorf("body missing lockout-cleared message")
+	}
+}
+
+func TestAdminClearLockoutMissingAccount(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminAccountEditor = &adminAccountEditorStub{findErr: service.ErrRecordNotFound}
+	dependencies.AdminLockout = &adminLockoutStub{}
+	handler := newAdminTestHandler(t, dependencies)
+	request := authenticatedRequest(http.MethodPost, "/en/admin/users/9/lockout/clear", 7, "")
+	request.SetPathValue("id", "9")
+	response := httptest.NewRecorder()
+	handler.clearLockout(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
+	}
+}
+
+func TestAdminClearLockoutRejectsNonAdmin(t *testing.T) {
+	dependencies := adminStubDependencies(t, false)
+	dependencies.AdminLockout = &adminLockoutStub{}
+	handler := newAdminTestHandler(t, dependencies)
+	request := authenticatedRequest(http.MethodPost, "/en/admin/users/9/lockout/clear", 7, "")
+	request.SetPathValue("id", "9")
+	response := httptest.NewRecorder()
+	handler.clearLockout(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+}
+
+type adminLockoutStub struct {
+	clearedID int64
+	status    service.LockoutStatus
+	err       error
+}
+
+func (s *adminLockoutStub) Status(context.Context, service.User) (service.LockoutStatus, error) {
+	if s.err != nil {
+		return service.LockoutStatus{}, s.err
+	}
+	return s.status, nil
+}
+
+func (s *adminLockoutStub) Clear(_ context.Context, _ service.AdminActionContext, account service.User) error {
+	if s.err != nil {
+		return s.err
+	}
+	s.clearedID = account.ID
+	return nil
 }
