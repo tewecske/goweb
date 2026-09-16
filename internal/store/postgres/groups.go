@@ -329,6 +329,11 @@ func (r *GroupMembershipRepository) UpdateMembershipRole(ctx context.Context, me
 		WHERE group_id = $2 AND user_id = $3 AND version = $4
 		RETURNING id, group_id, user_id, role, created_at, version
 	`, membership.Role, membership.GroupID, membership.UserID, expectedVersion))
+	if errors.Is(err, sql.ErrNoRows) {
+		// The membership row was locked above, so a missing update row means the
+		// caller's revision is stale rather than the record having vanished.
+		return service.GroupMembership{}, service.ErrOptimisticLockConflict
+	}
 	if err != nil {
 		return service.GroupMembership{}, mapMembershipError(err)
 	}
