@@ -80,5 +80,6 @@ The complete application requirements are in [gptsummary.md](gptsummary.md).
 See [local development setup](docs/local-development.md) for tool requirements,
 database status, development commands, and project conventions. Production
 rollout, migrations, rollback limits, backups, and recovery are covered by the
-[deployment and migration runbook](docs/deployment.md). Contributions follow
-[CONTRIBUTING.md](CONTRIBUTING.md).
+[deployment and migration runbook](docs/deployment.md), and first-admin setup by
+the [bootstrap administrator procedure](docs/bootstrap-admin.md). Contributions
+follow [CONTRIBUTING.md](CONTRIBUTING.md).

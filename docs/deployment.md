@@ -18,8 +18,10 @@ these is true:
 Every environment also rejects a credential-bearing public URL, a malformed
 mail relay, an invalid `GOWEB_TRUSTED_PROXY`, and bootstrap administrator
 values in production. See [README configuration](../README.md#configuration)
-for the full variable table. Secret values are redacted from diagnostics and
-must come from the platform secret store, never from the repository.
+for the full variable table and the
+[bootstrap administrator procedure](bootstrap-admin.md) for first-admin
+provisioning. Secret values are redacted from diagnostics and must come from the
+platform secret store, never from the repository.
 
 ## Deployment order
 
