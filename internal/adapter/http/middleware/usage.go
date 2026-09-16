@@ -12,13 +12,15 @@ import (
 const usageEnqueueTimeout = 100 * time.Millisecond
 
 // UsageEvent is one normalized request observation recorded for operations.
-// It never carries a query string, credential, or bearer value.
+// It never carries a query string, credential, or bearer value. RequestID links
+// the asynchronous record back to the request that caused it.
 type UsageEvent struct {
-	Method string
-	Route  string
-	Status int
-	UserID *int64
-	IP     string
+	Method    string
+	Route     string
+	Status    int
+	RequestID string
+	UserID    *int64
+	IP        string
 }
 
 // UsageRecorder enqueues one usage event. A queue-full or storage failure must
@@ -49,10 +51,11 @@ func Usage(recorder UsageRecorder, normalize RouteNormalizer) Middleware {
 				status = http.StatusOK
 			}
 			event := UsageEvent{
-				Method: request.Method,
-				Route:  normalize(request),
-				Status: status,
-				IP:     requestOriginHost(request.RemoteAddr),
+				Method:    request.Method,
+				Route:     normalize(request),
+				Status:    status,
+				RequestID: requestID(request.Context()),
+				IP:        requestOriginHost(request.RemoteAddr),
 			}
 			if principal, ok := PrincipalFromContext(request.Context()); ok {
 				if id, err := strconv.ParseInt(principal.ID, 10, 64); err == nil && id > 0 {

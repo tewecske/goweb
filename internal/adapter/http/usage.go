@@ -25,10 +25,11 @@ type usageRecorder struct {
 // EnqueueUsage converts the middleware event into the persistence model.
 func (r usageRecorder) EnqueueUsage(ctx context.Context, event middleware.UsageEvent) error {
 	converted := service.UsageEvent{
-		Method: event.Method,
-		Route:  event.Route,
-		Status: event.Status,
-		UserID: event.UserID,
+		Method:    event.Method,
+		Route:     event.Route,
+		Status:    event.Status,
+		RequestID: event.RequestID,
+		UserID:    event.UserID,
 	}
 	if event.IP != "" {
 		origin := event.IP

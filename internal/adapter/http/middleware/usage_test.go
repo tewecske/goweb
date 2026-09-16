@@ -20,7 +20,9 @@ func TestUsageRecordsNormalizedEvent(t *testing.T) {
 	request.Pattern = "/en/groups/{id}"
 	request.RemoteAddr = "203.0.113.9:54321"
 	principal := Principal{ID: "7"}
-	request = request.WithContext(context.WithValue(request.Context(), principalKey{}, principal))
+	ctx := context.WithValue(request.Context(), principalKey{}, principal)
+	ctx = context.WithValue(ctx, requestIDKey{}, "request-abc")
+	request = request.WithContext(ctx)
 	handler.ServeHTTP(httptest.NewRecorder(), request)
 
 	if len(recorder.events) != 1 {
@@ -29,6 +31,9 @@ func TestUsageRecordsNormalizedEvent(t *testing.T) {
 	event := recorder.events[0]
 	if event.Method != http.MethodPost || event.Status != http.StatusCreated || event.Route != "/en/groups/{id}" {
 		t.Fatalf("event = %+v, want normalized route and status", event)
+	}
+	if event.RequestID != "request-abc" {
+		t.Fatalf("event request id = %q, want request-abc", event.RequestID)
 	}
 	if event.IP != "203.0.113.9" {
 		t.Fatalf("event IP = %q, want host without port", event.IP)

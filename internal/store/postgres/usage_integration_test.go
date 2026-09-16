@@ -40,7 +40,7 @@ func TestUsageQueueRecordsEventsOutsideTheRequest(t *testing.T) {
 	origin := "203.0.113.9"
 	for index := 0; index < 3; index++ {
 		if err := queue.EnqueueUsage(ctx, service.UsageEvent{
-			Method: "GET", Route: "/{language}/groups/{id}", Status: 200, IP: &origin,
+			Method: "GET", Route: "/{language}/groups/{id}", Status: 200, RequestID: "request-link-1", IP: &origin,
 		}); err != nil {
 			t.Fatalf("EnqueueUsage() error = %v", err)
 		}
@@ -55,17 +55,18 @@ func TestUsageQueueRecordsEventsOutsideTheRequest(t *testing.T) {
 	}
 
 	var (
-		method string
-		route  string
-		status int
-		count  int
+		method    string
+		route     string
+		requestID string
+		status    int
+		count     int
 	)
 	if err := harness.DB.QueryRowContext(ctx, `
-		SELECT COUNT(*), MIN(method), MIN(route), MIN(status) FROM usage_events
-	`).Scan(&count, &method, &route, &status); err != nil {
+		SELECT COUNT(*), MIN(method), MIN(route), MIN(request_id), MIN(status) FROM usage_events
+	`).Scan(&count, &method, &route, &requestID, &status); err != nil {
 		t.Fatal(err)
 	}
-	if count != 3 || method != "GET" || route != "/{language}/groups/{id}" || status != 200 {
-		t.Fatalf("stored usage = count %d method %q route %q status %d", count, method, route, status)
+	if count != 3 || method != "GET" || route != "/{language}/groups/{id}" || requestID != "request-link-1" || status != 200 {
+		t.Fatalf("stored usage = count %d method %q route %q request %q status %d", count, method, route, requestID, status)
 	}
 }

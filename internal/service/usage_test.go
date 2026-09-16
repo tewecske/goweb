@@ -70,6 +70,7 @@ func TestUsageQueueSurvivesStorageFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	queue.backoff = time.Millisecond
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- queue.Run(ctx) }()
@@ -130,19 +131,41 @@ func waitFor(t *testing.T, condition func() bool) {
 }
 
 type usageRepositoryStub struct {
-	mu     sync.Mutex
-	events []UsageEvent
-	err    error
+	mu                sync.Mutex
+	events            []UsageEvent
+	err               error
+	remainingFailures int
+	callCount         int
 }
 
 func (r *usageRepositoryStub) RecordUsageEvent(_ context.Context, event UsageEvent) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.callCount++
+	if r.remainingFailures > 0 {
+		r.remainingFailures--
+		return errors.New("transient storage failure")
+	}
 	if r.err != nil {
 		return r.err
 	}
 	r.events = append(r.events, event)
 	return nil
+}
+
+func (r *usageRepositoryStub) attempts() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.callCount
+}
+
+func (r *usageRepositoryStub) last() UsageEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.events) == 0 {
+		return UsageEvent{}
+	}
+	return r.events[len(r.events)-1]
 }
 
 func (r *usageRepositoryStub) count() int {
@@ -155,4 +178,58 @@ func (r *usageRepositoryStub) setError(err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.err = err
+}
+
+func TestUsageQueueRetriesTransientFailures(t *testing.T) {
+	repository := &usageRepositoryStub{remainingFailures: 2}
+	queue, err := NewUsageQueue(repository, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue.backoff = time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- queue.Run(ctx) }()
+	if err := queue.EnqueueUsage(context.Background(), UsageEvent{Method: "GET", Route: "/a", Status: 200}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return queue.Stats().Recorded == 1 })
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if stats := queue.Stats(); stats.Failed != 0 || repository.attempts() != 3 {
+		t.Fatalf("stats = %+v attempts = %d, want success after 3 attempts", stats, repository.attempts())
+	}
+}
+
+func TestUsageQueuePreservesRequestLink(t *testing.T) {
+	repository := &usageRepositoryStub{}
+	queue, err := NewUsageQueue(repository, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- queue.Run(ctx) }()
+	if err := queue.EnqueueUsage(context.Background(), UsageEvent{Method: "GET", Route: "/a", Status: 200, RequestID: "request-123"}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return repository.count() == 1 })
+	cancel()
+	<-done
+	if stored := repository.last(); stored.RequestID != "request-123" {
+		t.Fatalf("stored request id = %q, want request-123", stored.RequestID)
+	}
+}
+
+func TestUsageQueueRejectsUnsafeRequestID(t *testing.T) {
+	queue, err := NewUsageQueue(&usageRepositoryStub{}, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := queue.EnqueueUsage(context.Background(), UsageEvent{Method: "GET", Route: "/a", Status: 200, RequestID: "bad\nvalue"}); !errors.Is(err, ErrInvalidUsageEvent) {
+		t.Fatalf("EnqueueUsage(unsafe request id) error = %v, want %v", err, ErrInvalidUsageEvent)
+	}
 }
