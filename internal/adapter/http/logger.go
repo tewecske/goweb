@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/tewecske/goweb/internal/adapter/http/middleware"
+	"github.com/tewecske/goweb/internal/service"
 )
 
 // Logger emits structured application and security events.
@@ -56,5 +57,30 @@ func (l *Logger) LogSecurity(ctx context.Context, event SecurityEvent) {
 		"outcome", event.Outcome,
 	)
 }
+
+// AuditSecuritySink mirrors stored administrator actions to the security log
+// stream. It never includes target identifiers, credentials, or tokens.
+type AuditSecuritySink struct {
+	logger *Logger
+}
+
+// NewAuditSecuritySink constructs a security-log sink over logger.
+func NewAuditSecuritySink(logger *Logger) *AuditSecuritySink {
+	return &AuditSecuritySink{logger: logger}
+}
+
+// AuditRecorded implements service.AuditSink.
+func (s *AuditSecuritySink) AuditRecorded(ctx context.Context, record service.AuditRecord) {
+	if s == nil || s.logger == nil {
+		return
+	}
+	requestID := ""
+	if id, ok := middleware.RequestIDFromContext(ctx); ok {
+		requestID = id
+	}
+	s.logger.LogSecurity(ctx, SecurityEvent{RequestID: requestID, Action: record.Action, Outcome: "recorded"})
+}
+
+var _ service.AuditSink = (*AuditSecuritySink)(nil)
 
 var _ middleware.RequestLogger = (*Logger)(nil)

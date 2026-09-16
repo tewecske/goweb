@@ -48,6 +48,7 @@ Use Go 1.26 language features only. Prefer standard-library packages. Add third-
 - Protected routes must use authentication middleware explicitly.
 - Revision-checked writes go through `ClassifyStaleWrite`/`IsWriteConflict`: a stale revision is a conflict, a vanished record is not-found. Do not show a conflict for a deleted record.
 - HTMX fragments repeat authorization, include their own headings and alerts, and carry an out-of-band `#alerts` region. The layout configures `htmx.config.responseHandling` so `422` validation fragments swap; other `4xx`/`5xx` stay errors.
+- Administrator routes pass through the shared admin authorization guard. Record every administrator action through the audit service with an actor snapshot, target, detail, time, and origin, mirror it to the security log stream, and never store credentials, session identifiers, or tokens.
 
 ## Tests and CI
 

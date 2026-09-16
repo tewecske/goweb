@@ -66,6 +66,7 @@ func main() {
 			_ = database.Close()
 			log.Fatal(cookieErr)
 		}
+		applicationGraph.Audit.SetSink(httpadapter.NewAuditSecuritySink(logger))
 		serverOptions = append(serverOptions, appserver.WithDependency(database))
 		router = httpadapter.NewLoggedRouterWithServices(logger, httpadapter.Dependencies{
 			Users:                applicationGraph.Users,

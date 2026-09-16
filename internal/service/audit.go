@@ -74,11 +74,19 @@ type AuditRecorder interface {
 	Record(context.Context, AuditRecord) error
 }
 
+// AuditSink receives a stored administrator action so it can be emitted to the
+// separately identifiable security log stream. Sinks must never block or fail
+// an already completed action.
+type AuditSink interface {
+	AuditRecorded(context.Context, AuditRecord)
+}
+
 // AuditService validates and stores administrator action records. A storage
 // failure is returned to the caller so it can be logged without undoing an
 // already completed account action.
 type AuditService struct {
 	repository AuditRepository
+	sink       AuditSink
 	now        func() time.Time
 }
 
@@ -90,7 +98,17 @@ func NewAuditService(repository AuditRepository) (*AuditService, error) {
 	return &AuditService{repository: repository, now: time.Now}, nil
 }
 
-// Record validates and stores one administrator action.
+// SetSink attaches the security-log sink. It is intended to be called once
+// during startup before the server begins serving requests.
+func (s *AuditService) SetSink(sink AuditSink) {
+	if s == nil {
+		return
+	}
+	s.sink = sink
+}
+
+// Record validates and stores one administrator action, then emits it to the
+// security log sink. A sink failure cannot affect the stored record.
 func (s *AuditService) Record(ctx context.Context, record AuditRecord) error {
 	if s == nil || s.repository == nil || s.now == nil {
 		return ErrInvalidAuditEntry
@@ -104,6 +122,9 @@ func (s *AuditService) Record(ctx context.Context, record AuditRecord) error {
 	}
 	if err := s.repository.CreateAuditEntry(ctx, entry); err != nil {
 		return fmt.Errorf("create audit entry: %w", err)
+	}
+	if s.sink != nil {
+		s.sink.AuditRecorded(ctx, record)
 	}
 	return nil
 }

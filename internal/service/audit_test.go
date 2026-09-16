@@ -92,3 +92,46 @@ func (s *auditRepositoryStub) CreateAuditEntry(_ context.Context, entry AuditEnt
 	s.entries = append(s.entries, entry)
 	return nil
 }
+
+func TestAuditServiceRecordEmitsToSink(t *testing.T) {
+	sink := &auditSinkStub{}
+	audit, err := NewAuditService(&auditRepositoryStub{})
+	if err != nil {
+		t.Fatalf("NewAuditService() error = %v", err)
+	}
+	audit.SetSink(sink)
+	record := AuditRecord{ActorUserID: 1, Action: AuditActionAccountCreated, TargetID: "9", Detail: "user@example.test"}
+	if err := audit.Record(context.Background(), record); err != nil {
+		t.Fatalf("Record() error = %v", err)
+	}
+	if len(sink.records) != 1 || sink.records[0].Action != AuditActionAccountCreated {
+		t.Fatalf("sink records = %+v, want one account-created record", sink.records)
+	}
+}
+
+func TestAuditServiceSinkFailureDoesNotUndoStoredRecord(t *testing.T) {
+	repository := &auditRepositoryStub{}
+	audit, err := NewAuditService(repository)
+	if err != nil {
+		t.Fatalf("NewAuditService() error = %v", err)
+	}
+	audit.SetSink(erroringAuditSink{})
+	if err := audit.Record(context.Background(), AuditRecord{ActorUserID: 1, Action: "x"}); err != nil {
+		t.Fatalf("Record() error = %v, want nil", err)
+	}
+	if len(repository.entries) != 1 {
+		t.Fatalf("entries = %d, want 1", len(repository.entries))
+	}
+}
+
+type auditSinkStub struct {
+	records []AuditRecord
+}
+
+func (s *auditSinkStub) AuditRecorded(_ context.Context, record AuditRecord) {
+	s.records = append(s.records, record)
+}
+
+type erroringAuditSink struct{}
+
+func (erroringAuditSink) AuditRecorded(context.Context, AuditRecord) {}

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -163,6 +164,12 @@ func TestAdminAccountServiceCreateProvisionsConfirmedAccount(t *testing.T) {
 	}
 	if auditor.records[0].TargetID != "9" || auditor.records[0].IP != "203.0.113.5" {
 		t.Fatalf("audit record = %+v, want target 9 and origin", auditor.records[0])
+	}
+	if auditor.records[0].Detail != "newuser@example.test" {
+		t.Fatalf("audit detail = %q, want email only without password material", auditor.records[0].Detail)
+	}
+	if strings.Contains(auditor.records[0].Detail, "hash") {
+		t.Fatalf("audit detail leaked password material: %q", auditor.records[0].Detail)
 	}
 }
 
