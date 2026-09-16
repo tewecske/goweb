@@ -81,5 +81,7 @@ See [local development setup](docs/local-development.md) for tool requirements,
 database status, development commands, and project conventions. Production
 rollout, migrations, rollback limits, backups, and recovery are covered by the
 [deployment and migration runbook](docs/deployment.md), and first-admin setup by
-the [bootstrap administrator procedure](docs/bootstrap-admin.md). Contributions
-follow [CONTRIBUTING.md](CONTRIBUTING.md).
+the [bootstrap administrator procedure](docs/bootstrap-admin.md). Data
+retention and datastore backups are described in
+[backup and retention](docs/backup-retention.md). Contributions follow
+[CONTRIBUTING.md](CONTRIBUTING.md).

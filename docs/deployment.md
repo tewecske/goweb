@@ -80,6 +80,9 @@ platform secret store, never from the repository.
 
 ## Backups
 
+See [backup and retention](backup-retention.md) for the full data inventory and
+backup expectations.
+
 - Back up PostgreSQL before every deployment and before running an irreversible
   migration. Use `pg_dump` against the configured connection and store the
   artifact in the platform backup store:
@@ -93,7 +96,9 @@ platform secret store, never from the repository.
 
 ## Retention
 
-Retention is enforced by the maintenance worker using these settings:
+See [backup and retention](backup-retention.md) for the per-table data inventory
+and cleanup behavior. Retention is enforced by the maintenance worker using
+these settings:
 
 | Variable | Default | Effect |
 | --- | --- | --- |
