@@ -315,8 +315,8 @@ func TestAdminCreateAccountRejectsDuplicateEmail(t *testing.T) {
 
 	response := httptest.NewRecorder()
 	handler.createAccount(response, authenticatedRequest(http.MethodPost, "/en/admin/users/new", 7, "email=dup@example.test"))
-	if response.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want %d", response.Code, http.StatusConflict)
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnprocessableEntity)
 	}
 	if !strings.Contains(response.Body.String(), "already uses this email") {
 		t.Errorf("body missing duplicate-email message")
@@ -375,4 +375,128 @@ func (s *adminAccountCreatorStub) Create(_ context.Context, actor service.AdminA
 		return service.User{}, s.err
 	}
 	return s.created, nil
+}
+
+func TestAdminEditAccountRendersPrefilledForm(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminAccountEditor = &adminAccountEditorStub{found: service.User{ID: 9, Email: strPtr("edit@example.test"), IsAdmin: true, Version: 4}}
+	handler := newAdminTestHandler(t, dependencies)
+
+	request := authenticatedRequest(http.MethodGet, "/en/admin/users/9/edit", 7, "")
+	request.SetPathValue("id", "9")
+	response := httptest.NewRecorder()
+	handler.editAccount(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	body := response.Body.String()
+	for _, want := range []string{`value="edit@example.test"`, `name="version" value="4"`, "checked"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("edit form missing %q", want)
+		}
+	}
+}
+
+func TestAdminEditAccountSucceeds(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	editor := &adminAccountEditorStub{found: service.User{ID: 9, Email: strPtr("old@example.test"), Version: 2}, updated: service.User{ID: 9}}
+	dependencies.AdminAccountEditor = editor
+	handler := newAdminTestHandler(t, dependencies)
+
+	request := authenticatedRequest(http.MethodPost, "/en/admin/users/9/edit", 7, "email=new@example.test&version=2&is_admin=true")
+	request.SetPathValue("id", "9")
+	response := httptest.NewRecorder()
+	handler.editAccount(response, request)
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusSeeOther)
+	}
+	if location := response.Header().Get("Location"); location != "/en/admin/users/9" {
+		t.Fatalf("redirect = %q, want /en/admin/users/9", location)
+	}
+	if editor.received.Version != 2 || !editor.received.IsAdmin || editor.received.Email != "new@example.test" {
+		t.Fatalf("update input = %+v, want submitted values", editor.received)
+	}
+	if editor.targetID != 9 {
+		t.Fatalf("target = %d, want 9", editor.targetID)
+	}
+}
+
+func TestAdminEditAccountErrors(t *testing.T) {
+	tests := []struct {
+		name   string
+		err    error
+		status int
+	}{
+		{name: "conflict", err: service.ErrOptimisticLockConflict, status: http.StatusConflict},
+		{name: "duplicate email", err: service.ErrDuplicateEmail, status: http.StatusConflict},
+		{name: "invalid email", err: service.ErrInvalidEmail, status: http.StatusUnprocessableEntity},
+		{name: "weak password", err: service.ErrPasswordTooShort, status: http.StatusUnprocessableEntity},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dependencies := adminStubDependencies(t, true)
+			dependencies.AdminAccountEditor = &adminAccountEditorStub{found: service.User{ID: 9, Version: 1}, updateErr: test.err}
+			handler := newAdminTestHandler(t, dependencies)
+			request := authenticatedRequest(http.MethodPost, "/en/admin/users/9/edit", 7, "email=a@example.test&version=1")
+			request.SetPathValue("id", "9")
+			response := httptest.NewRecorder()
+			handler.editAccount(response, request)
+			if response.Code != test.status {
+				t.Fatalf("status = %d, want %d", response.Code, test.status)
+			}
+		})
+	}
+}
+
+func TestAdminEditAccountMissingRecordRendersNotFound(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminAccountEditor = &adminAccountEditorStub{findErr: service.ErrRecordNotFound}
+	handler := newAdminTestHandler(t, dependencies)
+	request := authenticatedRequest(http.MethodGet, "/en/admin/users/9/edit", 7, "")
+	request.SetPathValue("id", "9")
+	response := httptest.NewRecorder()
+	handler.editAccount(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
+	}
+}
+
+func TestAdminEditAccountRejectsNonAdmin(t *testing.T) {
+	dependencies := adminStubDependencies(t, false)
+	dependencies.AdminAccountEditor = &adminAccountEditorStub{}
+	handler := newAdminTestHandler(t, dependencies)
+	request := authenticatedRequest(http.MethodGet, "/en/admin/users/9/edit", 7, "")
+	request.SetPathValue("id", "9")
+	response := httptest.NewRecorder()
+	handler.editAccount(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+}
+
+type adminAccountEditorStub struct {
+	found     service.User
+	findErr   error
+	updated   service.User
+	updateErr error
+	actor     service.AdminActionContext
+	targetID  int64
+	received  service.AdminAccountUpdateInput
+}
+
+func (s *adminAccountEditorStub) Find(context.Context, int64) (service.User, error) {
+	if s.findErr != nil {
+		return service.User{}, s.findErr
+	}
+	return s.found, nil
+}
+
+func (s *adminAccountEditorStub) Update(_ context.Context, actor service.AdminActionContext, targetID int64, input service.AdminAccountUpdateInput) (service.User, error) {
+	s.actor = actor
+	s.targetID = targetID
+	s.received = input
+	if s.updateErr != nil {
+		return service.User{}, s.updateErr
+	}
+	return s.updated, nil
 }

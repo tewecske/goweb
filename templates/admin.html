@@ -36,145 +36,154 @@
   </div>
 {{end}}
 
+{{define "admin-account-form"}}
+  <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="admin-account-form-heading">
+    <div class="card-body">
+      <h2 id="admin-account-form-heading" class="card-title">{{.Admin.List.Form.Heading}}</h2>
+      <form class="grid gap-4" method="post" action="{{.Admin.List.Form.ActionURL}}"
+            hx-post="{{.Admin.List.Form.ActionURL}}" hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this">
+        <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+        <input type="hidden" name="version" value="{{.Admin.List.Form.Version}}">
+        <fieldset class="fieldset">
+          <label class="fieldset-legend" for="admin-account-email">{{.Labels.admin_account_email}}</label>
+          <input id="admin-account-email" class="input w-full" type="email" name="email" required
+                 value="{{.Form.Value "email"}}" aria-describedby="admin-account-email-error">
+          {{with .Form.Error "email"}}<p id="admin-account-email-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
+        </fieldset>
+        <fieldset class="fieldset">
+          <label class="fieldset-legend" for="admin-account-password">{{.Labels.admin_account_password}}</label>
+          <input id="admin-account-password" class="input w-full" type="password" name="password"
+                 autocomplete="new-password" aria-describedby="admin-account-password-error admin-account-password-help">
+          <p id="admin-account-password-help" class="text-sm opacity-70">{{.Labels.admin_account_password_help}}</p>
+          {{with .Form.Error "password"}}<p id="admin-account-password-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
+        </fieldset>
+        <label class="label cursor-pointer justify-start gap-3" for="admin-account-is-admin">
+          <input id="admin-account-is-admin" class="checkbox" type="checkbox" name="is_admin" value="true"
+                 {{if .Admin.List.Form.IsAdmin}}checked{{end}}>
+          <span class="label-text">{{.Labels.admin_account_is_admin}}</span>
+        </label>
+        <div class="flex gap-2">
+          <button class="btn btn-primary" type="submit">{{.Admin.List.Form.SubmitLabel}}</button>
+          <a class="btn btn-ghost" href="{{.Admin.List.Form.CancelURL}}">{{.Labels.admin_account_cancel}}</a>
+          <span class="htmx-indicator loading loading-spinner" aria-hidden="true"></span>
+        </div>
+      </form>
+    </div>
+  </section>
+{{end}}
+
 {{define "admin-users-content"}}
   {{with .Admin.List}}
   <div id="page-content" class="mt-6 grid gap-6 w-full max-w-5xl">
-    <p class="text-sm opacity-70">{{$.Description}}</p>
-
-    {{if .Creating}}
-      <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="admin-create-heading">
-        <div class="card-body">
-          <h2 id="admin-create-heading" class="card-title">{{$.Labels.admin_create_heading}}</h2>
-          <form class="grid gap-4" method="post" action="{{.CreateURL}}"
-                hx-post="{{.CreateURL}}" hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this">
-            <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
-            <fieldset class="fieldset">
-              <label class="fieldset-legend" for="admin-account-email">{{$.Labels.admin_account_email}}</label>
-              <input id="admin-account-email" class="input w-full" type="email" name="email" required
-                     value="{{$.Form.Value "email"}}" aria-describedby="admin-account-email-error">
-              {{with $.Form.Error "email"}}<p id="admin-account-email-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
-            </fieldset>
-            <fieldset class="fieldset">
-              <label class="fieldset-legend" for="admin-account-password">{{$.Labels.admin_account_password}}</label>
-              <input id="admin-account-password" class="input w-full" type="password" name="password"
-                     autocomplete="new-password" aria-describedby="admin-account-password-error admin-account-password-help">
-              <p id="admin-account-password-help" class="text-sm opacity-70">{{$.Labels.admin_account_password_help}}</p>
-              {{with $.Form.Error "password"}}<p id="admin-account-password-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
-            </fieldset>
-            <label class="label cursor-pointer justify-start gap-3" for="admin-account-is-admin">
-              <input id="admin-account-is-admin" class="checkbox" type="checkbox" name="is_admin" value="true">
-              <span class="label-text">{{$.Labels.admin_account_is_admin}}</span>
-            </label>
-            <div class="flex gap-2">
-              <button class="btn btn-primary" type="submit">{{$.Labels.admin_account_submit}}</button>
-              <a class="btn btn-ghost" href="{{.BaseURL}}">{{$.Labels.admin_account_cancel}}</a>
-              <span class="htmx-indicator loading loading-spinner" aria-hidden="true"></span>
-            </div>
-          </form>
-        </div>
-      </section>
+    {{if or (eq .Mode "create") (eq .Mode "edit")}}
+      {{template "admin-account-form" $}}
     {{else}}
       <div class="flex justify-end">
         <a class="btn btn-primary btn-sm" href="{{.CreateURL}}">{{$.Labels.admin_create}}</a>
       </div>
 
-    <form class="grid gap-4" method="get" action="{{.BaseURL}}"
-          hx-get="{{.BaseURL}}" hx-target="#page-content" hx-swap="outerHTML"
-          hx-replace-url="true" hx-trigger="input changed delay:350ms from:#admin-search, submit">
-      <input type="hidden" name="admin" value="{{.AdminFilter}}">
-      <input type="hidden" name="guest" value="{{.GuestFilter}}">
-      <input type="hidden" name="confirmed" value="{{.ConfirmedFilter}}">
-      <input type="hidden" name="sort" value="{{.Sort}}">
-      <input type="hidden" name="dir" value="{{.Direction}}">
-      <input type="hidden" name="size" value="{{.Size}}">
-      <fieldset class="fieldset">
-        <label class="fieldset-legend" for="admin-search">{{$.Labels.admin_search}}</label>
-        <input id="admin-search" class="input w-full" type="search" name="q" value="{{.SearchValue}}"
-               placeholder="{{$.Labels.admin_search_placeholder}}" autocomplete="off">
-      </fieldset>
-      <div>
-        <button class="btn" type="submit">{{$.Labels.admin_search}}</button>
-      </div>
-    </form>
+      <form class="grid gap-4" method="get" action="{{.BaseURL}}"
+            hx-get="{{.BaseURL}}" hx-target="#page-content" hx-swap="outerHTML"
+            hx-replace-url="true" hx-trigger="input changed delay:350ms from:#admin-search, submit">
+        <input type="hidden" name="admin" value="{{.AdminFilter}}">
+        <input type="hidden" name="guest" value="{{.GuestFilter}}">
+        <input type="hidden" name="confirmed" value="{{.ConfirmedFilter}}">
+        <input type="hidden" name="sort" value="{{.Sort}}">
+        <input type="hidden" name="dir" value="{{.Direction}}">
+        <input type="hidden" name="size" value="{{.Size}}">
+        <fieldset class="fieldset">
+          <label class="fieldset-legend" for="admin-search">{{$.Labels.admin_search}}</label>
+          <input id="admin-search" class="input w-full" type="search" name="q" value="{{.SearchValue}}"
+                 placeholder="{{$.Labels.admin_search_placeholder}}" autocomplete="off">
+        </fieldset>
+        <div>
+          <button class="btn" type="submit">{{$.Labels.admin_search}}</button>
+        </div>
+      </form>
 
-    <div class="flex flex-wrap gap-3" role="group" aria-label="{{$.Labels.admin_sections}}">
-      <div class="join" role="group" aria-label="{{$.Labels.admin_filter_admin}}">
-        <a class="btn btn-sm join-item {{if not .AdminFilter}}btn-active{{end}}" href="{{index .FilterURLs "admin_all"}}"
-           hx-get="{{index .FilterURLs "admin_all"}}" hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_filter_all}}</a>
-        <a class="btn btn-sm join-item {{if eq .AdminFilter "yes"}}btn-active{{end}}" href="{{index .FilterURLs "admin_yes"}}"
-           hx-get="{{index .FilterURLs "admin_yes"}}" hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_filter_yes}}</a>
-        <a class="btn btn-sm join-item {{if eq .AdminFilter "no"}}btn-active{{end}}" href="{{index .FilterURLs "admin_no"}}"
-           hx-get="{{index .FilterURLs "admin_no"}}" hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_filter_no}}</a>
+      <div class="flex flex-wrap gap-3" role="group" aria-label="{{$.Labels.admin_sections}}">
+        <div class="join" role="group" aria-label="{{$.Labels.admin_filter_admin}}">
+          <a class="btn btn-sm join-item {{if not .AdminFilter}}btn-active{{end}}" href="{{index .FilterURLs "admin_all"}}"
+             hx-get="{{index .FilterURLs "admin_all"}}" hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_filter_all}}</a>
+          <a class="btn btn-sm join-item {{if eq .AdminFilter "yes"}}btn-active{{end}}" href="{{index .FilterURLs "admin_yes"}}"
+             hx-get="{{index .FilterURLs "admin_yes"}}" hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_filter_yes}}</a>
+          <a class="btn btn-sm join-item {{if eq .AdminFilter "no"}}btn-active{{end}}" href="{{index .FilterURLs "admin_no"}}"
+             hx-get="{{index .FilterURLs "admin_no"}}" hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_filter_no}}</a>
+        </div>
+        <div class="join" role="group" aria-label="{{$.Labels.admin_filter_guest}}">
+          <a class="btn btn-sm join-item {{if not .GuestFilter}}btn-active{{end}}" href="{{index .FilterURLs "guest_all"}}"
+             hx-get="{{index .FilterURLs "guest_all"}}" hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_filter_all}}</a>
+          <a class="btn btn-sm join-item {{if eq .GuestFilter "yes"}}btn-active{{end}}" href="{{index .FilterURLs "guest_yes"}}"
+             hx-get="{{index .FilterURLs "guest_yes"}}" hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_filter_yes}}</a>
+          <a class="btn btn-sm join-item {{if eq .GuestFilter "no"}}btn-active{{end}}" href="{{index .FilterURLs "guest_no"}}"
+             hx-get="{{index .FilterURLs "guest_no"}}" hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_filter_no}}</a>
+        </div>
+        <div class="join" role="group" aria-label="{{$.Labels.admin_filter_confirmed}}">
+          <a class="btn btn-sm join-item {{if not .ConfirmedFilter}}btn-active{{end}}" href="{{index .FilterURLs "confirmed_all"}}"
+             hx-get="{{index .FilterURLs "confirmed_all"}}" hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_filter_all}}</a>
+          <a class="btn btn-sm join-item {{if eq .ConfirmedFilter "yes"}}btn-active{{end}}" href="{{index .FilterURLs "confirmed_yes"}}"
+             hx-get="{{index .FilterURLs "confirmed_yes"}}" hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_filter_yes}}</a>
+          <a class="btn btn-sm join-item {{if eq .ConfirmedFilter "no"}}btn-active{{end}}" href="{{index .FilterURLs "confirmed_no"}}"
+             hx-get="{{index .FilterURLs "confirmed_no"}}" hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_filter_no}}</a>
+        </div>
       </div>
-      <div class="join" role="group" aria-label="{{$.Labels.admin_filter_guest}}">
-        <a class="btn btn-sm join-item {{if not .GuestFilter}}btn-active{{end}}" href="{{index .FilterURLs "guest_all"}}"
-           hx-get="{{index .FilterURLs "guest_all"}}" hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_filter_all}}</a>
-        <a class="btn btn-sm join-item {{if eq .GuestFilter "yes"}}btn-active{{end}}" href="{{index .FilterURLs "guest_yes"}}"
-           hx-get="{{index .FilterURLs "guest_yes"}}" hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_filter_yes}}</a>
-        <a class="btn btn-sm join-item {{if eq .GuestFilter "no"}}btn-active{{end}}" href="{{index .FilterURLs "guest_no"}}"
-           hx-get="{{index .FilterURLs "guest_no"}}" hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_filter_no}}</a>
-      </div>
-      <div class="join" role="group" aria-label="{{$.Labels.admin_filter_confirmed}}">
-        <a class="btn btn-sm join-item {{if not .ConfirmedFilter}}btn-active{{end}}" href="{{index .FilterURLs "confirmed_all"}}"
-           hx-get="{{index .FilterURLs "confirmed_all"}}" hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_filter_all}}</a>
-        <a class="btn btn-sm join-item {{if eq .ConfirmedFilter "yes"}}btn-active{{end}}" href="{{index .FilterURLs "confirmed_yes"}}"
-           hx-get="{{index .FilterURLs "confirmed_yes"}}" hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_filter_yes}}</a>
-        <a class="btn btn-sm join-item {{if eq .ConfirmedFilter "no"}}btn-active{{end}}" href="{{index .FilterURLs "confirmed_no"}}"
-           hx-get="{{index .FilterURLs "confirmed_no"}}" hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_filter_no}}</a>
-      </div>
-    </div>
 
-    <div class="overflow-x-auto">
-      <table class="table" aria-label="{{$.Labels.admin_heading}}">
-        <thead>
-          <tr>
-            <th scope="col">
-              <a class="link" href="{{index .SortURLs "created_at"}}" hx-get="{{index .SortURLs "created_at"}}"
-                 hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_column_created}}</a>
-            </th>
-            <th scope="col">
-              <a class="link" href="{{index .SortURLs "email"}}" hx-get="{{index .SortURLs "email"}}"
-                 hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_column_email}}</a>
-            </th>
-            <th scope="col">
-              <a class="link" href="{{index .SortURLs "username"}}" hx-get="{{index .SortURLs "username"}}"
-                 hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_column_account}}</a>
-            </th>
-            <th scope="col">{{$.Labels.admin_column_role}}</th>
-            <th scope="col">{{$.Labels.admin_column_status}}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {{range .Rows}}
-            <tr data-account-id="{{.ID}}">
-              <td>{{.CreatedAt}}</td>
-              <td>{{.Email}}</td>
-              <td>{{.Label}}</td>
-              <td>{{if .IsAdmin}}{{$.Labels.admin_role_admin}}{{else}}{{$.Labels.admin_role_user}}{{end}}</td>
-              <td>
-                {{if .IsGuest}}{{$.Labels.admin_status_guest}}
-                {{else if .Confirmed}}{{$.Labels.admin_status_confirmed}}
-                {{else}}{{$.Labels.admin_status_unconfirmed}}{{end}}
-              </td>
+      <div class="overflow-x-auto">
+        <table class="table" aria-label="{{$.Labels.admin_heading}}">
+          <thead>
+            <tr>
+              <th scope="col">
+                <a class="link" href="{{index .SortURLs "created_at"}}" hx-get="{{index .SortURLs "created_at"}}"
+                   hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_column_created}}</a>
+              </th>
+              <th scope="col">
+                <a class="link" href="{{index .SortURLs "email"}}" hx-get="{{index .SortURLs "email"}}"
+                   hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_column_email}}</a>
+              </th>
+              <th scope="col">
+                <a class="link" href="{{index .SortURLs "username"}}" hx-get="{{index .SortURLs "username"}}"
+                   hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_column_account}}</a>
+              </th>
+              <th scope="col">{{$.Labels.admin_column_role}}</th>
+              <th scope="col">{{$.Labels.admin_column_status}}</th>
+              <th scope="col"></th>
             </tr>
-          {{else}}
-            <tr><td colspan="5" class="text-sm opacity-70">{{$.Labels.admin_empty}}</td></tr>
-          {{end}}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {{range .Rows}}
+              <tr data-account-id="{{.ID}}">
+                <td>{{.CreatedAt}}</td>
+                <td>{{.Email}}</td>
+                <td>{{.Label}}</td>
+                <td>{{if .IsAdmin}}{{$.Labels.admin_role_admin}}{{else}}{{$.Labels.admin_role_user}}{{end}}</td>
+                <td>
+                  {{if .IsGuest}}{{$.Labels.admin_status_guest}}
+                  {{else if .Confirmed}}{{$.Labels.admin_status_confirmed}}
+                  {{else}}{{$.Labels.admin_status_unconfirmed}}{{end}}
+                </td>
+                <td class="text-right">
+                  <a class="btn btn-xs" href="{{.EditURL}}" hx-get="{{.EditURL}}"
+                     hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_edit}}</a>
+                </td>
+              </tr>
+            {{else}}
+              <tr><td colspan="6" class="text-sm opacity-70">{{$.Labels.admin_empty}}</td></tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
 
-    <nav class="flex items-center gap-3" aria-label="pagination">
-      {{if .HasPrevious}}
-        <a class="btn btn-sm" href="{{.PreviousURL}}" hx-get="{{.PreviousURL}}"
-           hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_prev}}</a>
-      {{end}}
-      <span class="text-sm opacity-70">{{.Page}} / {{.Pages}}</span>
-      {{if .HasNext}}
-        <a class="btn btn-sm" href="{{.NextURL}}" hx-get="{{.NextURL}}"
-           hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_next}}</a>
-      {{end}}
-    </nav>
+      <nav class="flex items-center gap-3" aria-label="pagination">
+        {{if .HasPrevious}}
+          <a class="btn btn-sm" href="{{.PreviousURL}}" hx-get="{{.PreviousURL}}"
+             hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_prev}}</a>
+        {{end}}
+        <span class="text-sm opacity-70">{{.Page}} / {{.Pages}}</span>
+        {{if .HasNext}}
+          <a class="btn btn-sm" href="{{.NextURL}}" hx-get="{{.NextURL}}"
+             hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_next}}</a>
+        {{end}}
+      </nav>
     {{end}}
   </div>
   {{end}}

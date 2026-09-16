@@ -32,6 +32,13 @@ func newAdminHandler(renderer *PageRenderer, dependencies Dependencies) *adminHa
 	}
 }
 
+// account list render modes.
+const (
+	adminModeList   = "list"
+	adminModeCreate = "create"
+	adminModeEdit   = "edit"
+)
+
 // index renders the administrator landing page for administrators.
 func (h *adminHandler) index(writer http.ResponseWriter, request *http.Request) {
 	user, language, ok := h.authorize(writer, request)
@@ -64,10 +71,13 @@ func (h *adminHandler) list(writer http.ResponseWriter, request *http.Request) {
 	state := parseAdminListState(request)
 	page, err := h.dependencies.AdminAccounts.List(request.Context(), state.Query)
 	if err != nil {
-		h.renderUsers(writer, request, language, user, state, service.AdminUserPage{}, FormData{}, []Alert{{Level: "error", Message: h.t(language, "admin.error.generic")}}, http.StatusInternalServerError, false)
+		h.renderUsers(writer, request, language, user, adminUsersRequest{
+			state: state, form: FormData{}, mode: adminModeList, status: http.StatusInternalServerError,
+			alerts: []Alert{{Level: "error", Message: h.t(language, "admin.error.generic")}},
+		})
 		return
 	}
-	h.renderUsers(writer, request, language, user, state, page, FormData{}, nil, http.StatusOK, false)
+	h.renderUsers(writer, request, language, user, adminUsersRequest{state: state, page: page, form: FormData{}, mode: adminModeList, status: http.StatusOK})
 }
 
 // createAccount renders and handles administrator account creation.
@@ -78,7 +88,18 @@ func (h *adminHandler) createAccount(writer http.ResponseWriter, request *http.R
 	}
 	switch request.Method {
 	case http.MethodGet:
-		h.renderUsers(writer, request, language, user, parseAdminListState(request), service.AdminUserPage{}, FormData{}, nil, http.StatusOK, true)
+		h.renderUsers(writer, request, language, user, adminUsersRequest{
+			state: parseAdminListState(request),
+			form:  FormData{Submitted: true, Values: map[string]string{}},
+			mode:  adminModeCreate,
+			accountForm: &AdminAccountFormView{
+				Heading:     h.t(language, "admin.account.create_heading"),
+				ActionURL:   localizedPath(language, "/admin/users/new"),
+				CancelURL:   localizedPath(language, "/admin/users"),
+				SubmitLabel: h.t(language, "admin.account.submit"),
+			},
+			status: http.StatusOK,
+		})
 	case http.MethodPost:
 		h.submitCreateAccount(writer, request, language, user)
 	default:
@@ -88,87 +109,206 @@ func (h *adminHandler) createAccount(writer http.ResponseWriter, request *http.R
 }
 
 func (h *adminHandler) submitCreateAccount(writer http.ResponseWriter, request *http.Request, language locale.Code, user service.User) {
+	_ = request.ParseForm()
+	form := accountFormData(request)
+	formView := &AdminAccountFormView{
+		Heading:     h.t(language, "admin.account.create_heading"),
+		ActionURL:   localizedPath(language, "/admin/users/new"),
+		CancelURL:   localizedPath(language, "/admin/users"),
+		Email:       request.PostFormValue("email"),
+		IsAdmin:     isChecked(request.PostFormValue("is_admin")),
+		SubmitLabel: h.t(language, "admin.account.submit"),
+	}
 	if h.dependencies.AdminAccountCreator == nil {
-		h.renderUsers(writer, request, language, user, parseAdminListState(request), service.AdminUserPage{}, FormData{}, []Alert{{Level: "error", Message: h.t(language, "admin.error.generic")}}, http.StatusInternalServerError, true)
+		h.renderUsers(writer, request, language, user, adminUsersRequest{
+			state: parseAdminListState(request), form: form, mode: adminModeCreate, accountForm: formView,
+			alerts: []Alert{{Level: "error", Message: h.t(language, "admin.error.generic")}}, status: http.StatusInternalServerError,
+		})
 		return
 	}
-	_ = request.ParseForm()
-	form := FormData{Submitted: true, Values: map[string]string{
-		"email":    request.PostFormValue("email"),
-		"is_admin": request.PostFormValue("is_admin"),
-	}}
-	_, err := h.dependencies.AdminAccountCreator.Create(request.Context(), service.AdminActionContext{
-		ActorID: user.ID,
-		Origin:  requestOrigin(request),
-	}, service.AdminAccountInput{
+	_, err := h.dependencies.AdminAccountCreator.Create(request.Context(), adminActionContext(user, request), service.AdminAccountInput{
 		Email:    request.PostFormValue("email"),
 		Password: request.PostFormValue("password"),
-		IsAdmin:  isChecked(request.PostFormValue("is_admin")),
+		IsAdmin:  formView.IsAdmin,
 	})
 	if err != nil {
-		form.Errors, _ = adminAccountFieldErrors(language, err, h.t)
-		status := http.StatusUnprocessableEntity
-		if errors.Is(err, service.ErrDuplicateEmail) {
-			status = http.StatusConflict
-		}
-		alert := Alert{Level: "error", Message: h.t(language, "admin.account.error.generic")}
-		if errors.Is(err, service.ErrDuplicateEmail) {
-			alert = Alert{Level: "error", Message: h.t(language, "admin.account.error.duplicate_email")}
-		}
-		h.renderUsers(writer, request, language, user, parseAdminListState(request), service.AdminUserPage{}, form, []Alert{alert}, status, true)
+		form.Errors = adminAccountFieldErrors(language, err, h.t)
+		h.renderUsers(writer, request, language, user, adminUsersRequest{
+			state: parseAdminListState(request), form: form, mode: adminModeCreate, accountForm: formView,
+			alerts: []Alert{{Level: "error", Message: h.t(language, adminAccountErrorMessage(err))}},
+			status: http.StatusUnprocessableEntity,
+		})
 		return
 	}
 	h.redirectLocalized(writer, request, language, "/admin/users")
 }
 
-// renderUsers writes the account list (or create form) as a document or fragment.
-func (h *adminHandler) renderUsers(writer http.ResponseWriter, request *http.Request, language locale.Code, user service.User, state adminListState, page service.AdminUserPage, form FormData, alerts []Alert, status int, creating bool) {
+// editAccount renders and handles atomic administrator account editing.
+func (h *adminHandler) editAccount(writer http.ResponseWriter, request *http.Request) {
+	user, language, ok := h.authorize(writer, request)
+	if !ok {
+		return
+	}
+	accountID, err := pathID(request)
+	if err != nil {
+		h.renderState(writer, request, language, PageStateNotFound)
+		return
+	}
+	switch request.Method {
+	case http.MethodGet:
+		h.renderEditAccount(writer, request, language, user, accountID, nil)
+	case http.MethodPost:
+		h.submitEditAccount(writer, request, language, user, accountID)
+	default:
+		writer.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
+		writer.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *adminHandler) renderEditAccount(writer http.ResponseWriter, request *http.Request, language locale.Code, user service.User, accountID int64, alerts []Alert) {
+	if h.dependencies.AdminAccountEditor == nil {
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+		return
+	}
+	account, err := h.dependencies.AdminAccountEditor.Find(request.Context(), accountID)
+	if err != nil {
+		if errors.Is(err, service.ErrRecordNotFound) {
+			h.renderState(writer, request, language, PageStateNotFound)
+			return
+		}
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+		return
+	}
+	email := ""
+	if account.Email != nil {
+		email = *account.Email
+	}
+	formView := &AdminAccountFormView{
+		Heading:     h.t(language, "admin.account.edit_heading"),
+		ActionURL:   localizedPath(language, "/admin/users/"+strconv.FormatInt(accountID, 10)+"/edit"),
+		CancelURL:   localizedPath(language, "/admin/users"),
+		Email:       email,
+		IsAdmin:     account.IsAdmin,
+		Version:     account.Version,
+		SubmitLabel: h.t(language, "admin.account.save"),
+	}
+	h.renderUsers(writer, request, language, user, adminUsersRequest{
+		state: parseAdminListState(request),
+		form:  FormData{Submitted: true, Values: map[string]string{"email": email, "is_admin": boolValue(account.IsAdmin)}},
+		mode:  adminModeEdit, accountForm: formView, alerts: alerts, status: http.StatusOK,
+	})
+}
+
+func (h *adminHandler) submitEditAccount(writer http.ResponseWriter, request *http.Request, language locale.Code, user service.User, accountID int64) {
+	_ = request.ParseForm()
+	form := accountFormData(request)
+	version, versionErr := strconv.ParseInt(strings.TrimSpace(request.PostFormValue("version")), 10, 64)
+	formView := &AdminAccountFormView{
+		Heading:     h.t(language, "admin.account.edit_heading"),
+		ActionURL:   localizedPath(language, "/admin/users/"+strconv.FormatInt(accountID, 10)+"/edit"),
+		CancelURL:   localizedPath(language, "/admin/users"),
+		Email:       request.PostFormValue("email"),
+		IsAdmin:     isChecked(request.PostFormValue("is_admin")),
+		Version:     version,
+		SubmitLabel: h.t(language, "admin.account.save"),
+	}
+	if h.dependencies.AdminAccountEditor == nil || versionErr != nil || version < 0 {
+		form.Errors = adminAccountFieldErrors(language, service.ErrInvalidEmail, h.t)
+		h.renderUsers(writer, request, language, user, adminUsersRequest{
+			state: parseAdminListState(request), form: form, mode: adminModeEdit, accountForm: formView,
+			alerts: []Alert{{Level: "error", Message: h.t(language, "admin.account.error.generic")}}, status: http.StatusUnprocessableEntity,
+		})
+		return
+	}
+	_, err := h.dependencies.AdminAccountEditor.Update(request.Context(), adminActionContext(user, request), accountID, service.AdminAccountUpdateInput{
+		Email:    request.PostFormValue("email"),
+		Password: request.PostFormValue("password"),
+		IsAdmin:  formView.IsAdmin,
+		Version:  version,
+	})
+	if err != nil {
+		form.Errors = adminAccountFieldErrors(language, err, h.t)
+		status := http.StatusUnprocessableEntity
+		switch {
+		case errors.Is(err, service.ErrRecordNotFound):
+			status = http.StatusNotFound
+		case errors.Is(err, service.ErrOptimisticLockConflict), errors.Is(err, service.ErrDuplicateEmail):
+			status = http.StatusConflict
+		}
+		if status == http.StatusNotFound {
+			h.renderState(writer, request, language, PageStateNotFound)
+			return
+		}
+		h.renderUsers(writer, request, language, user, adminUsersRequest{
+			state: parseAdminListState(request), form: form, mode: adminModeEdit, accountForm: formView,
+			alerts: []Alert{{Level: "error", Message: h.t(language, adminAccountErrorMessage(err))}}, status: status,
+		})
+		return
+	}
+	h.redirectLocalized(writer, request, language, "/admin/users/"+strconv.FormatInt(accountID, 10))
+}
+
+// adminUsersRequest bundles the inputs for one account-list or account-form
+// render so handlers stay readable.
+type adminUsersRequest struct {
+	state       adminListState
+	page        service.AdminUserPage
+	form        FormData
+	alerts      []Alert
+	status      int
+	mode        string
+	accountForm *AdminAccountFormView
+}
+
+// renderUsers writes the account list or account form as a document or fragment.
+func (h *adminHandler) renderUsers(writer http.ResponseWriter, request *http.Request, language locale.Code, user service.User, render adminUsersRequest) {
 	base := localizedPath(language, "/admin/users")
 	view := &AdminListView{
 		BaseURL:         base,
 		SearchURL:       base,
-		SearchValue:     state.Query.Search,
-		AdminFilter:     state.Query.Admin,
-		GuestFilter:     state.Query.Guest,
-		ConfirmedFilter: state.Query.Confirmed,
-		Sort:            state.Query.Sort,
-		Direction:       state.Query.Direction,
-		Page:            state.Query.Page,
-		Size:            state.Query.Size,
-		Total:           page.Total,
-		Pages:           page.Pages,
-		Creating:        creating,
+		SearchValue:     render.state.Query.Search,
+		AdminFilter:     render.state.Query.Admin,
+		GuestFilter:     render.state.Query.Guest,
+		ConfirmedFilter: render.state.Query.Confirmed,
+		Sort:            render.state.Query.Sort,
+		Direction:       render.state.Query.Direction,
+		Page:            render.state.Query.Page,
+		Size:            render.state.Query.Size,
+		Total:           render.page.Total,
+		Pages:           render.page.Pages,
+		Mode:            render.mode,
 		CreateURL:       localizedPath(language, "/admin/users/new"),
 		CreateLabel:     h.t(language, "admin.accounts.create"),
+		Form:            render.accountForm,
 		SortURLs: map[string]string{
-			service.AdminSortCreatedAt:   state.WithSort(service.AdminSortCreatedAt).URL(base),
-			service.AdminSortID:          state.WithSort(service.AdminSortID).URL(base),
-			service.AdminSortEmail:       state.WithSort(service.AdminSortEmail).URL(base),
-			service.AdminSortUsername:    state.WithSort(service.AdminSortUsername).URL(base),
-			service.AdminSortDisplayName: state.WithSort(service.AdminSortDisplayName).URL(base),
+			service.AdminSortCreatedAt:   render.state.WithSort(service.AdminSortCreatedAt).URL(base),
+			service.AdminSortID:          render.state.WithSort(service.AdminSortID).URL(base),
+			service.AdminSortEmail:       render.state.WithSort(service.AdminSortEmail).URL(base),
+			service.AdminSortUsername:    render.state.WithSort(service.AdminSortUsername).URL(base),
+			service.AdminSortDisplayName: render.state.WithSort(service.AdminSortDisplayName).URL(base),
 		},
 		FilterURLs: map[string]string{
-			"admin_all":     state.WithFilter(adminParamAdmin, service.AdminFilterAll).URL(base),
-			"admin_yes":     state.WithFilter(adminParamAdmin, service.AdminFilterYes).URL(base),
-			"admin_no":      state.WithFilter(adminParamAdmin, service.AdminFilterNo).URL(base),
-			"guest_all":     state.WithFilter(adminParamGuest, service.AdminFilterAll).URL(base),
-			"guest_yes":     state.WithFilter(adminParamGuest, service.AdminFilterYes).URL(base),
-			"guest_no":      state.WithFilter(adminParamGuest, service.AdminFilterNo).URL(base),
-			"confirmed_all": state.WithFilter(adminParamConfirmed, service.AdminFilterAll).URL(base),
-			"confirmed_yes": state.WithFilter(adminParamConfirmed, service.AdminFilterYes).URL(base),
-			"confirmed_no":  state.WithFilter(adminParamConfirmed, service.AdminFilterNo).URL(base),
+			"admin_all":     render.state.WithFilter(adminParamAdmin, service.AdminFilterAll).URL(base),
+			"admin_yes":     render.state.WithFilter(adminParamAdmin, service.AdminFilterYes).URL(base),
+			"admin_no":      render.state.WithFilter(adminParamAdmin, service.AdminFilterNo).URL(base),
+			"guest_all":     render.state.WithFilter(adminParamGuest, service.AdminFilterAll).URL(base),
+			"guest_yes":     render.state.WithFilter(adminParamGuest, service.AdminFilterYes).URL(base),
+			"guest_no":      render.state.WithFilter(adminParamGuest, service.AdminFilterNo).URL(base),
+			"confirmed_all": render.state.WithFilter(adminParamConfirmed, service.AdminFilterAll).URL(base),
+			"confirmed_yes": render.state.WithFilter(adminParamConfirmed, service.AdminFilterYes).URL(base),
+			"confirmed_no":  render.state.WithFilter(adminParamConfirmed, service.AdminFilterNo).URL(base),
 		},
 	}
-	view.HasPrevious = state.Query.Page > 1
-	view.HasNext = page.Pages > 0 && state.Query.Page < page.Pages
+	view.HasPrevious = render.state.Query.Page > 1
+	view.HasNext = render.page.Pages > 0 && render.state.Query.Page < render.page.Pages
 	if view.HasPrevious {
-		view.PreviousURL = state.WithPage(state.Query.Page - 1).URL(base)
+		view.PreviousURL = render.state.WithPage(render.state.Query.Page - 1).URL(base)
 	}
 	if view.HasNext {
-		view.NextURL = state.WithPage(state.Query.Page + 1).URL(base)
+		view.NextURL = render.state.WithPage(render.state.Query.Page + 1).URL(base)
 	}
-	for _, account := range page.Users {
-		view.Rows = append(view.Rows, adminUserRowView(account))
+	for _, account := range render.page.Users {
+		view.Rows = append(view.Rows, adminUserRowView(language, account))
 	}
 
 	pageData := PageData{
@@ -178,10 +318,10 @@ func (h *adminHandler) renderUsers(writer http.ResponseWriter, request *http.Req
 		Description:      h.t(language, "admin.accounts.description"),
 		Kind:             "admin",
 		CSRFToken:        csrfToken(request),
-		Form:             form,
+		Form:             render.form,
 		Template:         "admin",
 		FragmentTemplate: "admin-fragment",
-		Alerts:           alerts,
+		Alerts:           render.alerts,
 		Labels:           h.labels(language),
 		Account:          settingsAccountMenu(language, user),
 		Admin: &AdminView{
@@ -190,7 +330,7 @@ func (h *adminHandler) renderUsers(writer http.ResponseWriter, request *http.Req
 			List:    view,
 		},
 	}
-	if err := h.settings.Render(writer, request, pageData, status); err != nil {
+	if err := h.settings.Render(writer, request, pageData, render.status); err != nil {
 		renderSimpleError(writer, request, http.StatusInternalServerError)
 	}
 }
@@ -206,6 +346,17 @@ func (h *adminHandler) redirectLocalized(writer http.ResponseWriter, request *ht
 	redirectLocalized(writer, request, language, route)
 }
 
+func adminActionContext(user service.User, request *http.Request) service.AdminActionContext {
+	return service.AdminActionContext{ActorID: user.ID, Origin: requestOrigin(request)}
+}
+
+func accountFormData(request *http.Request) FormData {
+	return FormData{Submitted: true, Values: map[string]string{
+		"email":    request.PostFormValue("email"),
+		"is_admin": request.PostFormValue("is_admin"),
+	}}
+}
+
 func isChecked(value string) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "on", "true", "1", "yes":
@@ -215,20 +366,44 @@ func isChecked(value string) bool {
 	}
 }
 
-func adminAccountFieldErrors(language locale.Code, err error, translate func(locale.Code, string) string) ([]FieldError, string) {
+func boolValue(value bool) string {
+	if value {
+		return "true"
+	}
+	return ""
+}
+
+func adminAccountErrorMessage(err error) string {
 	switch {
 	case errors.Is(err, service.ErrInvalidEmail):
-		return []FieldError{{Field: "email", Message: translate(language, "admin.account.error.invalid_email")}}, "admin.account.error.invalid_email"
+		return "admin.account.error.invalid_email"
 	case errors.Is(err, service.ErrDuplicateEmail):
-		return []FieldError{{Field: "email", Message: translate(language, "admin.account.error.duplicate_email")}}, "admin.account.error.duplicate_email"
+		return "admin.account.error.duplicate_email"
 	case errors.Is(err, service.ErrPasswordTooShort), errors.Is(err, service.ErrPasswordTooLong), errors.Is(err, service.ErrInvalidPassword):
-		return []FieldError{{Field: "password", Message: translate(language, "admin.account.error.weak_password")}}, "admin.account.error.weak_password"
+		return "admin.account.error.weak_password"
+	case errors.Is(err, service.ErrOptimisticLockConflict):
+		return "admin.account.error.conflict"
+	case errors.Is(err, service.ErrRecordNotFound):
+		return "admin.account.error.not_found"
 	default:
-		return nil, "admin.account.error.generic"
+		return "admin.account.error.generic"
 	}
 }
 
-func adminUserRowView(account service.User) AdminUserRowView {
+func adminAccountFieldErrors(language locale.Code, err error, translate func(locale.Code, string) string) []FieldError {
+	switch {
+	case errors.Is(err, service.ErrInvalidEmail):
+		return []FieldError{{Field: "email", Message: translate(language, "admin.account.error.invalid_email")}}
+	case errors.Is(err, service.ErrDuplicateEmail):
+		return []FieldError{{Field: "email", Message: translate(language, "admin.account.error.duplicate_email")}}
+	case errors.Is(err, service.ErrPasswordTooShort), errors.Is(err, service.ErrPasswordTooLong), errors.Is(err, service.ErrInvalidPassword):
+		return []FieldError{{Field: "password", Message: translate(language, "admin.account.error.weak_password")}}
+	default:
+		return nil
+	}
+}
+
+func adminUserRowView(language locale.Code, account service.User) AdminUserRowView {
 	row := AdminUserRowView{
 		ID:        account.ID,
 		Label:     adminAccountLabel(account),
@@ -242,6 +417,9 @@ func adminUserRowView(account service.User) AdminUserRowView {
 	if account.CreatedAt > 0 {
 		row.CreatedAt = time.Unix(account.CreatedAt, 0).UTC().Format("2006-01-02 15:04")
 	}
+	id := strconv.FormatInt(account.ID, 10)
+	row.DetailURL = localizedPath(language, "/admin/users/"+id)
+	row.EditURL = localizedPath(language, "/admin/users/"+id+"/edit")
 	return row
 }
 
@@ -365,6 +543,7 @@ func (h *adminHandler) labels(language locale.Code) map[string]string {
 		"admin_next":                  h.t(language, "admin.accounts.next"),
 		"admin_empty":                 h.t(language, "admin.accounts.empty"),
 		"admin_view":                  h.t(language, "admin.accounts.view"),
+		"admin_edit":                  h.t(language, "admin.accounts.edit"),
 		"admin_create":                h.t(language, "admin.accounts.create"),
 		"admin_create_heading":        h.t(language, "admin.account.create_heading"),
 		"admin_account_email":         h.t(language, "admin.account.email"),

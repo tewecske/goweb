@@ -194,6 +194,92 @@ func (s *AdminAccountService) Create(ctx context.Context, actor AdminActionConte
 	return created, nil
 }
 
+// AdminAccountUpdateInput contains the editable fields for one account. An
+// empty password keeps the current password; a supplied password replaces it.
+type AdminAccountUpdateInput struct {
+	Email    string
+	Password string
+	IsAdmin  bool
+	Version  int64
+}
+
+// Find returns one account's safe detail for the administrator area.
+func (s *AdminAccountService) Find(ctx context.Context, targetID int64) (User, error) {
+	if s == nil || s.users == nil || s.adminUsers == nil {
+		return User{}, ErrInvalidAdminQuery
+	}
+	if ctx == nil {
+		return User{}, errors.New("service: nil admin find context")
+	}
+	if targetID <= 0 {
+		return User{}, ErrInvalidAdminQuery
+	}
+	user, err := s.users.FindUserByID(ctx, targetID)
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			return User{}, ErrRecordNotFound
+		}
+		return User{}, err
+	}
+	return publicUser(user), nil
+}
+
+// Update atomically changes an account's email, administrator status, and
+// optional password using the caller's expected revision. A stale revision is a
+// conflict; a vanished account is not-found.
+func (s *AdminAccountService) Update(ctx context.Context, actor AdminActionContext, targetID int64, input AdminAccountUpdateInput) (User, error) {
+	if s == nil || s.users == nil || s.adminUsers == nil || s.hasher == nil {
+		return User{}, ErrInvalidAdminQuery
+	}
+	if ctx == nil {
+		return User{}, errors.New("service: nil admin update context")
+	}
+	if actor.ActorID <= 0 || targetID <= 0 || input.Version < 0 {
+		return User{}, ErrInvalidAdminQuery
+	}
+	email, err := NormalizeEmail(input.Email)
+	if err != nil || email == "" {
+		return User{}, ErrInvalidEmail
+	}
+	var passwordHash *string
+	if input.Password != "" {
+		if err := ValidatePassword(input.Password); err != nil {
+			return User{}, err
+		}
+		hash, err := s.hasher.Hash(input.Password)
+		if err != nil {
+			return User{}, err
+		}
+		passwordHash = &hash
+	}
+	current, err := s.users.FindUserByID(ctx, targetID)
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			return User{}, ErrRecordNotFound
+		}
+		return User{}, err
+	}
+	current.Email = &email
+	current.IsAdmin = input.IsAdmin
+	if passwordHash != nil {
+		current.PasswordHash = passwordHash
+	}
+	updated, err := s.users.UpdateUser(ctx, current, input.Version)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrUserNotFound):
+			return User{}, ErrRecordNotFound
+		case errors.Is(err, ErrOptimisticLockConflict), errors.Is(err, ErrDuplicateEmail):
+			return User{}, err
+		default:
+			return User{}, err
+		}
+	}
+	updated.PasswordHash = nil
+	s.record(ctx, actor, AuditActionAccountUpdated, updated, email)
+	return updated, nil
+}
+
 // record stores one administrator action as a best-effort audit event. A
 // recording failure must not undo the completed account action.
 func (s *AdminAccountService) record(ctx context.Context, actor AdminActionContext, action string, target User, detail string) {

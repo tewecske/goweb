@@ -98,6 +98,7 @@ func main() {
 			JoinGroup:            applicationGraph.GroupJoin,
 			AdminAccounts:        applicationGraph.AdminAccounts,
 			AdminAccountCreator:  applicationGraph.AdminAccounts,
+			AdminAccountEditor:   applicationGraph.AdminAccounts,
 		})
 	}
 

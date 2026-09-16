@@ -225,6 +225,121 @@ func TestAdminAccountServiceCreateValidatesInput(t *testing.T) {
 	}
 }
 
+func TestAdminAccountServiceUpdateReplacesFieldsAtomically(t *testing.T) {
+	users := &userRepositoryStub{created: User{ID: 9}}
+	auditor := &auditRecorderStub{}
+	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, auditor)
+	if err != nil {
+		t.Fatalf("NewAdminAccountService() error = %v", err)
+	}
+	updated, err := service.Update(context.Background(), AdminActionContext{ActorID: 1, Origin: "198.51.100.4"}, 9, AdminAccountUpdateInput{
+		Email:    "Changed@Example.Test",
+		Password: "new-secret-password",
+		IsAdmin:  true,
+		Version:  3,
+	})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if updated.PasswordHash != nil {
+		t.Fatalf("returned password hash = %v, want nil", updated.PasswordHash)
+	}
+	if users.updateVersion != 3 {
+		t.Fatalf("update version = %d, want 3", users.updateVersion)
+	}
+	if users.lastUpdated.Email == nil || *users.lastUpdated.Email != "changed@example.test" {
+		t.Fatalf("updated email = %v, want normalized", users.lastUpdated.Email)
+	}
+	if users.lastUpdated.PasswordHash == nil || *users.lastUpdated.PasswordHash != "hash:new-secret-password" {
+		t.Fatalf("updated password hash = %v, want replacement", users.lastUpdated.PasswordHash)
+	}
+	if !users.lastUpdated.IsAdmin {
+		t.Fatal("updated account is not an administrator")
+	}
+	if len(auditor.records) != 1 || auditor.records[0].Action != AuditActionAccountUpdated {
+		t.Fatalf("audit records = %+v, want one account-updated record", auditor.records)
+	}
+}
+
+func TestAdminAccountServiceUpdateKeepsPasswordWhenEmpty(t *testing.T) {
+	users := &userRepositoryStub{created: User{ID: 9}}
+	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil)
+	if err != nil {
+		t.Fatalf("NewAdminAccountService() error = %v", err)
+	}
+	if _, err := service.Update(context.Background(), AdminActionContext{ActorID: 1}, 9, AdminAccountUpdateInput{
+		Email: "keep@example.test", Version: 0,
+	}); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if users.updatedPasswordCalled {
+		t.Fatal("password hash invoked for an empty password")
+	}
+}
+
+func TestAdminAccountServiceUpdateClassifiesWriteFailures(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want error
+	}{
+		{name: "conflict", err: ErrOptimisticLockConflict, want: ErrOptimisticLockConflict},
+		{name: "missing", err: ErrUserNotFound, want: ErrRecordNotFound},
+		{name: "duplicate", err: ErrDuplicateEmail, want: ErrDuplicateEmail},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			users := &userRepositoryStub{created: User{ID: 9}, updateErr: test.err}
+			service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil)
+			if err != nil {
+				t.Fatalf("NewAdminAccountService() error = %v", err)
+			}
+			_, err = service.Update(context.Background(), AdminActionContext{ActorID: 1}, 9, AdminAccountUpdateInput{Email: "a@example.test"})
+			if !errors.Is(err, test.want) {
+				t.Fatalf("Update() error = %v, want %v", err, test.want)
+			}
+		})
+	}
+}
+
+func TestAdminAccountServiceUpdateRejectsInvalidInput(t *testing.T) {
+	service, err := NewAdminAccountService(&userRepositoryStub{created: User{ID: 9}}, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil)
+	if err != nil {
+		t.Fatalf("NewAdminAccountService() error = %v", err)
+	}
+	cases := []struct {
+		name  string
+		actor AdminActionContext
+		id    int64
+		input AdminAccountUpdateInput
+		want  error
+	}{
+		{name: "missing actor", id: 9, input: AdminAccountUpdateInput{Email: "a@example.test"}, want: ErrInvalidAdminQuery},
+		{name: "missing target", actor: AdminActionContext{ActorID: 1}, input: AdminAccountUpdateInput{Email: "a@example.test"}, want: ErrInvalidAdminQuery},
+		{name: "negative version", actor: AdminActionContext{ActorID: 1}, id: 9, input: AdminAccountUpdateInput{Email: "a@example.test", Version: -1}, want: ErrInvalidAdminQuery},
+		{name: "invalid email", actor: AdminActionContext{ActorID: 1}, id: 9, input: AdminAccountUpdateInput{Email: "bad"}, want: ErrInvalidEmail},
+		{name: "weak password", actor: AdminActionContext{ActorID: 1}, id: 9, input: AdminAccountUpdateInput{Email: "a@example.test", Password: "short"}, want: ErrPasswordTooShort},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := service.Update(context.Background(), test.actor, test.id, test.input); !errors.Is(err, test.want) {
+				t.Fatalf("Update() error = %v, want %v", err, test.want)
+			}
+		})
+	}
+}
+
+func TestAdminAccountServiceFindMapsMissingAccount(t *testing.T) {
+	users := &userRepositoryStub{findErr: ErrUserNotFound}
+	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil)
+	if err != nil {
+		t.Fatalf("NewAdminAccountService() error = %v", err)
+	}
+	if _, err := service.Find(context.Background(), 9); !errors.Is(err, ErrRecordNotFound) {
+		t.Fatalf("Find() error = %v, want %v", err, ErrRecordNotFound)
+	}
+}
+
 type adminUserRepositoryStub struct {
 	received AdminUserQuery
 	total    int
@@ -240,10 +355,15 @@ func (s *adminUserRepositoryStub) ListUsers(_ context.Context, query AdminUserQu
 }
 
 type userRepositoryStub struct {
-	created     User
-	createErr   error
-	createCalls int
-	lastCreated User
+	created               User
+	createErr             error
+	createCalls           int
+	lastCreated           User
+	findErr               error
+	updateErr             error
+	updateVersion         int64
+	lastUpdated           User
+	updatedPasswordCalled bool
 }
 
 func (s *userRepositoryStub) CreateUser(_ context.Context, user User) (User, error) {
@@ -260,6 +380,14 @@ func (s *userRepositoryStub) CreateUser(_ context.Context, user User) (User, err
 }
 
 func (s *userRepositoryStub) FindUserByID(_ context.Context, id int64) (User, error) {
+	if s.findErr != nil {
+		return User{}, s.findErr
+	}
+	if s.created.ID != 0 {
+		current := s.created
+		current.ID = id
+		return current, nil
+	}
 	return User{ID: id, Email: strPtr("actor@example.test")}, nil
 }
 func (s *userRepositoryStub) FindUserByEmail(context.Context, string) (User, error) {
@@ -268,8 +396,16 @@ func (s *userRepositoryStub) FindUserByEmail(context.Context, string) (User, err
 func (s *userRepositoryStub) FindUserByUsername(context.Context, string) (User, error) {
 	return User{}, nil
 }
-func (s *userRepositoryStub) UpdateUser(context.Context, User, int64) (User, error) {
-	return User{}, nil
+func (s *userRepositoryStub) UpdateUser(_ context.Context, user User, expectedVersion int64) (User, error) {
+	s.updateVersion = expectedVersion
+	s.lastUpdated = user
+	if user.PasswordHash != nil {
+		s.updatedPasswordCalled = true
+	}
+	if s.updateErr != nil {
+		return User{}, s.updateErr
+	}
+	return user, nil
 }
 func (s *userRepositoryStub) DeleteUser(context.Context, int64, int64) error { return nil }
 

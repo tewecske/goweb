@@ -106,9 +106,23 @@ type AdminListView struct {
 	Rows            []AdminUserRowView
 	SortURLs        map[string]string
 	FilterURLs      map[string]string
-	Creating        bool
+	Mode            string
 	CreateURL       string
 	CreateLabel     string
+	Form            *AdminAccountFormView
+}
+
+// AdminAccountFormView contains the create or edit account form state. Values
+// and field errors come from the page-level FormData so submitted values are
+// preserved after a validation failure.
+type AdminAccountFormView struct {
+	Heading     string
+	ActionURL   string
+	CancelURL   string
+	Email       string
+	IsAdmin     bool
+	Version     int64
+	SubmitLabel string
 }
 
 // AdminUserRowView is one account row in the administrator list.
@@ -121,6 +135,7 @@ type AdminUserRowView struct {
 	Confirmed bool
 	CreatedAt string
 	DetailURL string
+	EditURL   string
 }
 
 // GroupsView contains the group list and join/create affordances.
