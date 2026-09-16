@@ -91,7 +91,7 @@ func TestAdminSearchPatternEscapesWildcards(t *testing.T) {
 
 func TestAdminAccountServiceListNormalizesAndCountsPages(t *testing.T) {
 	repository := &adminUserRepositoryStub{total: 45}
-	service, err := NewAdminAccountService(&userRepositoryStub{}, repository, adminPasswordHasherStub{}, nil)
+	service, err := NewAdminAccountService(&userRepositoryStub{}, repository, adminPasswordHasherStub{}, nil, nil)
 	if err != nil {
 		t.Fatalf("NewAdminAccountService() error = %v", err)
 	}
@@ -108,7 +108,7 @@ func TestAdminAccountServiceListNormalizesAndCountsPages(t *testing.T) {
 }
 
 func TestAdminAccountServiceListRejectsMissingContext(t *testing.T) {
-	service, err := NewAdminAccountService(&userRepositoryStub{}, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil)
+	service, err := NewAdminAccountService(&userRepositoryStub{}, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil, nil)
 	if err != nil {
 		t.Fatalf("NewAdminAccountService() error = %v", err)
 	}
@@ -119,13 +119,13 @@ func TestAdminAccountServiceListRejectsMissingContext(t *testing.T) {
 }
 
 func TestNewAdminAccountServiceRejectsMissingPorts(t *testing.T) {
-	if _, err := NewAdminAccountService(nil, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil); !errors.Is(err, ErrNilUserRepository) {
+	if _, err := NewAdminAccountService(nil, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil, nil); !errors.Is(err, ErrNilUserRepository) {
 		t.Fatalf("error = %v, want %v", err, ErrNilUserRepository)
 	}
-	if _, err := NewAdminAccountService(&userRepositoryStub{}, nil, adminPasswordHasherStub{}, nil); !errors.Is(err, ErrNilAdminUserRepository) {
+	if _, err := NewAdminAccountService(&userRepositoryStub{}, nil, adminPasswordHasherStub{}, nil, nil); !errors.Is(err, ErrNilAdminUserRepository) {
 		t.Fatalf("error = %v, want %v", err, ErrNilAdminUserRepository)
 	}
-	if _, err := NewAdminAccountService(&userRepositoryStub{}, &adminUserRepositoryStub{}, nil, nil); err == nil {
+	if _, err := NewAdminAccountService(&userRepositoryStub{}, &adminUserRepositoryStub{}, nil, nil, nil); err == nil {
 		t.Fatal("missing hasher error = nil, want failure")
 	}
 }
@@ -133,7 +133,7 @@ func TestNewAdminAccountServiceRejectsMissingPorts(t *testing.T) {
 func TestAdminAccountServiceCreateProvisionsConfirmedAccount(t *testing.T) {
 	users := &userRepositoryStub{created: User{ID: 9}}
 	auditor := &auditRecorderStub{}
-	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, auditor)
+	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, auditor, nil)
 	if err != nil {
 		t.Fatalf("NewAdminAccountService() error = %v", err)
 	}
@@ -168,7 +168,7 @@ func TestAdminAccountServiceCreateProvisionsConfirmedAccount(t *testing.T) {
 
 func TestAdminAccountServiceCreateAllowsMissingPassword(t *testing.T) {
 	users := &userRepositoryStub{created: User{ID: 9}}
-	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil)
+	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil, nil)
 	if err != nil {
 		t.Fatalf("NewAdminAccountService() error = %v", err)
 	}
@@ -183,7 +183,7 @@ func TestAdminAccountServiceCreateAllowsMissingPassword(t *testing.T) {
 func TestAdminAccountServiceCreateAuditFailureDoesNotUndo(t *testing.T) {
 	users := &userRepositoryStub{created: User{ID: 9}}
 	auditor := &auditRecorderStub{err: errors.New("audit storage down")}
-	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, auditor)
+	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, auditor, nil)
 	if err != nil {
 		t.Fatalf("NewAdminAccountService() error = %v", err)
 	}
@@ -211,7 +211,7 @@ func TestAdminAccountServiceCreateValidatesInput(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			users := &userRepositoryStub{created: User{ID: 9}}
-			service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil)
+			service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil, nil)
 			if err != nil {
 				t.Fatalf("NewAdminAccountService() error = %v", err)
 			}
@@ -228,7 +228,7 @@ func TestAdminAccountServiceCreateValidatesInput(t *testing.T) {
 func TestAdminAccountServiceUpdateReplacesFieldsAtomically(t *testing.T) {
 	users := &userRepositoryStub{created: User{ID: 9}}
 	auditor := &auditRecorderStub{}
-	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, auditor)
+	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, auditor, nil)
 	if err != nil {
 		t.Fatalf("NewAdminAccountService() error = %v", err)
 	}
@@ -263,7 +263,7 @@ func TestAdminAccountServiceUpdateReplacesFieldsAtomically(t *testing.T) {
 
 func TestAdminAccountServiceUpdateKeepsPasswordWhenEmpty(t *testing.T) {
 	users := &userRepositoryStub{created: User{ID: 9}}
-	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil)
+	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil, nil)
 	if err != nil {
 		t.Fatalf("NewAdminAccountService() error = %v", err)
 	}
@@ -290,7 +290,7 @@ func TestAdminAccountServiceUpdateClassifiesWriteFailures(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			users := &userRepositoryStub{created: User{ID: 9}, updateErr: test.err}
-			service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil)
+			service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil, nil)
 			if err != nil {
 				t.Fatalf("NewAdminAccountService() error = %v", err)
 			}
@@ -303,7 +303,7 @@ func TestAdminAccountServiceUpdateClassifiesWriteFailures(t *testing.T) {
 }
 
 func TestAdminAccountServiceUpdateRejectsInvalidInput(t *testing.T) {
-	service, err := NewAdminAccountService(&userRepositoryStub{created: User{ID: 9}}, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil)
+	service, err := NewAdminAccountService(&userRepositoryStub{created: User{ID: 9}}, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil, nil)
 	if err != nil {
 		t.Fatalf("NewAdminAccountService() error = %v", err)
 	}
@@ -331,7 +331,7 @@ func TestAdminAccountServiceUpdateRejectsInvalidInput(t *testing.T) {
 
 func TestAdminAccountServiceFindMapsMissingAccount(t *testing.T) {
 	users := &userRepositoryStub{findErr: ErrUserNotFound}
-	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil)
+	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil, nil)
 	if err != nil {
 		t.Fatalf("NewAdminAccountService() error = %v", err)
 	}
@@ -343,7 +343,7 @@ func TestAdminAccountServiceFindMapsMissingAccount(t *testing.T) {
 func TestAdminAccountServiceDeleteRemovesAccountAndRecordsAudit(t *testing.T) {
 	users := &userRepositoryStub{created: User{ID: 9, Email: strPtr("gone@example.test")}}
 	auditor := &auditRecorderStub{}
-	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, auditor)
+	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, auditor, nil)
 	if err != nil {
 		t.Fatalf("NewAdminAccountService() error = %v", err)
 	}
@@ -360,7 +360,7 @@ func TestAdminAccountServiceDeleteRemovesAccountAndRecordsAudit(t *testing.T) {
 
 func TestAdminAccountServiceDeleteRefusesSelf(t *testing.T) {
 	users := &userRepositoryStub{created: User{ID: 9}}
-	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil)
+	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil, nil)
 	if err != nil {
 		t.Fatalf("NewAdminAccountService() error = %v", err)
 	}
@@ -386,7 +386,7 @@ func TestAdminAccountServiceDeleteClassifiesFailures(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			users := &userRepositoryStub{created: User{ID: 9}, findErr: test.findErr, deleteErr: test.err}
-			service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil)
+			service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil, nil)
 			if err != nil {
 				t.Fatalf("NewAdminAccountService() error = %v", err)
 			}
@@ -399,7 +399,7 @@ func TestAdminAccountServiceDeleteClassifiesFailures(t *testing.T) {
 
 func TestAdminAccountServiceUpdateRefusesSelfDemotion(t *testing.T) {
 	users := &userRepositoryStub{created: User{ID: 9}}
-	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil)
+	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil, nil)
 	if err != nil {
 		t.Fatalf("NewAdminAccountService() error = %v", err)
 	}
@@ -506,5 +506,45 @@ type auditRecorderStub struct {
 
 func (s *auditRecorderStub) Record(_ context.Context, record AuditRecord) error {
 	s.records = append(s.records, record)
+	return s.err
+}
+
+func TestAdminAccountServiceRevokeSessionsEndsAndAudits(t *testing.T) {
+	users := &userRepositoryStub{created: User{ID: 9, Email: strPtr("revoke@example.test")}}
+	auditor := &auditRecorderStub{}
+	revoker := &sessionRevokerStub{}
+	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, auditor, revoker)
+	if err != nil {
+		t.Fatalf("NewAdminAccountService() error = %v", err)
+	}
+	if err := service.RevokeSessions(context.Background(), AdminActionContext{ActorID: 1}, 9); err != nil {
+		t.Fatalf("RevokeSessions() error = %v", err)
+	}
+	if revoker.userID != 9 {
+		t.Fatalf("revoked user = %d, want 9", revoker.userID)
+	}
+	if len(auditor.records) != 1 || auditor.records[0].Action != AuditActionSessionsRevoked {
+		t.Fatalf("audit records = %+v, want one sessions-revoked record", auditor.records)
+	}
+}
+
+func TestAdminAccountServiceRevokeSessionsMapsMissingAccount(t *testing.T) {
+	users := &userRepositoryStub{findErr: ErrUserNotFound}
+	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil, &sessionRevokerStub{})
+	if err != nil {
+		t.Fatalf("NewAdminAccountService() error = %v", err)
+	}
+	if err := service.RevokeSessions(context.Background(), AdminActionContext{ActorID: 1}, 9); !errors.Is(err, ErrRecordNotFound) {
+		t.Fatalf("RevokeSessions() error = %v, want %v", err, ErrRecordNotFound)
+	}
+}
+
+type sessionRevokerStub struct {
+	userID int64
+	err    error
+}
+
+func (s *sessionRevokerStub) RevokeUser(_ context.Context, userID int64) error {
+	s.userID = userID
 	return s.err
 }

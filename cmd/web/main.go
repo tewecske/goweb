@@ -100,6 +100,7 @@ func main() {
 			AdminAccountCreator:  applicationGraph.AdminAccounts,
 			AdminAccountEditor:   applicationGraph.AdminAccounts,
 			AdminUserDetailer:    applicationGraph.AdminDiagnostics,
+			AdminSessionRevoker:  applicationGraph.AdminAccounts,
 		})
 	}
 

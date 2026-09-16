@@ -667,3 +667,62 @@ func (s *adminAccountEditorStub) Delete(_ context.Context, actor service.AdminAc
 	s.deleteCalls++
 	return s.deleteErr
 }
+
+func TestAdminRevokeSessionsSucceeds(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminUserDetailer = &adminUserDetailerStub{detail: service.AdminUserDetail{User: service.User{ID: 9, Email: strPtr("target@example.test")}}}
+	revoker := &adminSessionRevokerStub{}
+	dependencies.AdminSessionRevoker = revoker
+	handler := newAdminTestHandler(t, dependencies)
+
+	request := authenticatedRequest(http.MethodPost, "/en/admin/users/9/sessions/revoke", 7, "")
+	request.SetPathValue("id", "9")
+	response := httptest.NewRecorder()
+	handler.revokeSessions(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if revoker.id != 9 {
+		t.Fatalf("revoked id = %d, want 9", revoker.id)
+	}
+	if !strings.Contains(response.Body.String(), "All sessions ended") {
+		t.Errorf("body missing sessions-ended message")
+	}
+}
+
+func TestAdminRevokeSessionsMissingAccount(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminUserDetailer = &adminUserDetailerStub{}
+	dependencies.AdminSessionRevoker = &adminSessionRevokerStub{err: service.ErrRecordNotFound}
+	handler := newAdminTestHandler(t, dependencies)
+	request := authenticatedRequest(http.MethodPost, "/en/admin/users/9/sessions/revoke", 7, "")
+	request.SetPathValue("id", "9")
+	response := httptest.NewRecorder()
+	handler.revokeSessions(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
+	}
+}
+
+func TestAdminRevokeSessionsRejectsNonAdmin(t *testing.T) {
+	dependencies := adminStubDependencies(t, false)
+	dependencies.AdminSessionRevoker = &adminSessionRevokerStub{}
+	handler := newAdminTestHandler(t, dependencies)
+	request := authenticatedRequest(http.MethodPost, "/en/admin/users/9/sessions/revoke", 7, "")
+	request.SetPathValue("id", "9")
+	response := httptest.NewRecorder()
+	handler.revokeSessions(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+}
+
+type adminSessionRevokerStub struct {
+	id  int64
+	err error
+}
+
+func (s *adminSessionRevokerStub) RevokeSessions(_ context.Context, _ service.AdminActionContext, id int64) error {
+	s.id = id
+	return s.err
+}

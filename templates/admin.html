@@ -53,8 +53,17 @@
 
     <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="admin-sessions-heading">
       <div class="card-body">
-        <h2 id="admin-sessions-heading" class="card-title">{{$.Labels.admin_detail_sessions}}</h2>
+        <div class="flex items-center justify-between">
+          <h2 id="admin-sessions-heading" class="card-title">{{$.Labels.admin_detail_sessions}}</h2>
+          <span class="badge badge-neutral" data-testid="session-count">{{.SessionCount}}</span>
+        </div>
         {{if .Sessions}}
+          <form method="post" action="{{.SessionsRevokeURL}}" hx-post="{{.SessionsRevokeURL}}"
+                hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this"
+                hx-confirm="{{$.Labels.admin_sessions_revoke_confirm}}">
+            <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+            <button class="btn btn-sm btn-error btn-outline" type="submit">{{$.Labels.admin_sessions_revoke}}</button>
+          </form>
           <div class="overflow-x-auto">
             <table class="table">
               <thead><tr><th scope="col">{{$.Labels.admin_sessions_created}}</th><th scope="col">{{$.Labels.admin_sessions_expires}}</th></tr></thead>

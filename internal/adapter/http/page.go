@@ -79,23 +79,25 @@ type AdminView struct {
 
 // AdminDetailView contains safe account diagnostics for one account.
 type AdminDetailView struct {
-	UserID        int64
-	Label         string
-	Email         string
-	Username      string
-	DisplayName   string
-	IsAdmin       bool
-	IsGuest       bool
-	Confirmed     bool
-	Locale        string
-	Theme         string
-	CreatedAt     string
-	Version       int64
-	EditURL       string
-	ListURL       string
-	Sessions      []AdminSessionView
-	LoginAttempts []AdminLoginAttemptView
-	Identities    []IdentityView
+	UserID            int64
+	Label             string
+	Email             string
+	Username          string
+	DisplayName       string
+	IsAdmin           bool
+	IsGuest           bool
+	Confirmed         bool
+	Locale            string
+	Theme             string
+	CreatedAt         string
+	Version           int64
+	EditURL           string
+	ListURL           string
+	SessionsRevokeURL string
+	SessionCount      int
+	Sessions          []AdminSessionView
+	LoginAttempts     []AdminLoginAttemptView
+	Identities        []IdentityView
 }
 
 // AdminSessionView is one active session's safe timing.

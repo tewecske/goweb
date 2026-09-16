@@ -56,6 +56,7 @@ type Dependencies struct {
 	AdminAccountCreator AdminAccountCreator
 	AdminAccountEditor  AdminAccountEditor
 	AdminUserDetailer   AdminUserDetailer
+	AdminSessionRevoker AdminSessionRevoker
 }
 
 // AdminAccountLister lists accounts for the administrator area.
@@ -79,6 +80,11 @@ type AdminAccountEditor interface {
 // AdminUserDetailer aggregates safe account diagnostics for an administrator.
 type AdminUserDetailer interface {
 	Detail(context.Context, int64) (service.AdminUserDetail, error)
+}
+
+// AdminSessionRevoker ends every active session for an account.
+type AdminSessionRevoker interface {
+	RevokeSessions(context.Context, service.AdminActionContext, int64) error
 }
 
 // UserFinder resolves an account for an authenticated session.

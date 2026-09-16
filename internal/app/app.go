@@ -246,7 +246,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct audit service: %w", err)
 	}
-	adminAccounts, err := service.NewAdminAccountService(users, adminUsersRepository, passwordHasher, auditService)
+	adminAccounts, err := service.NewAdminAccountService(users, adminUsersRepository, passwordHasher, auditService, sessionService)
 	if err != nil {
 		return nil, fmt.Errorf("construct admin account service: %w", err)
 	}

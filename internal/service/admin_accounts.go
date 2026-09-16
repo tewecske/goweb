@@ -122,6 +122,11 @@ type AdminAccountInput struct {
 	IsAdmin  bool
 }
 
+// SessionRevoker ends every active session for an account.
+type SessionRevoker interface {
+	RevokeUser(context.Context, int64) error
+}
+
 // AdminAccountService owns administrator account use cases. It applies server
 // side validation before every repository call.
 type AdminAccountService struct {
@@ -129,12 +134,13 @@ type AdminAccountService struct {
 	adminUsers AdminUserRepository
 	hasher     PasswordHashProvider
 	auditor    AuditRecorder
+	sessions   SessionRevoker
 }
 
 // NewAdminAccountService constructs administrator account use cases with
 // explicit account, list, password, and audit dependencies. The auditor is
 // optional and never blocks an account action on a recording failure.
-func NewAdminAccountService(users UserRepository, adminUsers AdminUserRepository, hasher PasswordHashProvider, auditor AuditRecorder) (*AdminAccountService, error) {
+func NewAdminAccountService(users UserRepository, adminUsers AdminUserRepository, hasher PasswordHashProvider, auditor AuditRecorder, sessions SessionRevoker) (*AdminAccountService, error) {
 	if users == nil {
 		return nil, ErrNilUserRepository
 	}
@@ -144,7 +150,33 @@ func NewAdminAccountService(users UserRepository, adminUsers AdminUserRepository
 	if hasher == nil {
 		return nil, errors.New("service: nil admin password hasher")
 	}
-	return &AdminAccountService{users: users, adminUsers: adminUsers, hasher: hasher, auditor: auditor}, nil
+	return &AdminAccountService{users: users, adminUsers: adminUsers, hasher: hasher, auditor: auditor, sessions: sessions}, nil
+}
+
+// RevokeSessions ends every active session for an account and records the
+// action. A missing account is reported as not-found.
+func (s *AdminAccountService) RevokeSessions(ctx context.Context, actor AdminActionContext, targetID int64) error {
+	if s == nil || s.users == nil || s.adminUsers == nil || s.sessions == nil {
+		return ErrInvalidAdminQuery
+	}
+	if ctx == nil {
+		return errors.New("service: nil admin session context")
+	}
+	if actor.ActorID <= 0 || targetID <= 0 {
+		return ErrInvalidAdminQuery
+	}
+	target, err := s.users.FindUserByID(ctx, targetID)
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			return ErrRecordNotFound
+		}
+		return err
+	}
+	if err := s.sessions.RevokeUser(ctx, targetID); err != nil {
+		return err
+	}
+	s.record(ctx, actor, AuditActionSessionsRevoked, target, adminAccountDetail(target))
+	return nil
 }
 
 // Create provisions a confirmed account with an optional password and
