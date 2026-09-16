@@ -32,6 +32,8 @@ Configuration comes from environment variables. Defaults keep local development 
 | `GOWEB_SESSION_COOKIE_SECURE` | `false`, or `true` in production |
 | `GOWEB_EMAIL_CONFIRMATION_REQUIRED` | `false` |
 | `GOWEB_SESSION_LIFETIME` | `24h` |
+| `GOWEB_BOOTSTRAP_ADMIN_EMAIL` | unset; non-production bootstrap administrator email |
+| `GOWEB_BOOTSTRAP_ADMIN_PASSWORD` | unset; non-production bootstrap administrator password |
 
 `GOWEB_DATABASE_URL` and `GOWEB_SESSION_SECRET` are optional foundation inputs. Secret values are redacted from formatting and JSON diagnostics; callers must not log or return revealed values.
 

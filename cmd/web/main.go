@@ -58,6 +58,13 @@ func main() {
 			_ = database.Close()
 			log.Fatal(composeErr)
 		}
+		seedContext, seedCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		seedErr := app.EnsureBootstrapAdmin(seedContext, applicationGraph, appConfig)
+		seedCancel()
+		if seedErr != nil {
+			_ = database.Close()
+			log.Fatal(seedErr)
+		}
 		sessionCookie, cookieErr := middleware.NewSessionCookie(middleware.SessionCookieConfig{
 			Secure:   appConfig.SessionCookieSecure,
 			Lifetime: appConfig.SessionLifetime,

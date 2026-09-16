@@ -193,3 +193,67 @@ func TestLoadNilEnvironmentLookup(t *testing.T) {
 		t.Fatal("Load(nil) error = nil, want error")
 	}
 }
+
+func TestLoadBootstrapAdmin(t *testing.T) {
+	values := map[string]string{
+		BootstrapAdminEmailEnv:    " Admin@Example.Test ",
+		BootstrapAdminPasswordEnv: "bootstrap-password",
+	}
+	config, err := Load(func(name string) string { return values[name] })
+	if err != nil {
+		t.Fatalf("Load() error = %v, want nil", err)
+	}
+	if !config.BootstrapAdminConfigured() {
+		t.Fatal("BootstrapAdminConfigured() = false, want true")
+	}
+	if config.BootstrapAdminEmail != "Admin@Example.Test" {
+		t.Fatalf("BootstrapAdminEmail = %q, want trimmed value", config.BootstrapAdminEmail)
+	}
+	if !config.BootstrapAdminPassword.IsSet() || config.BootstrapAdminPassword.String() != "[redacted]" {
+		t.Fatalf("bootstrap password not protected: %q", config.BootstrapAdminPassword.String())
+	}
+	if strings.Contains(config.String(), "bootstrap-password") || strings.Contains(config.String(), "Admin@Example.Test") {
+		t.Fatalf("config summary leaked bootstrap values: %s", config.String())
+	}
+}
+
+func TestLoadBootstrapAdminRejectsInvalidValues(t *testing.T) {
+	tests := []struct {
+		name   string
+		values map[string]string
+		want   error
+	}{
+		{
+			name:   "missing password",
+			values: map[string]string{BootstrapAdminEmailEnv: "admin@example.test"},
+			want:   ErrInvalidBootstrapAdmin,
+		},
+		{
+			name:   "missing email",
+			values: map[string]string{BootstrapAdminPasswordEnv: "bootstrap-password"},
+			want:   ErrInvalidBootstrapAdmin,
+		},
+		{
+			name:   "invalid email",
+			values: map[string]string{BootstrapAdminEmailEnv: "not-an-email", BootstrapAdminPasswordEnv: "bootstrap-password"},
+			want:   ErrInvalidBootstrapAdmin,
+		},
+		{
+			name:   "weak password",
+			values: map[string]string{BootstrapAdminEmailEnv: "admin@example.test", BootstrapAdminPasswordEnv: "short"},
+			want:   ErrWeakSecret,
+		},
+		{
+			name:   "production forbidden",
+			values: map[string]string{EnvironmentEnv: "production", BootstrapAdminEmailEnv: "admin@example.test", BootstrapAdminPasswordEnv: "bootstrap-password"},
+			want:   ErrBootstrapAdminForbidden,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := Load(func(name string) string { return test.values[name] }); !errors.Is(err, test.want) {
+				t.Fatalf("Load() error = %v, want %v", err, test.want)
+			}
+		})
+	}
+}

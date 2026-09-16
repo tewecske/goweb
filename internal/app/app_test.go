@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/url"
@@ -55,5 +56,56 @@ func TestNewBuildsCompleteGraphWithoutDatabaseIO(t *testing.T) {
 		if value == nil {
 			t.Fatalf("graph field %s is nil", name)
 		}
+	}
+}
+
+func TestEnsureBootstrapAdminSkipsWhenUnconfigured(t *testing.T) {
+	if err := EnsureBootstrapAdmin(nil, nil, config.Config{}); err != nil {
+		t.Fatalf("EnsureBootstrapAdmin() error = %v, want nil", err)
+	}
+}
+
+func TestEnsureBootstrapAdminRejectsProduction(t *testing.T) {
+	appConfig := config.Config{
+		Environment:            config.EnvironmentProduction,
+		BootstrapAdminEmail:    "admin@example.test",
+		BootstrapAdminPassword: config.Secret{},
+	}
+	// IsSet is false for the zero secret, so use a configured value via Load.
+	appConfig, err := config.Load(func(name string) string {
+		switch name {
+		case config.EnvironmentEnv:
+			return "development"
+		case config.BootstrapAdminEmailEnv:
+			return "admin@example.test"
+		case config.BootstrapAdminPasswordEnv:
+			return "bootstrap-password"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	appConfig.Environment = config.EnvironmentProduction
+	if err := EnsureBootstrapAdmin(nil, nil, appConfig); !errors.Is(err, ErrBootstrapAdminForbidden) {
+		t.Fatalf("EnsureBootstrapAdmin(production) error = %v, want %v", err, ErrBootstrapAdminForbidden)
+	}
+}
+
+func TestEnsureBootstrapAdminRejectsMissingDependencies(t *testing.T) {
+	appConfig, err := config.Load(func(name string) string {
+		switch name {
+		case config.BootstrapAdminEmailEnv:
+			return "admin@example.test"
+		case config.BootstrapAdminPasswordEnv:
+			return "bootstrap-password"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureBootstrapAdmin(context.Background(), nil, appConfig); err == nil {
+		t.Fatal("EnsureBootstrapAdmin(nil graph) error = nil, want failure")
 	}
 }

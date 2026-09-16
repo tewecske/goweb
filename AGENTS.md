@@ -35,6 +35,7 @@ Use Go 1.26 language features only. Prefer standard-library packages. Add third-
 - Start HTTP through `internal/server` and handle `SIGINT` and `SIGTERM` with graceful draining.
 - Close registered dependencies after HTTP shutdown, even when startup fails.
 - When `GOWEB_DATABASE_URL` is configured, startup opens PostgreSQL and applies migrations before serving requests. Local no-database startup remains supported until persistence-backed features require the store.
+- `GOWEB_BOOTSTRAP_ADMIN_EMAIL` and `GOWEB_BOOTSTRAP_ADMIN_PASSWORD` seed one confirmed administrator on startup when both are set in non-production; never configure them in production.
 
 ## HTTP and security
 

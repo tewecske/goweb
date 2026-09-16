@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/mail"
 	"net/url"
 	"strconv"
 	"strings"
@@ -29,6 +30,13 @@ const (
 	DatabaseURLEnv = "GOWEB_DATABASE_URL"
 	// SessionSecretEnv names the optional session-signing secret.
 	SessionSecretEnv = "GOWEB_SESSION_SECRET"
+	// BootstrapAdminEmailEnv names the optional non-production bootstrap administrator email.
+	BootstrapAdminEmailEnv = "GOWEB_BOOTSTRAP_ADMIN_EMAIL"
+	// BootstrapAdminPasswordEnv names the optional non-production bootstrap administrator password.
+	BootstrapAdminPasswordEnv = "GOWEB_BOOTSTRAP_ADMIN_PASSWORD"
+
+	// MinimumBootstrapAdminPasswordLength prevents weak bootstrap credentials.
+	MinimumBootstrapAdminPasswordLength = 8
 
 	// DefaultEnvironment is used when EnvironmentEnv is not set.
 	DefaultEnvironment Environment = EnvironmentDevelopment
@@ -55,6 +63,10 @@ var (
 	ErrInvalidDuration = errors.New("config: invalid duration")
 	// ErrWeakSecret identifies a configured secret that is too short.
 	ErrWeakSecret = errors.New("config: weak secret")
+	// ErrInvalidBootstrapAdmin identifies unusable bootstrap administrator settings.
+	ErrInvalidBootstrapAdmin = errors.New("config: invalid bootstrap administrator")
+	// ErrBootstrapAdminForbidden identifies bootstrap seeding in production.
+	ErrBootstrapAdminForbidden = errors.New("config: bootstrap administrator is not allowed in production")
 )
 
 // Environment identifies deployment behavior that may vary by environment.
@@ -117,12 +129,20 @@ type Config struct {
 	SessionLifetime           time.Duration
 	DatabaseURL               Secret
 	SessionSecret             Secret
+	BootstrapAdminEmail       string
+	BootstrapAdminPassword    Secret
+}
+
+// BootstrapAdminConfigured reports whether both bootstrap administrator values
+// are present.
+func (c Config) BootstrapAdminConfigured() bool {
+	return strings.TrimSpace(c.BootstrapAdminEmail) != "" && c.BootstrapAdminPassword.IsSet()
 }
 
 // String returns a safe diagnostic summary without secret values.
 func (c Config) String() string {
 	return fmt.Sprintf(
-		"environment=%s http_address=%s public_url=%s session_cookie_secure=%t email_confirmation_required=%t session_lifetime=%s database_configured=%t session_secret_configured=%t",
+		"environment=%s http_address=%s public_url=%s session_cookie_secure=%t email_confirmation_required=%t session_lifetime=%s database_configured=%t session_secret_configured=%t bootstrap_admin_configured=%t",
 		c.Environment,
 		c.HTTPAddress,
 		c.PublicURL.String(),
@@ -131,6 +151,7 @@ func (c Config) String() string {
 		c.SessionLifetime,
 		c.DatabaseURL.IsSet(),
 		c.SessionSecret.IsSet(),
+		c.BootstrapAdminConfigured(),
 	)
 }
 
@@ -170,6 +191,22 @@ func Load(getenv func(string) string) (Config, error) {
 	if sessionSecret.IsSet() && len(sessionSecret.value) < MinimumSessionSecretLength {
 		return Config{}, fmt.Errorf("%w: %s must contain at least %d characters", ErrWeakSecret, SessionSecretEnv, MinimumSessionSecretLength)
 	}
+	bootstrapEmail := strings.TrimSpace(getenv(BootstrapAdminEmailEnv))
+	bootstrapPassword := Secret{value: getenv(BootstrapAdminPasswordEnv)}
+	if bootstrapEmail != "" || bootstrapPassword.IsSet() {
+		if bootstrapEmail == "" || !bootstrapPassword.IsSet() {
+			return Config{}, fmt.Errorf("%w: %s and %s must be set together", ErrInvalidBootstrapAdmin, BootstrapAdminEmailEnv, BootstrapAdminPasswordEnv)
+		}
+		if _, err := mail.ParseAddress(bootstrapEmail); err != nil {
+			return Config{}, fmt.Errorf("%w: %s must be a valid email address", ErrInvalidBootstrapAdmin, BootstrapAdminEmailEnv)
+		}
+		if len(bootstrapPassword.value) < MinimumBootstrapAdminPasswordLength {
+			return Config{}, fmt.Errorf("%w: %s must contain at least %d characters", ErrWeakSecret, BootstrapAdminPasswordEnv, MinimumBootstrapAdminPasswordLength)
+		}
+		if environment == EnvironmentProduction {
+			return Config{}, ErrBootstrapAdminForbidden
+		}
+	}
 
 	return Config{
 		Environment:               environment,
@@ -180,6 +217,8 @@ func Load(getenv func(string) string) (Config, error) {
 		SessionLifetime:           sessionLifetime,
 		DatabaseURL:               Secret{value: getenv(DatabaseURLEnv)},
 		SessionSecret:             sessionSecret,
+		BootstrapAdminEmail:       bootstrapEmail,
+		BootstrapAdminPassword:    bootstrapPassword,
 	}, nil
 }
 
