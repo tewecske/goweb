@@ -116,4 +116,12 @@ test.describe("M8 usage reports", () => {
     await page.goto("/en/admin/usage?window=24h&order=least");
     await expect(page.getByRole("heading", { level: 1, name: /^usage$/i })).toBeVisible();
   });
+
+  test("investigation signals report thresholds without accusations", async ({ page }) => {
+    await signInAdmin(page);
+    await page.goto("/en/admin/suspicious?window=24h");
+    await expect(page.getByRole("heading", { level: 1, name: /investigation signals/i })).toBeVisible();
+    await expect(page.getByText(/not accusations/i)).toBeVisible();
+    await expect(page.getByText(/thresholds \(requests/i)).toBeVisible();
+  });
 });

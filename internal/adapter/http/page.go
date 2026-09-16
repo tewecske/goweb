@@ -70,15 +70,36 @@ type PageData struct {
 // AdminView contains administrator page data. URLs are empty when a section is
 // not yet available, so navigation only advertises implemented routes.
 type AdminView struct {
-	IsAdmin  bool
-	Page     string
-	Sections []AdminSectionView
-	List     *AdminListView
-	Detail   *AdminDetailView
-	Audit    *AdminAuditView
-	System   *AdminSystemView
-	Limits   *AdminRateLimitView
-	Usage    *AdminUsageView
+	IsAdmin    bool
+	Page       string
+	Sections   []AdminSectionView
+	List       *AdminListView
+	Detail     *AdminDetailView
+	Audit      *AdminAuditView
+	System     *AdminSystemView
+	Limits     *AdminRateLimitView
+	Usage      *AdminUsageView
+	Suspicious *AdminSuspiciousView
+}
+
+// AdminSuspiciousView is the investigation-signal report page state.
+type AdminSuspiciousView struct {
+	BaseURL         string
+	WindowKey       string
+	Windows         []AdminUsageWindowView
+	ActionThreshold int
+	OriginThreshold int
+	Accounts        []AdminSuspiciousAccountView
+}
+
+// AdminSuspiciousAccountView is one flagged account's safe aggregate.
+type AdminSuspiciousAccountView struct {
+	UserID          int64
+	DetailURL       string
+	Requests        int
+	DistinctOrigins int
+	ActionFlag      bool
+	OriginFlag      bool
 }
 
 // AdminUsageView is the usage report page state with URL-persisted window and

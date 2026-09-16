@@ -70,7 +70,8 @@ type Dependencies struct {
 
 	Usage middleware.UsageRecorder
 
-	AdminUsage AdminUsageReporter
+	AdminUsage      AdminUsageReporter
+	AdminSuspicious AdminSuspiciousReporter
 }
 
 // AdminAccountLister lists accounts for the administrator area.
@@ -159,6 +160,11 @@ type AdminRateLimitManager interface {
 // AdminUsageReporter builds route usage reports for administrators.
 type AdminUsageReporter interface {
 	Report(context.Context, string, bool) (service.UsageReport, error)
+}
+
+// AdminSuspiciousReporter builds suspicious-account reports.
+type AdminSuspiciousReporter interface {
+	Report(context.Context, string) (service.SuspiciousReport, error)
 }
 
 // UserFinder resolves an account for an authenticated session.

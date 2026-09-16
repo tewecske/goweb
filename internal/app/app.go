@@ -39,6 +39,7 @@ type Graph struct {
 	DatastoreStats        *postgresstore.DatastoreStatsRepository
 	UsageEvents           *postgresstore.UsageEventRepository
 	UsageReport           *postgresstore.UsageReportRepository
+	Suspicious            *postgresstore.SuspiciousAccountRepository
 	Providers             *service.ProviderRegistry
 	SessionService        *service.SessionService
 	PasswordHasher        *service.PasswordHasher
@@ -76,6 +77,7 @@ type Graph struct {
 	RateLimits            *service.RateLimitAdminService
 	Usage                 *service.UsageQueue
 	UsageReportService    *service.UsageReportService
+	SuspiciousService     *service.SuspiciousAccountService
 }
 
 // New constructs the service graph over one migrated database. It performs no
@@ -152,6 +154,10 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	usageReportRepository, err := postgresstore.NewUsageReportRepository(database)
 	if err != nil {
 		return nil, fmt.Errorf("construct usage report repository: %w", err)
+	}
+	suspiciousRepository, err := postgresstore.NewSuspiciousAccountRepository(database)
+	if err != nil {
+		return nil, fmt.Errorf("construct suspicious account repository: %w", err)
 	}
 
 	sessionService, err := service.NewSessionService(sessionsRepository, appConfig.SessionLifetime)
@@ -323,6 +329,10 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct usage report service: %w", err)
 	}
+	suspiciousService, err := service.NewSuspiciousAccountService(suspiciousRepository)
+	if err != nil {
+		return nil, fmt.Errorf("construct suspicious account service: %w", err)
+	}
 	maintenanceWorker, err := service.NewMaintenanceWorker(
 		service.DefaultMaintenanceInterval,
 		service.MaintenanceJob{Name: service.MaintenanceJobGuestCleanup, Run: guestCleanup.Cleanup},
@@ -380,6 +390,8 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		Usage:                 usageQueue,
 		UsageReport:           usageReportRepository,
 		UsageReportService:    usageReportService,
+		Suspicious:            suspiciousRepository,
+		SuspiciousService:     suspiciousService,
 	}, nil
 }
 

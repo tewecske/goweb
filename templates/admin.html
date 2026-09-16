@@ -21,6 +21,8 @@
     {{template "admin-ratelimits-content" .}}
   {{else if and .Admin (eq .Admin.Page "usage")}}
     {{template "admin-usage-content" .}}
+  {{else if and .Admin (eq .Admin.Page "suspicious")}}
+    {{template "admin-suspicious-content" .}}
   {{else if and .Admin (eq .Admin.Page "users")}}
     {{template "admin-users-content" .}}
   {{else}}
@@ -251,6 +253,55 @@
            hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_next}}</a>
       {{end}}
     </nav>
+  </div>
+  {{end}}
+{{end}}
+
+{{define "admin-suspicious-content"}}
+  {{with .Admin.Suspicious}}
+  <div id="page-content" class="mt-6 grid gap-6 w-full max-w-5xl">
+    <p class="text-sm opacity-70">{{$.Description}}</p>
+
+    <div class="alert alert-warning" role="status">
+      <span>{{$.Labels.admin_suspicious_disclaimer}}</span>
+    </div>
+
+    <div class="join" role="group" aria-label="{{$.Labels.admin_usage_window}}">
+      {{range .Windows}}
+        <a class="btn btn-sm join-item {{if .Current}}btn-active{{end}}" href="{{.URL}}"
+           hx-get="{{.URL}}" hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{.Label}}</a>
+      {{end}}
+    </div>
+
+    <p class="text-sm opacity-70">{{$.Labels.admin_suspicious_thresholds}}: {{.ActionThreshold}} / {{.OriginThreshold}}</p>
+
+    <div class="overflow-x-auto">
+      <table class="table" aria-label="{{$.Labels.admin_suspicious_heading}}">
+        <thead>
+          <tr>
+            <th scope="col">{{$.Labels.admin_suspicious_account}}</th>
+            <th scope="col">{{$.Labels.admin_suspicious_requests}}</th>
+            <th scope="col">{{$.Labels.admin_suspicious_origins}}</th>
+            <th scope="col">{{$.Labels.admin_suspicious_flags}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Accounts}}
+            <tr data-account-id="{{.UserID}}">
+              <td><a class="link" href="{{.DetailURL}}">{{.UserID}}</a></td>
+              <td>{{.Requests}}</td>
+              <td>{{.DistinctOrigins}}</td>
+              <td class="flex flex-wrap gap-1">
+                {{if .ActionFlag}}<span class="badge badge-warning">{{$.Labels.admin_suspicious_flag_actions}}</span>{{end}}
+                {{if .OriginFlag}}<span class="badge badge-warning">{{$.Labels.admin_suspicious_flag_origins}}</span>{{end}}
+              </td>
+            </tr>
+          {{else}}
+            <tr><td colspan="4" class="text-sm opacity-70">{{$.Labels.admin_suspicious_empty}}</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
   </div>
   {{end}}
 {{end}}

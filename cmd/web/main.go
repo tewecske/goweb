@@ -124,6 +124,7 @@ func main() {
 			AdminRateLimits:      applicationGraph.RateLimits,
 			Usage:                httpadapter.NewUsageRecorder(applicationGraph.Usage),
 			AdminUsage:           applicationGraph.UsageReportService,
+			AdminSuspicious:      applicationGraph.SuspiciousService,
 		})
 	}
 

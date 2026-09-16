@@ -1515,3 +1515,50 @@ func (s *adminUsageStub) Report(_ context.Context, window string, ascending bool
 	}
 	return s.report, nil
 }
+
+func TestAdminSuspiciousRendersFlags(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminSuspicious = &adminSuspiciousStub{report: service.SuspiciousReport{
+		WindowKey:       "24h",
+		ActionThreshold: 500,
+		OriginThreshold: 5,
+		Accounts: []service.SuspiciousAccount{
+			{UserID: 12, Requests: 600, DistinctOrigins: 1, ActionFlag: true},
+			{UserID: 13, Requests: 2, DistinctOrigins: 9, OriginFlag: true},
+		},
+	}}
+	handler := newAdminTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.suspicious(response, authenticatedRequest(http.MethodGet, "/en/admin/suspicious", 7, ""))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	body := response.Body.String()
+	for _, want := range []string{"Investigation signals", "not accusations", "High action count", "Many origins", `data-account-id="12"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("suspicious body missing %q", want)
+		}
+	}
+}
+
+func TestAdminSuspiciousRejectsNonAdmin(t *testing.T) {
+	handler := newAdminTestHandler(t, adminStubDependencies(t, false))
+	response := httptest.NewRecorder()
+	handler.suspicious(response, authenticatedRequest(http.MethodGet, "/en/admin/suspicious", 7, ""))
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+}
+
+type adminSuspiciousStub struct {
+	report service.SuspiciousReport
+	err    error
+}
+
+func (s *adminSuspiciousStub) Report(context.Context, string) (service.SuspiciousReport, error) {
+	if s.err != nil {
+		return service.SuspiciousReport{}, s.err
+	}
+	return s.report, nil
+}

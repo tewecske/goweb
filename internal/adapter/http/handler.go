@@ -85,6 +85,7 @@ func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware
 		mux.HandleFunc("GET "+prefix+"/admin/ratelimits", admin.rateLimits)
 		mux.HandleFunc("POST "+prefix+"/admin/ratelimits/clear", admin.clearRateLimit)
 		mux.HandleFunc("GET "+prefix+"/admin/usage", admin.usage)
+		mux.HandleFunc("GET "+prefix+"/admin/suspicious", admin.suspicious)
 		mux.HandleFunc("GET "+prefix+"/admin/users/new", admin.createAccount)
 		mux.HandleFunc("POST "+prefix+"/admin/users/new", admin.createAccount)
 		mux.HandleFunc("GET "+prefix+"/admin/users/{id}", admin.detail)

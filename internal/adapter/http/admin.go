@@ -990,6 +990,7 @@ func (h *adminHandler) renderAdmin(writer http.ResponseWriter, request *http.Req
 				{ID: "system", Label: h.t(language, "admin.nav.system"), URL: localizedPath(language, "/admin/system")},
 				{ID: "ratelimits", Label: h.t(language, "admin.nav.ratelimits"), URL: localizedPath(language, "/admin/ratelimits")},
 				{ID: "usage", Label: h.t(language, "admin.nav.usage"), URL: localizedPath(language, "/admin/usage")},
+				{ID: "suspicious", Label: h.t(language, "admin.nav.suspicious"), URL: localizedPath(language, "/admin/suspicious")},
 			},
 		},
 	}
@@ -1188,6 +1189,17 @@ func (h *adminHandler) labels(language locale.Code) map[string]string {
 		"admin_usage_queue_recorded":           h.t(language, "admin.usage.queue.recorded"),
 		"admin_usage_queue_failed":             h.t(language, "admin.usage.queue.failed"),
 		"admin_usage_queue_dropped":            h.t(language, "admin.usage.queue.dropped"),
+		"admin_suspicious_heading":             h.t(language, "admin.suspicious.heading"),
+		"admin_suspicious_disclaimer":          h.t(language, "admin.suspicious.disclaimer"),
+		"admin_suspicious_account":             h.t(language, "admin.suspicious.account"),
+		"admin_suspicious_requests":            h.t(language, "admin.suspicious.requests"),
+		"admin_suspicious_origins":             h.t(language, "admin.suspicious.origins"),
+		"admin_suspicious_flags":               h.t(language, "admin.suspicious.flags"),
+		"admin_suspicious_flag_actions":        h.t(language, "admin.suspicious.flag_actions"),
+		"admin_suspicious_flag_origins":        h.t(language, "admin.suspicious.flag_origins"),
+		"admin_suspicious_thresholds":          h.t(language, "admin.suspicious.thresholds"),
+		"admin_suspicious_empty":               h.t(language, "admin.suspicious.empty"),
+		"admin_suspicious_view":                h.t(language, "admin.suspicious.view"),
 	}
 }
 
@@ -1214,6 +1226,80 @@ func (h *adminHandler) system(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 	h.renderSystem(writer, request, language, user, nil, http.StatusOK)
+}
+
+// suspicious renders the investigation-signal report for flagged accounts.
+func (h *adminHandler) suspicious(writer http.ResponseWriter, request *http.Request) {
+	user, language, ok := h.authorize(writer, request)
+	if !ok {
+		return
+	}
+	if request.Method != http.MethodGet {
+		writer.Header().Set("Allow", http.MethodGet)
+		writer.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if h.dependencies.AdminSuspicious == nil {
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+		return
+	}
+	windowKey := strings.TrimSpace(request.URL.Query().Get("window"))
+	report, err := h.dependencies.AdminSuspicious.Report(request.Context(), windowKey)
+	if err != nil {
+		h.renderSuspicious(writer, request, language, user, service.SuspiciousReport{WindowKey: service.DefaultUsageWindowKey}, []Alert{{Level: "error", Message: h.t(language, "admin.usage.error")}}, http.StatusInternalServerError)
+		return
+	}
+	h.renderSuspicious(writer, request, language, user, report, nil, http.StatusOK)
+}
+
+func (h *adminHandler) renderSuspicious(writer http.ResponseWriter, request *http.Request, language locale.Code, user service.User, report service.SuspiciousReport, alerts []Alert, status int) {
+	base := localizedPath(language, "/admin/suspicious")
+	view := &AdminSuspiciousView{
+		BaseURL:         base,
+		WindowKey:       report.WindowKey,
+		ActionThreshold: report.ActionThreshold,
+		OriginThreshold: report.OriginThreshold,
+	}
+	for _, window := range service.UsageWindows {
+		view.Windows = append(view.Windows, AdminUsageWindowView{
+			Key:     window.Key,
+			Label:   h.t(language, "admin.usage.window."+window.Key),
+			URL:     base + "?window=" + window.Key,
+			Current: window.Key == report.WindowKey,
+		})
+	}
+	for _, account := range report.Accounts {
+		id := strconv.FormatInt(account.UserID, 10)
+		view.Accounts = append(view.Accounts, AdminSuspiciousAccountView{
+			UserID:          account.UserID,
+			DetailURL:       localizedPath(language, "/admin/users/"+id),
+			Requests:        account.Requests,
+			DistinctOrigins: account.DistinctOrigins,
+			ActionFlag:      account.ActionFlag,
+			OriginFlag:      account.OriginFlag,
+		})
+	}
+	pageData := PageData{
+		Language:         string(language),
+		Title:            h.t(language, "admin.suspicious.title"),
+		Heading:          h.t(language, "admin.suspicious.heading"),
+		Description:      h.t(language, "admin.suspicious.description"),
+		Kind:             "admin",
+		CSRFToken:        csrfToken(request),
+		Template:         "admin",
+		FragmentTemplate: "admin-fragment",
+		Alerts:           alerts,
+		Labels:           h.labels(language),
+		Account:          settingsAccountMenu(language, user),
+		Admin: &AdminView{
+			IsAdmin:    true,
+			Page:       "suspicious",
+			Suspicious: view,
+		},
+	}
+	if err := h.settings.Render(writer, request, pageData, status); err != nil {
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+	}
 }
 
 // usage renders the route usage report for a selected window and order.

@@ -47,6 +47,7 @@ Delivered feature areas:
 - `internal/service/rate_limit_admin.go` lists live budgets with redacted key hints and clears them through a separate, confirmed, audited action on `/{language}/admin/ratelimits`.
 - `internal/service/usage.go`, `internal/adapter/http/middleware/usage.go`, and `internal/store/postgres/usage.go` record one normalized usage event per request through a bounded queue that applies backpressure and never fails the request. Storage failures are retried with bounded backoff and each event keeps the server request ID that links it back to the originating request.
 - `internal/service/usage_report.go` and `internal/store/postgres/usage_report.go` report most-used and least-used normalized routes for a URL-selected window, plus live queue health, on `/{language}/admin/usage`.
+- `internal/service/suspicious.go` and `internal/store/postgres/suspicious.go` flag accounts exceeding action-count or distinct-origin thresholds on `/{language}/admin/suspicious`; the page frames the flags as investigation signals.
 - Localized routes live under `/{language}/account/settings`, `/{language}/account/theme`, and `/{language}/groups`.
 
 The public foundation route remains `GET /healthz`.
