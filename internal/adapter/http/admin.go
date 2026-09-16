@@ -989,6 +989,7 @@ func (h *adminHandler) renderAdmin(writer http.ResponseWriter, request *http.Req
 				{ID: "audit", Label: h.t(language, "admin.nav.audit"), URL: localizedPath(language, "/admin/audit")},
 				{ID: "system", Label: h.t(language, "admin.nav.system"), URL: localizedPath(language, "/admin/system")},
 				{ID: "ratelimits", Label: h.t(language, "admin.nav.ratelimits"), URL: localizedPath(language, "/admin/ratelimits")},
+				{ID: "usage", Label: h.t(language, "admin.nav.usage"), URL: localizedPath(language, "/admin/usage")},
 			},
 		},
 	}
@@ -1173,6 +1174,20 @@ func (h *adminHandler) labels(language locale.Code) map[string]string {
 		"admin_ratelimits_clear":               h.t(language, "admin.ratelimits.clear"),
 		"admin_ratelimits_clear_all":           h.t(language, "admin.ratelimits.clear_all"),
 		"admin_ratelimits_empty":               h.t(language, "admin.ratelimits.empty"),
+		"admin_usage_window":                   h.t(language, "admin.usage.window"),
+		"admin_usage_heading":                  h.t(language, "admin.usage.heading"),
+		"admin_usage_order":                    h.t(language, "admin.usage.order"),
+		"admin_usage_most":                     h.t(language, "admin.usage.most"),
+		"admin_usage_least":                    h.t(language, "admin.usage.least"),
+		"admin_usage_route":                    h.t(language, "admin.usage.route"),
+		"admin_usage_requests":                 h.t(language, "admin.usage.requests"),
+		"admin_usage_empty":                    h.t(language, "admin.usage.empty"),
+		"admin_usage_queue_heading":            h.t(language, "admin.usage.queue.heading"),
+		"admin_usage_queue_capacity":           h.t(language, "admin.usage.queue.capacity"),
+		"admin_usage_queue_pending":            h.t(language, "admin.usage.queue.pending"),
+		"admin_usage_queue_recorded":           h.t(language, "admin.usage.queue.recorded"),
+		"admin_usage_queue_failed":             h.t(language, "admin.usage.queue.failed"),
+		"admin_usage_queue_dropped":            h.t(language, "admin.usage.queue.dropped"),
 	}
 }
 
@@ -1199,6 +1214,85 @@ func (h *adminHandler) system(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 	h.renderSystem(writer, request, language, user, nil, http.StatusOK)
+}
+
+// usage renders the route usage report for a selected window and order.
+func (h *adminHandler) usage(writer http.ResponseWriter, request *http.Request) {
+	user, language, ok := h.authorize(writer, request)
+	if !ok {
+		return
+	}
+	if request.Method != http.MethodGet {
+		writer.Header().Set("Allow", http.MethodGet)
+		writer.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if h.dependencies.AdminUsage == nil {
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+		return
+	}
+	windowKey := strings.TrimSpace(request.URL.Query().Get("window"))
+	ascending := request.URL.Query().Get("order") == "least"
+	report, err := h.dependencies.AdminUsage.Report(request.Context(), windowKey, ascending)
+	if err != nil {
+		h.renderUsage(writer, request, language, user, service.UsageReport{WindowKey: service.DefaultUsageWindowKey, Ascending: ascending}, []Alert{{Level: "error", Message: h.t(language, "admin.usage.error")}}, http.StatusInternalServerError)
+		return
+	}
+	h.renderUsage(writer, request, language, user, report, nil, http.StatusOK)
+}
+
+func (h *adminHandler) renderUsage(writer http.ResponseWriter, request *http.Request, language locale.Code, user service.User, report service.UsageReport, alerts []Alert, status int) {
+	base := localizedPath(language, "/admin/usage")
+	order := "most"
+	if report.Ascending {
+		order = "least"
+	}
+	view := &AdminUsageView{
+		BaseURL:   base,
+		WindowKey: report.WindowKey,
+		Ascending: report.Ascending,
+		MostURL:   base + "?window=" + report.WindowKey + "&order=most",
+		LeastURL:  base + "?window=" + report.WindowKey + "&order=least",
+		Queue: AdminUsageQueueView{
+			Capacity: report.Queue.Capacity,
+			Pending:  report.Queue.Pending,
+			Recorded: report.Queue.Recorded,
+			Failed:   report.Queue.Failed,
+			Dropped:  report.Queue.Dropped,
+		},
+	}
+	for _, window := range service.UsageWindows {
+		view.Windows = append(view.Windows, AdminUsageWindowView{
+			Key:     window.Key,
+			Label:   h.t(language, "admin.usage.window."+window.Key),
+			URL:     base + "?window=" + window.Key + "&order=" + order,
+			Current: window.Key == report.WindowKey,
+		})
+	}
+	for _, route := range report.Routes {
+		view.Routes = append(view.Routes, AdminUsageRouteView{Route: route.Route, Requests: route.Requests})
+	}
+	pageData := PageData{
+		Language:         string(language),
+		Title:            h.t(language, "admin.usage.title"),
+		Heading:          h.t(language, "admin.usage.heading"),
+		Description:      h.t(language, "admin.usage.description"),
+		Kind:             "admin",
+		CSRFToken:        csrfToken(request),
+		Template:         "admin",
+		FragmentTemplate: "admin-fragment",
+		Alerts:           alerts,
+		Labels:           h.labels(language),
+		Account:          settingsAccountMenu(language, user),
+		Admin: &AdminView{
+			IsAdmin: true,
+			Page:    "usage",
+			Usage:   view,
+		},
+	}
+	if err := h.settings.Render(writer, request, pageData, status); err != nil {
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+	}
 }
 
 // rateLimits renders the live rate-limit list for administrators.

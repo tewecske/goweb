@@ -70,3 +70,50 @@ func TestUsageQueueRecordsEventsOutsideTheRequest(t *testing.T) {
 		t.Fatalf("stored usage = count %d method %q route %q request %q status %d", count, method, route, requestID, status)
 	}
 }
+
+func TestUsageReportRepositoryOrdersAndWindowsRoutes(t *testing.T) {
+	harness := testpostgres.New(t)
+	runner, err := store.NewMigrator(harness.DB, migrations.FS)
+	if err != nil {
+		t.Fatalf("NewMigrator() error = %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := runner.Apply(ctx); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+
+	insert := func(createdAt int64, route string) {
+		if _, err := harness.DB.ExecContext(ctx, `
+			INSERT INTO usage_events (created_at, method, route, status) VALUES ($1, 'GET', $2, 200)
+		`, createdAt, route); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert(900, "/{language}/")
+	insert(950, "/{language}/")
+	insert(960, "/{language}/")
+	insert(900, "/{language}/groups")
+	insert(100, "/{language}/stale")
+
+	repository, err := NewUsageReportRepository(harness.DB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := service.RouteUsageQuery{Since: 800, Until: 1000, Limit: 10}
+	most, err := repository.QueryRouteUsage(ctx, query)
+	if err != nil {
+		t.Fatalf("QueryRouteUsage() error = %v", err)
+	}
+	if len(most) != 2 || most[0].Route != "/{language}/" || most[0].Requests != 3 || most[1].Requests != 1 {
+		t.Fatalf("most-used = %+v, want / with 3 then /groups with 1", most)
+	}
+	query.Ascending = true
+	least, err := repository.QueryRouteUsage(ctx, query)
+	if err != nil {
+		t.Fatalf("QueryRouteUsage(asc) error = %v", err)
+	}
+	if len(least) != 2 || least[0].Requests != 1 || least[1].Requests != 3 {
+		t.Fatalf("least-used = %+v, want ascending order", least)
+	}
+}

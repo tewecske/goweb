@@ -91,3 +91,29 @@ test.describe("M8 rate-limit administration", () => {
     await expect(page.locator("tbody tr").first()).toContainText("admin.ratelimit.cleared");
   });
 });
+
+test.describe("M8 usage reports", () => {
+  test.skip(!enabled, "set GOWEB_BROWSER_E2E=1 to run browser acceptance specs");
+  test.skip(!adminEnabled, "requires database and bootstrap administrator fixture");
+
+  test("reports most-used and least-used normalized routes", async ({ page }) => {
+    await signInAdmin(page);
+    for (let index = 0; index < 3; index++) {
+      await page.goto("/en/");
+    }
+
+    await expect
+      .poll(async () => {
+        await page.goto("/en/admin/usage?window=24h&order=most");
+        return page.locator('tr[data-route="/{language}/"]').count();
+      }, { timeout: 15_000 })
+      .toBeGreaterThan(0);
+
+    await expect(page.getByRole("heading", { level: 1, name: /^usage$/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /recording queue/i })).toBeVisible();
+    await expect(page.locator('tr[data-route="/{language}/"]')).toContainText("/{language}/");
+
+    await page.goto("/en/admin/usage?window=24h&order=least");
+    await expect(page.getByRole("heading", { level: 1, name: /^usage$/i })).toBeVisible();
+  });
+});

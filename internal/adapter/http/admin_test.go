@@ -1464,3 +1464,54 @@ func (s *adminRateLimitStub) ClearAll(context.Context, service.AdminActionContex
 	s.clearAllCalls++
 	return 1, nil
 }
+
+func TestAdminUsageRendersRoutesAndQueue(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminUsage = &adminUsageStub{report: service.UsageReport{
+		WindowKey: "7d",
+		Window:    7 * 24 * time.Hour,
+		Ascending: true,
+		Routes:    []service.RouteUsage{{Route: "/{language}/", Requests: 4}},
+		Queue:     service.UsageQueueStats{Capacity: 1024, Pending: 1, Recorded: 12, Failed: 1, Dropped: 2},
+	}}
+	handler := newAdminTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.usage(response, authenticatedRequest(http.MethodGet, "/en/admin/usage?window=7d&order=least", 7, ""))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	body := response.Body.String()
+	for _, want := range []string{"Usage", "/{language}/", "Recording queue", "1024", "Dropped"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("usage body missing %q", want)
+		}
+	}
+}
+
+func TestAdminUsageReportsFailureWithErrorState(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminUsage = &adminUsageStub{err: errors.New("boom")}
+	handler := newAdminTestHandler(t, dependencies)
+	response := httptest.NewRecorder()
+	handler.usage(response, authenticatedRequest(http.MethodGet, "/en/admin/usage", 7, ""))
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusInternalServerError)
+	}
+}
+
+type adminUsageStub struct {
+	report service.UsageReport
+	err    error
+	window string
+	asc    bool
+}
+
+func (s *adminUsageStub) Report(_ context.Context, window string, ascending bool) (service.UsageReport, error) {
+	s.window = window
+	s.asc = ascending
+	if s.err != nil {
+		return service.UsageReport{}, s.err
+	}
+	return s.report, nil
+}

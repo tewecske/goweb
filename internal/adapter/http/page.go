@@ -78,6 +78,43 @@ type AdminView struct {
 	Audit    *AdminAuditView
 	System   *AdminSystemView
 	Limits   *AdminRateLimitView
+	Usage    *AdminUsageView
+}
+
+// AdminUsageView is the usage report page state with URL-persisted window and
+// ordering.
+type AdminUsageView struct {
+	BaseURL   string
+	WindowKey string
+	Ascending bool
+	Windows   []AdminUsageWindowView
+	MostURL   string
+	LeastURL  string
+	Routes    []AdminUsageRouteView
+	Queue     AdminUsageQueueView
+}
+
+// AdminUsageWindowView is one selectable report window.
+type AdminUsageWindowView struct {
+	Key     string
+	Label   string
+	URL     string
+	Current bool
+}
+
+// AdminUsageRouteView is one route's request count.
+type AdminUsageRouteView struct {
+	Route    string
+	Requests int
+}
+
+// AdminUsageQueueView is the live usage queue health.
+type AdminUsageQueueView struct {
+	Capacity int
+	Pending  int
+	Recorded uint64
+	Failed   uint64
+	Dropped  uint64
 }
 
 // AdminSystemView contains administrator system health data. It never carries

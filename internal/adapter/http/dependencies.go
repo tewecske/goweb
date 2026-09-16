@@ -69,6 +69,8 @@ type Dependencies struct {
 	AdminRateLimits     AdminRateLimitManager
 
 	Usage middleware.UsageRecorder
+
+	AdminUsage AdminUsageReporter
 }
 
 // AdminAccountLister lists accounts for the administrator area.
@@ -152,6 +154,11 @@ type AdminRateLimitManager interface {
 	Buckets(string) ([]service.RateLimitBucketInfo, error)
 	ClearAction(context.Context, service.AdminActionContext, string) (int, error)
 	ClearAll(context.Context, service.AdminActionContext) (int, error)
+}
+
+// AdminUsageReporter builds route usage reports for administrators.
+type AdminUsageReporter interface {
+	Report(context.Context, string, bool) (service.UsageReport, error)
 }
 
 // UserFinder resolves an account for an authenticated session.

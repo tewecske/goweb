@@ -19,6 +19,8 @@
     {{template "admin-system-content" .}}
   {{else if and .Admin (eq .Admin.Page "ratelimits")}}
     {{template "admin-ratelimits-content" .}}
+  {{else if and .Admin (eq .Admin.Page "usage")}}
+    {{template "admin-usage-content" .}}
   {{else if and .Admin (eq .Admin.Page "users")}}
     {{template "admin-users-content" .}}
   {{else}}
@@ -249,6 +251,55 @@
            hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_next}}</a>
       {{end}}
     </nav>
+  </div>
+  {{end}}
+{{end}}
+
+{{define "admin-usage-content"}}
+  {{with .Admin.Usage}}
+  <div id="page-content" class="mt-6 grid gap-6 w-full max-w-5xl">
+    <p class="text-sm opacity-70">{{$.Description}}</p>
+
+    <div class="flex flex-wrap items-center gap-3">
+      <div class="join" role="group" aria-label="{{$.Labels.admin_usage_window}}">
+        {{range .Windows}}
+          <a class="btn btn-sm join-item {{if .Current}}btn-active{{end}}" href="{{.URL}}"
+             hx-get="{{.URL}}" hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{.Label}}</a>
+        {{end}}
+      </div>
+      <div class="join" role="group" aria-label="{{$.Labels.admin_usage_order}}">
+        <a class="btn btn-sm join-item {{if not .Ascending}}btn-active{{end}}" href="{{.MostURL}}"
+           hx-get="{{.MostURL}}" hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_usage_most}}</a>
+        <a class="btn btn-sm join-item {{if .Ascending}}btn-active{{end}}" href="{{.LeastURL}}"
+           hx-get="{{.LeastURL}}" hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_usage_least}}</a>
+      </div>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="table" aria-label="{{$.Labels.admin_usage_heading}}">
+        <thead><tr><th scope="col">{{$.Labels.admin_usage_route}}</th><th scope="col">{{$.Labels.admin_usage_requests}}</th></tr></thead>
+        <tbody>
+          {{range .Routes}}
+            <tr data-route="{{.Route}}"><td>{{.Route}}</td><td>{{.Requests}}</td></tr>
+          {{else}}
+            <tr><td colspan="2" class="text-sm opacity-70">{{$.Labels.admin_usage_empty}}</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+
+    <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="admin-usage-queue-heading">
+      <div class="card-body">
+        <h2 id="admin-usage-queue-heading" class="card-title">{{$.Labels.admin_usage_queue_heading}}</h2>
+        <dl class="grid grid-cols-2 gap-2 md:grid-cols-5">
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_usage_queue_capacity}}</dt><dd>{{.Queue.Capacity}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_usage_queue_pending}}</dt><dd>{{.Queue.Pending}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_usage_queue_recorded}}</dt><dd>{{.Queue.Recorded}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_usage_queue_failed}}</dt><dd>{{.Queue.Failed}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_usage_queue_dropped}}</dt><dd>{{.Queue.Dropped}}</dd></div>
+        </dl>
+      </div>
+    </section>
   </div>
   {{end}}
 {{end}}

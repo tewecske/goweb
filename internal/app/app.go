@@ -38,6 +38,7 @@ type Graph struct {
 	Retention             *postgresstore.RetentionRepository
 	DatastoreStats        *postgresstore.DatastoreStatsRepository
 	UsageEvents           *postgresstore.UsageEventRepository
+	UsageReport           *postgresstore.UsageReportRepository
 	Providers             *service.ProviderRegistry
 	SessionService        *service.SessionService
 	PasswordHasher        *service.PasswordHasher
@@ -74,6 +75,7 @@ type Graph struct {
 	DatastoreStatsService *service.DatastoreStatsService
 	RateLimits            *service.RateLimitAdminService
 	Usage                 *service.UsageQueue
+	UsageReportService    *service.UsageReportService
 }
 
 // New constructs the service graph over one migrated database. It performs no
@@ -146,6 +148,10 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	usageEventRepository, err := postgresstore.NewUsageEventRepository(database)
 	if err != nil {
 		return nil, fmt.Errorf("construct usage event repository: %w", err)
+	}
+	usageReportRepository, err := postgresstore.NewUsageReportRepository(database)
+	if err != nil {
+		return nil, fmt.Errorf("construct usage report repository: %w", err)
 	}
 
 	sessionService, err := service.NewSessionService(sessionsRepository, appConfig.SessionLifetime)
@@ -313,6 +319,10 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct usage queue: %w", err)
 	}
+	usageReportService, err := service.NewUsageReportService(usageReportRepository, usageQueue)
+	if err != nil {
+		return nil, fmt.Errorf("construct usage report service: %w", err)
+	}
 	maintenanceWorker, err := service.NewMaintenanceWorker(
 		service.DefaultMaintenanceInterval,
 		service.MaintenanceJob{Name: service.MaintenanceJobGuestCleanup, Run: guestCleanup.Cleanup},
@@ -368,6 +378,8 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		RateLimits:            rateLimits,
 		UsageEvents:           usageEventRepository,
 		Usage:                 usageQueue,
+		UsageReport:           usageReportRepository,
+		UsageReportService:    usageReportService,
 	}, nil
 }
 

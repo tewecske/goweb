@@ -123,6 +123,7 @@ func main() {
 			AdminDatastoreStats:  applicationGraph.DatastoreStatsService,
 			AdminRateLimits:      applicationGraph.RateLimits,
 			Usage:                httpadapter.NewUsageRecorder(applicationGraph.Usage),
+			AdminUsage:           applicationGraph.UsageReportService,
 		})
 	}
 
