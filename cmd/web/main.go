@@ -76,6 +76,7 @@ func main() {
 			log.Fatal(cookieErr)
 		}
 		applicationGraph.Audit.SetSink(httpadapter.NewAuditSecuritySink(logger))
+		applicationGraph.RuntimeInfo.SetMigrations(app.NewMigrationStatusProvider(migrator))
 		serverOptions = append(serverOptions, appserver.WithDependency(database))
 		router = httpadapter.NewLoggedRouterWithServices(logger, httpadapter.Dependencies{
 			Users:                applicationGraph.Users,
@@ -118,6 +119,7 @@ func main() {
 			AdminMaintenance:     applicationGraph.Maintenance,
 			AdminAuditRecorder:   applicationGraph.Audit,
 			AdminSystemConfig:    applicationGraph.SystemInfo,
+			AdminRuntime:         applicationGraph.RuntimeInfo,
 		})
 	}
 

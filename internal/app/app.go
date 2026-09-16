@@ -68,6 +68,7 @@ type Graph struct {
 	Maintenance          *service.MaintenanceWorker
 	RetentionService     *service.RetentionService
 	SystemInfo           *service.SystemInfoService
+	RuntimeInfo          *service.RuntimeInfoService
 }
 
 // New constructs the service graph over one migrated database. It performs no
@@ -290,6 +291,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct maintenance worker: %w", err)
 	}
+	runtimeInfo := service.NewRuntimeInfoService(time.Now())
 	systemInfo := service.NewSystemInfoService(service.SystemInfoSettings{
 		Environment:               string(appConfig.Environment),
 		PublicAddress:             appConfig.HTTPAddress,
@@ -327,7 +329,8 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		LoginAttempts: loginAttemptsRepository, AdminDiagnostics: adminDiagnostics,
 		AdminConfirmation: adminConfirmation, AdminIdentity: adminIdentity, Lockout: lockoutService,
 		Maintenance: maintenanceWorker, Retention: retentionRepository, RetentionService: retentionService,
-		SystemInfo: systemInfo,
+		SystemInfo:  systemInfo,
+		RuntimeInfo: runtimeInfo,
 	}, nil
 }
 

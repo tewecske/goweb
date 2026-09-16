@@ -109,3 +109,9 @@ func TestEnsureBootstrapAdminRejectsMissingDependencies(t *testing.T) {
 		t.Fatal("EnsureBootstrapAdmin(nil graph) error = nil, want failure")
 	}
 }
+
+func TestNewMigrationStatusProviderRejectsNilRunner(t *testing.T) {
+	if provider := NewMigrationStatusProvider(nil); provider != nil {
+		t.Fatalf("NewMigrationStatusProvider(nil) = %v, want nil", provider)
+	}
+}

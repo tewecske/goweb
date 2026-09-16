@@ -1273,3 +1273,56 @@ type adminSystemConfigStub struct {
 func (s adminSystemConfigStub) SystemConfiguration() service.SystemConfiguration {
 	return s.configuration
 }
+
+func TestAdminSystemRendersRuntimeAndMigrations(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	installedAt := time.Unix(1700000000, 0)
+	dependencies.AdminRuntime = adminRuntimeStub{
+		info: service.RuntimeInfo{
+			Version:        "1.2.3",
+			StartedAt:      1700000000,
+			Uptime:         90 * time.Minute,
+			GoVersion:      "go1.26.5",
+			GOOS:           "linux",
+			GOARCH:         "arm64",
+			NumCPU:         8,
+			GOMAXPROCS:     8,
+			Goroutines:     12,
+			HeapAllocBytes: 4 * 1024 * 1024,
+			SysBytes:       8 * 1024 * 1024,
+			NumGC:          3,
+		},
+		migrations: []service.MigrationInfo{
+			{Rank: 1, Version: 1, Description: "create_users", Installed: true, InstalledAt: &installedAt},
+			{Rank: 2, Version: 2, Description: "pending_change", Installed: false},
+		},
+	}
+	handler := newAdminTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.system(response, authenticatedRequest(http.MethodGet, "/en/admin/system", 7, ""))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	body := response.Body.String()
+	for _, want := range []string{"Runtime", "1.2.3", "go1.26.5", "linux/arm64", "Migrations", "create_users", "pending_change", "Installed", "Pending"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("system body missing %q", want)
+		}
+	}
+}
+
+type adminRuntimeStub struct {
+	info       service.RuntimeInfo
+	migrations []service.MigrationInfo
+	err        error
+}
+
+func (s adminRuntimeStub) RuntimeInfo() service.RuntimeInfo { return s.info }
+
+func (s adminRuntimeStub) Migrations(context.Context) ([]service.MigrationInfo, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.migrations, nil
+}

@@ -54,6 +54,61 @@
     </section>
     {{end}}
 
+    {{with .Runtime}}
+    <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="admin-system-runtime-heading">
+      <div class="card-body">
+        <h2 id="admin-system-runtime-heading" class="card-title">{{$.Labels.admin_system_runtime_heading}}</h2>
+        <dl class="grid grid-cols-1 gap-2 md:grid-cols-2">
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_runtime_version}}</dt><dd>{{.Version}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_runtime_started}}</dt><dd>{{.StartedAt}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_runtime_uptime}}</dt><dd>{{.Uptime}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_runtime_go}}</dt><dd>{{.GoVersion}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_runtime_platform}}</dt><dd>{{.Platform}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_runtime_cpus}}</dt><dd>{{.CPUs}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_runtime_gomaxprocs}}</dt><dd>{{.GOMAXPROCS}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_runtime_goroutines}}</dt><dd>{{.Goroutines}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_runtime_heap}}</dt><dd>{{.HeapAlloc}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_runtime_sys}}</dt><dd>{{.SysMemory}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_runtime_gc}}</dt><dd>{{.GC}}</dd></div>
+        </dl>
+      </div>
+    </section>
+    {{end}}
+
+    <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="admin-system-migrations-heading">
+      <div class="card-body">
+        <h2 id="admin-system-migrations-heading" class="card-title">{{$.Labels.admin_system_migrations_heading}}</h2>
+        {{if .Migrations}}
+          <div class="overflow-x-auto">
+            <table class="table" aria-label="{{$.Labels.admin_system_migrations_heading}}">
+              <thead>
+                <tr>
+                  <th scope="col">{{$.Labels.admin_system_migrations_rank}}</th>
+                  <th scope="col">{{$.Labels.admin_system_migrations_version}}</th>
+                  <th scope="col">{{$.Labels.admin_system_migrations_description}}</th>
+                  <th scope="col">{{$.Labels.admin_system_migrations_status}}</th>
+                  <th scope="col">{{$.Labels.admin_system_migrations_applied}}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{range .Migrations}}
+                  <tr data-migration="{{.Version}}">
+                    <td>{{.Rank}}</td>
+                    <td>{{.Version}}</td>
+                    <td>{{.Description}}</td>
+                    <td>{{if .Installed}}<span class="badge badge-success">{{$.Labels.admin_system_migrations_installed}}</span>{{else}}<span class="badge badge-warning">{{$.Labels.admin_system_migrations_pending}}</span>{{end}}</td>
+                    <td>{{.InstalledAt}}</td>
+                  </tr>
+                {{end}}
+              </tbody>
+            </table>
+          </div>
+        {{else}}
+          <p class="text-sm opacity-70">{{$.Labels.admin_system_migrations_empty}}</p>
+        {{end}}
+      </div>
+    </section>
+
     <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="admin-system-jobs-heading">
       <div class="card-body">
         <h2 id="admin-system-jobs-heading" class="card-title">{{$.Labels.admin_system_jobs_heading}}</h2>

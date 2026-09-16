@@ -64,6 +64,7 @@ type Dependencies struct {
 	AdminMaintenance    AdminMaintenanceRunner
 	AdminAuditRecorder  AdminActionRecorder
 	AdminSystemConfig   service.SystemConfigurationProvider
+	AdminRuntime        AdminRuntimeProvider
 }
 
 // AdminAccountLister lists accounts for the administrator area.
@@ -128,6 +129,12 @@ type AdminMaintenanceRunner interface {
 	RunOnce(context.Context) ([]service.MaintenanceRun, error)
 	RunJob(context.Context, string) (service.MaintenanceRun, error)
 	Status() []service.MaintenanceStatus
+}
+
+// AdminRuntimeProvider reports live runtime and migration facts.
+type AdminRuntimeProvider interface {
+	RuntimeInfo() service.RuntimeInfo
+	Migrations(context.Context) ([]service.MigrationInfo, error)
 }
 
 // UserFinder resolves an account for an authenticated session.

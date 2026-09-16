@@ -86,6 +86,32 @@ type AdminSystemView struct {
 	Jobs          []AdminMaintenanceJobView
 	RunConfirm    string
 	Configuration *AdminSystemConfigView
+	Runtime       *AdminSystemRuntimeView
+	Migrations    []AdminMigrationView
+}
+
+// AdminSystemRuntimeView contains live, credential-free process facts.
+type AdminSystemRuntimeView struct {
+	Version    string
+	StartedAt  string
+	Uptime     string
+	GoVersion  string
+	Platform   string
+	CPUs       int
+	GOMAXPROCS int
+	Goroutines int
+	HeapAlloc  string
+	SysMemory  string
+	GC         uint32
+}
+
+// AdminMigrationView is one migration's installation state.
+type AdminMigrationView struct {
+	Rank        int
+	Version     int64
+	Description string
+	Installed   bool
+	InstalledAt string
 }
 
 // AdminSystemConfigView contains credential-free deployment configuration.
