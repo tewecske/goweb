@@ -332,6 +332,7 @@ func (r *confirmationUserRepositoryStub) DeleteUser(context.Context, int64, int6
 }
 
 type confirmationTokenRepositoryStub struct {
+	active        EmailConfirmationToken
 	created       EmailConfirmationToken
 	previous      EmailConfirmationToken
 	consumed      EmailConfirmationToken
@@ -350,6 +351,13 @@ func (r *confirmationTokenRepositoryStub) CreateEmailConfirmationToken(_ context
 	r.previous = r.created
 	r.created = token
 	return nil
+}
+
+func (r *confirmationTokenRepositoryStub) FindActiveEmailConfirmationToken(context.Context, int64, int64) (EmailConfirmationToken, error) {
+	if r.err != nil {
+		return EmailConfirmationToken{}, r.err
+	}
+	return r.active, nil
 }
 
 func (r *confirmationTokenRepositoryStub) ConsumeEmailConfirmationToken(_ context.Context, token string, now int64) (EmailConfirmationToken, error) {

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 var (
@@ -20,35 +21,38 @@ type AdminSessionRepository interface {
 // AdminUserDetail is the safe account diagnostics aggregate. It contains no
 // session identifiers, tokens, provider subjects, or password material.
 type AdminUserDetail struct {
-	User          User
-	Confirmed     bool
-	Sessions      []Session
-	LoginAttempts []LoginAttempt
-	Identities    []OAuthIdentity
+	User                   User
+	Confirmed              bool
+	ConfirmationLinkActive bool
+	ConfirmationLinkExpiry int64
+	Sessions               []Session
+	LoginAttempts          []LoginAttempt
+	Identities             []OAuthIdentity
 }
 
 // AdminDiagnosticsService aggregates safe account diagnostics for the
 // administrator area.
 type AdminDiagnosticsService struct {
-	users      UserRepository
-	sessions   AdminSessionRepository
-	attempts   LoginAttemptRepository
-	identities OAuthIdentityRepository
+	users        UserRepository
+	sessions     AdminSessionRepository
+	attempts     LoginAttemptRepository
+	identities   OAuthIdentityRepository
+	confirmation EmailConfirmationTokenRepository
 }
 
 // NewAdminDiagnosticsService constructs diagnostics with explicit account,
-// session, history, and identity ports.
-func NewAdminDiagnosticsService(users UserRepository, sessions AdminSessionRepository, attempts LoginAttemptRepository, identities OAuthIdentityRepository) (*AdminDiagnosticsService, error) {
-	if users == nil || sessions == nil || attempts == nil || identities == nil {
+// session, history, identity, and confirmation ports.
+func NewAdminDiagnosticsService(users UserRepository, sessions AdminSessionRepository, attempts LoginAttemptRepository, identities OAuthIdentityRepository, confirmation EmailConfirmationTokenRepository) (*AdminDiagnosticsService, error) {
+	if users == nil || sessions == nil || attempts == nil || identities == nil || confirmation == nil {
 		return nil, ErrNilAdminDiagnosticsRepository
 	}
-	return &AdminDiagnosticsService{users: users, sessions: sessions, attempts: attempts, identities: identities}, nil
+	return &AdminDiagnosticsService{users: users, sessions: sessions, attempts: attempts, identities: identities, confirmation: confirmation}, nil
 }
 
 // Detail returns the safe diagnostics for one account. A vanished account is
 // reported as not-found so the caller can render a not-found result.
 func (s *AdminDiagnosticsService) Detail(ctx context.Context, userID int64) (AdminUserDetail, error) {
-	if s == nil || s.users == nil || s.sessions == nil || s.attempts == nil || s.identities == nil {
+	if s == nil || s.users == nil || s.sessions == nil || s.attempts == nil || s.identities == nil || s.confirmation == nil {
 		return AdminUserDetail{}, ErrNilAdminDiagnosticsRepository
 	}
 	if ctx == nil {
@@ -77,11 +81,22 @@ func (s *AdminDiagnosticsService) Detail(ctx context.Context, userID int64) (Adm
 		return AdminUserDetail{}, err
 	}
 	user.PasswordHash = nil
-	return AdminUserDetail{
+	detail := AdminUserDetail{
 		User:          user,
 		Confirmed:     user.EmailVerifiedAt != nil,
 		Sessions:      sessions,
 		LoginAttempts: attempts,
 		Identities:    identities,
-	}, nil
+	}
+	link, err := s.confirmation.FindActiveEmailConfirmationToken(ctx, userID, time.Now().Unix())
+	switch {
+	case err == nil:
+		detail.ConfirmationLinkActive = true
+		detail.ConfirmationLinkExpiry = link.ExpiresAt
+	case errors.Is(err, ErrEmailConfirmationTokenNotFound):
+		// No active link is a normal diagnostic result.
+	default:
+		return AdminUserDetail{}, err
+	}
+	return detail, nil
 }

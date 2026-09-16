@@ -130,6 +130,52 @@ func (h *adminHandler) revokeSessions(writer http.ResponseWriter, request *http.
 	}
 }
 
+// confirmEmailAccount marks an address verified after support verification.
+func (h *adminHandler) confirmEmailAccount(writer http.ResponseWriter, request *http.Request) {
+	h.adminConfirmationAction(writer, request, "admin.confirmation.confirmed", func(actor service.AdminActionContext, accountID int64) error {
+		return h.dependencies.AdminConfirmation.ConfirmEmail(request.Context(), actor, accountID)
+	})
+}
+
+// sendConfirmation issues a fresh confirmation link for an account.
+func (h *adminHandler) sendConfirmation(writer http.ResponseWriter, request *http.Request) {
+	h.adminConfirmationAction(writer, request, "admin.confirmation.sent", func(actor service.AdminActionContext, accountID int64) error {
+		return h.dependencies.AdminConfirmation.SendConfirmation(request.Context(), actor, accountID)
+	})
+}
+
+func (h *adminHandler) adminConfirmationAction(writer http.ResponseWriter, request *http.Request, successMessage string, action func(service.AdminActionContext, int64) error) {
+	user, language, ok := h.authorize(writer, request)
+	if !ok {
+		return
+	}
+	if request.Method != http.MethodPost {
+		writer.Header().Set("Allow", http.MethodPost)
+		writer.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	accountID, err := pathID(request)
+	if err != nil {
+		h.renderState(writer, request, language, PageStateNotFound)
+		return
+	}
+	if h.dependencies.AdminConfirmation == nil {
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+		return
+	}
+	err = action(adminActionContext(user, request), accountID)
+	switch {
+	case err == nil:
+		h.renderDetail(writer, request, language, user, accountID, []Alert{{Level: "success", Message: h.t(language, successMessage)}}, http.StatusOK)
+	case errors.Is(err, service.ErrRecordNotFound):
+		h.renderState(writer, request, language, PageStateNotFound)
+	case errors.Is(err, service.ErrInvalidConfirmationAccount):
+		h.renderDetail(writer, request, language, user, accountID, []Alert{{Level: "error", Message: h.t(language, "admin.account.error.no_email")}}, http.StatusUnprocessableEntity)
+	default:
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+	}
+}
+
 // renderDetail re-reads authoritative diagnostics and renders them.
 func (h *adminHandler) renderDetail(writer http.ResponseWriter, request *http.Request, language locale.Code, user service.User, accountID int64, alerts []Alert, status int) {
 	if h.dependencies.AdminUserDetailer == nil {
@@ -184,6 +230,11 @@ func (h *adminHandler) detailView(language locale.Code, detail service.AdminUser
 		EditURL:   localizedPath(language, "/admin/users/"+strconv.FormatInt(account.ID, 10)+"/edit"),
 	}
 	view.SessionsRevokeURL = localizedPath(language, "/admin/users/"+strconv.FormatInt(account.ID, 10)+"/sessions/revoke")
+	view.ConfirmationLinkActive = detail.ConfirmationLinkActive
+	view.ConfirmationLinkExpiry = formatAdminTime(detail.ConfirmationLinkExpiry)
+	base := "/admin/users/" + strconv.FormatInt(account.ID, 10)
+	view.ConfirmURL = localizedPath(language, base+"/confirm-email")
+	view.SendConfirmationURL = localizedPath(language, base+"/send-confirmation")
 	if account.Email != nil {
 		view.Email = *account.Email
 	}
@@ -730,72 +781,77 @@ func (h *adminHandler) renderAdmin(writer http.ResponseWriter, request *http.Req
 
 func (h *adminHandler) labels(language locale.Code) map[string]string {
 	return map[string]string{
-		"admin_title":                   h.t(language, "admin.title"),
-		"admin_heading":                 h.t(language, "admin.heading"),
-		"admin_description":             h.t(language, "admin.description"),
-		"admin_sections":                h.t(language, "admin.sections"),
-		"admin_nav_accounts":            h.t(language, "admin.nav.accounts"),
-		"admin_search":                  h.t(language, "admin.accounts.search"),
-		"admin_search_placeholder":      h.t(language, "admin.accounts.search_placeholder"),
-		"admin_filter_admin":            h.t(language, "admin.accounts.filter_admin"),
-		"admin_filter_guest":            h.t(language, "admin.accounts.filter_guest"),
-		"admin_filter_confirmed":        h.t(language, "admin.accounts.filter_confirmed"),
-		"admin_filter_all":              h.t(language, "admin.accounts.filter.all"),
-		"admin_filter_yes":              h.t(language, "admin.accounts.filter.yes"),
-		"admin_filter_no":               h.t(language, "admin.accounts.filter.no"),
-		"admin_column_account":          h.t(language, "admin.accounts.column.account"),
-		"admin_column_email":            h.t(language, "admin.accounts.column.email"),
-		"admin_column_role":             h.t(language, "admin.accounts.column.role"),
-		"admin_column_status":           h.t(language, "admin.accounts.column.status"),
-		"admin_column_created":          h.t(language, "admin.accounts.column.created"),
-		"admin_role_admin":              h.t(language, "admin.accounts.role.admin"),
-		"admin_role_user":               h.t(language, "admin.accounts.role.user"),
-		"admin_status_confirmed":        h.t(language, "admin.accounts.status.confirmed"),
-		"admin_status_unconfirmed":      h.t(language, "admin.accounts.status.unconfirmed"),
-		"admin_status_guest":            h.t(language, "admin.accounts.status.guest"),
-		"admin_prev":                    h.t(language, "admin.accounts.previous"),
-		"admin_next":                    h.t(language, "admin.accounts.next"),
-		"admin_empty":                   h.t(language, "admin.accounts.empty"),
-		"admin_view":                    h.t(language, "admin.accounts.view"),
-		"admin_edit":                    h.t(language, "admin.accounts.edit"),
-		"admin_create":                  h.t(language, "admin.accounts.create"),
-		"admin_create_heading":          h.t(language, "admin.account.create_heading"),
-		"admin_account_email":           h.t(language, "admin.account.email"),
-		"admin_account_password":        h.t(language, "admin.account.password"),
-		"admin_account_password_help":   h.t(language, "admin.account.password_help"),
-		"admin_account_is_admin":        h.t(language, "admin.account.is_admin"),
-		"admin_account_submit":          h.t(language, "admin.account.submit"),
-		"admin_account_cancel":          h.t(language, "admin.account.cancel"),
-		"admin_account_delete":          h.t(language, "admin.account.delete"),
-		"admin_account_delete_confirm":  h.t(language, "admin.account.delete_confirm"),
-		"admin_account_confirm_delete":  h.t(language, "admin.account.confirm_delete"),
-		"admin_detail_confirmation":     h.t(language, "admin.detail.confirmation"),
-		"admin_detail_sessions":         h.t(language, "admin.detail.sessions"),
-		"admin_detail_attempts":         h.t(language, "admin.detail.attempts"),
-		"admin_detail_providers":        h.t(language, "admin.detail.providers"),
-		"admin_detail_username":         h.t(language, "admin.detail.username"),
-		"admin_detail_display_name":     h.t(language, "admin.detail.display_name"),
-		"admin_detail_role":             h.t(language, "admin.detail.role"),
-		"admin_detail_locale":           h.t(language, "admin.detail.locale"),
-		"admin_detail_theme":            h.t(language, "admin.detail.theme"),
-		"admin_detail_created":          h.t(language, "admin.detail.created"),
-		"admin_detail_version":          h.t(language, "admin.detail.version"),
-		"admin_detail_confirmed":        h.t(language, "admin.detail.confirmed"),
-		"admin_detail_unconfirmed":      h.t(language, "admin.detail.unconfirmed"),
-		"admin_detail_edit":             h.t(language, "admin.detail.edit"),
-		"admin_detail_back":             h.t(language, "admin.detail.back"),
-		"admin_sessions_created":        h.t(language, "admin.sessions.created"),
-		"admin_sessions_expires":        h.t(language, "admin.sessions.expires"),
-		"admin_sessions_empty":          h.t(language, "admin.sessions.empty"),
-		"admin_sessions_revoke":         h.t(language, "admin.sessions.revoke"),
-		"admin_sessions_revoke_confirm": h.t(language, "admin.sessions.revoke_confirm"),
-		"admin_attempt_time":            h.t(language, "admin.attempt.time"),
-		"admin_attempt_outcome":         h.t(language, "admin.attempt.outcome"),
-		"admin_attempt_origin":          h.t(language, "admin.attempt.origin"),
-		"admin_attempts_empty":          h.t(language, "admin.attempts.empty"),
-		"admin_providers_provider":      h.t(language, "admin.providers.provider"),
-		"admin_providers_account":       h.t(language, "admin.providers.account"),
-		"admin_providers_empty":         h.t(language, "admin.providers.empty"),
+		"admin_title":                        h.t(language, "admin.title"),
+		"admin_heading":                      h.t(language, "admin.heading"),
+		"admin_description":                  h.t(language, "admin.description"),
+		"admin_sections":                     h.t(language, "admin.sections"),
+		"admin_nav_accounts":                 h.t(language, "admin.nav.accounts"),
+		"admin_search":                       h.t(language, "admin.accounts.search"),
+		"admin_search_placeholder":           h.t(language, "admin.accounts.search_placeholder"),
+		"admin_filter_admin":                 h.t(language, "admin.accounts.filter_admin"),
+		"admin_filter_guest":                 h.t(language, "admin.accounts.filter_guest"),
+		"admin_filter_confirmed":             h.t(language, "admin.accounts.filter_confirmed"),
+		"admin_filter_all":                   h.t(language, "admin.accounts.filter.all"),
+		"admin_filter_yes":                   h.t(language, "admin.accounts.filter.yes"),
+		"admin_filter_no":                    h.t(language, "admin.accounts.filter.no"),
+		"admin_column_account":               h.t(language, "admin.accounts.column.account"),
+		"admin_column_email":                 h.t(language, "admin.accounts.column.email"),
+		"admin_column_role":                  h.t(language, "admin.accounts.column.role"),
+		"admin_column_status":                h.t(language, "admin.accounts.column.status"),
+		"admin_column_created":               h.t(language, "admin.accounts.column.created"),
+		"admin_role_admin":                   h.t(language, "admin.accounts.role.admin"),
+		"admin_role_user":                    h.t(language, "admin.accounts.role.user"),
+		"admin_status_confirmed":             h.t(language, "admin.accounts.status.confirmed"),
+		"admin_status_unconfirmed":           h.t(language, "admin.accounts.status.unconfirmed"),
+		"admin_status_guest":                 h.t(language, "admin.accounts.status.guest"),
+		"admin_prev":                         h.t(language, "admin.accounts.previous"),
+		"admin_next":                         h.t(language, "admin.accounts.next"),
+		"admin_empty":                        h.t(language, "admin.accounts.empty"),
+		"admin_view":                         h.t(language, "admin.accounts.view"),
+		"admin_edit":                         h.t(language, "admin.accounts.edit"),
+		"admin_create":                       h.t(language, "admin.accounts.create"),
+		"admin_create_heading":               h.t(language, "admin.account.create_heading"),
+		"admin_account_email":                h.t(language, "admin.account.email"),
+		"admin_account_password":             h.t(language, "admin.account.password"),
+		"admin_account_password_help":        h.t(language, "admin.account.password_help"),
+		"admin_account_is_admin":             h.t(language, "admin.account.is_admin"),
+		"admin_account_submit":               h.t(language, "admin.account.submit"),
+		"admin_account_cancel":               h.t(language, "admin.account.cancel"),
+		"admin_account_delete":               h.t(language, "admin.account.delete"),
+		"admin_account_delete_confirm":       h.t(language, "admin.account.delete_confirm"),
+		"admin_account_confirm_delete":       h.t(language, "admin.account.confirm_delete"),
+		"admin_detail_confirmation":          h.t(language, "admin.detail.confirmation"),
+		"admin_detail_sessions":              h.t(language, "admin.detail.sessions"),
+		"admin_detail_attempts":              h.t(language, "admin.detail.attempts"),
+		"admin_detail_providers":             h.t(language, "admin.detail.providers"),
+		"admin_detail_username":              h.t(language, "admin.detail.username"),
+		"admin_detail_display_name":          h.t(language, "admin.detail.display_name"),
+		"admin_detail_role":                  h.t(language, "admin.detail.role"),
+		"admin_detail_locale":                h.t(language, "admin.detail.locale"),
+		"admin_detail_theme":                 h.t(language, "admin.detail.theme"),
+		"admin_detail_created":               h.t(language, "admin.detail.created"),
+		"admin_detail_version":               h.t(language, "admin.detail.version"),
+		"admin_detail_confirmed":             h.t(language, "admin.detail.confirmed"),
+		"admin_detail_unconfirmed":           h.t(language, "admin.detail.unconfirmed"),
+		"admin_detail_edit":                  h.t(language, "admin.detail.edit"),
+		"admin_detail_back":                  h.t(language, "admin.detail.back"),
+		"admin_sessions_created":             h.t(language, "admin.sessions.created"),
+		"admin_sessions_expires":             h.t(language, "admin.sessions.expires"),
+		"admin_sessions_empty":               h.t(language, "admin.sessions.empty"),
+		"admin_sessions_revoke":              h.t(language, "admin.sessions.revoke"),
+		"admin_sessions_revoke_confirm":      h.t(language, "admin.sessions.revoke_confirm"),
+		"admin_confirmation_confirm":         h.t(language, "admin.confirmation.confirm"),
+		"admin_confirmation_send":            h.t(language, "admin.confirmation.send"),
+		"admin_confirmation_confirm_confirm": h.t(language, "admin.confirmation.confirm_confirm"),
+		"admin_detail_link_active":           h.t(language, "admin.detail.link_active"),
+		"admin_detail_link_none":             h.t(language, "admin.detail.link_none"),
+		"admin_attempt_time":                 h.t(language, "admin.attempt.time"),
+		"admin_attempt_outcome":              h.t(language, "admin.attempt.outcome"),
+		"admin_attempt_origin":               h.t(language, "admin.attempt.origin"),
+		"admin_attempts_empty":               h.t(language, "admin.attempts.empty"),
+		"admin_providers_provider":           h.t(language, "admin.providers.provider"),
+		"admin_providers_account":            h.t(language, "admin.providers.account"),
+		"admin_providers_empty":              h.t(language, "admin.providers.empty"),
 	}
 }
 

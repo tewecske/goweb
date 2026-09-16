@@ -57,6 +57,7 @@ type Dependencies struct {
 	AdminAccountEditor  AdminAccountEditor
 	AdminUserDetailer   AdminUserDetailer
 	AdminSessionRevoker AdminSessionRevoker
+	AdminConfirmation   AdminConfirmationManager
 }
 
 // AdminAccountLister lists accounts for the administrator area.
@@ -85,6 +86,13 @@ type AdminUserDetailer interface {
 // AdminSessionRevoker ends every active session for an account.
 type AdminSessionRevoker interface {
 	RevokeSessions(context.Context, service.AdminActionContext, int64) error
+}
+
+// AdminConfirmationManager confirms an address or sends a fresh confirmation
+// link for an account.
+type AdminConfirmationManager interface {
+	ConfirmEmail(context.Context, service.AdminActionContext, int64) error
+	SendConfirmation(context.Context, service.AdminActionContext, int64) error
 }
 
 // UserFinder resolves an account for an authenticated session.

@@ -13,7 +13,7 @@ func TestAdminDiagnosticsServiceDetailAggregatesSafeData(t *testing.T) {
 	sessions := &adminSessionRepositoryStub{sessions: []Session{{ID: "digest", UserID: 9, CreatedAt: 1, ExpiresAt: 2}}, count: 1}
 	attempts := &loginAttemptRepositoryStub{listed: []LoginAttempt{{ID: 1, Email: email, Outcome: LoginOutcomeSuccess, CreatedAt: 130}}}
 	identities := &oauthIdentityRepositoryStub{listed: []OAuthIdentity{{ID: 4, UserID: 9, Provider: "example", Email: email}}}
-	diagnostics, err := NewAdminDiagnosticsService(users, sessions, attempts, identities)
+	diagnostics, err := NewAdminDiagnosticsService(users, sessions, attempts, identities, &confirmationTokenRepositoryStub{})
 	if err != nil {
 		t.Fatalf("NewAdminDiagnosticsService() error = %v", err)
 	}
@@ -31,7 +31,7 @@ func TestAdminDiagnosticsServiceDetailAggregatesSafeData(t *testing.T) {
 
 func TestAdminDiagnosticsServiceDetailMapsMissingAccount(t *testing.T) {
 	users := &userRepositoryStub{findErr: ErrUserNotFound}
-	diagnostics, err := NewAdminDiagnosticsService(users, &adminSessionRepositoryStub{}, &loginAttemptRepositoryStub{}, &oauthIdentityRepositoryStub{})
+	diagnostics, err := NewAdminDiagnosticsService(users, &adminSessionRepositoryStub{}, &loginAttemptRepositoryStub{}, &oauthIdentityRepositoryStub{}, &confirmationTokenRepositoryStub{})
 	if err != nil {
 		t.Fatalf("NewAdminDiagnosticsService() error = %v", err)
 	}
@@ -41,7 +41,7 @@ func TestAdminDiagnosticsServiceDetailMapsMissingAccount(t *testing.T) {
 }
 
 func TestNewAdminDiagnosticsServiceRejectsMissingPorts(t *testing.T) {
-	if _, err := NewAdminDiagnosticsService(nil, &adminSessionRepositoryStub{}, &loginAttemptRepositoryStub{}, &oauthIdentityRepositoryStub{}); !errors.Is(err, ErrNilAdminDiagnosticsRepository) {
+	if _, err := NewAdminDiagnosticsService(nil, &adminSessionRepositoryStub{}, &loginAttemptRepositoryStub{}, &oauthIdentityRepositoryStub{}, &confirmationTokenRepositoryStub{}); !errors.Is(err, ErrNilAdminDiagnosticsRepository) {
 		t.Fatalf("error = %v, want %v", err, ErrNilAdminDiagnosticsRepository)
 	}
 }

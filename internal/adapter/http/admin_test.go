@@ -726,3 +726,102 @@ func (s *adminSessionRevokerStub) RevokeSessions(_ context.Context, _ service.Ad
 	s.id = id
 	return s.err
 }
+
+func TestAdminConfirmEmailSucceeds(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminUserDetailer = &adminUserDetailerStub{detail: service.AdminUserDetail{User: service.User{ID: 9, Email: strPtr("target@example.test")}}}
+	confirmation := &adminConfirmationStub{}
+	dependencies.AdminConfirmation = confirmation
+	handler := newAdminTestHandler(t, dependencies)
+
+	request := authenticatedRequest(http.MethodPost, "/en/admin/users/9/confirm-email", 7, "")
+	request.SetPathValue("id", "9")
+	response := httptest.NewRecorder()
+	handler.confirmEmailAccount(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if confirmation.confirmID != 9 {
+		t.Fatalf("confirmed id = %d, want 9", confirmation.confirmID)
+	}
+	if !strings.Contains(response.Body.String(), "Email confirmed") {
+		t.Errorf("body missing confirmation success message")
+	}
+}
+
+func TestAdminSendConfirmationSucceeds(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminUserDetailer = &adminUserDetailerStub{detail: service.AdminUserDetail{User: service.User{ID: 9, Email: strPtr("target@example.test")}}}
+	confirmation := &adminConfirmationStub{}
+	dependencies.AdminConfirmation = confirmation
+	handler := newAdminTestHandler(t, dependencies)
+
+	request := authenticatedRequest(http.MethodPost, "/en/admin/users/9/send-confirmation", 7, "")
+	request.SetPathValue("id", "9")
+	response := httptest.NewRecorder()
+	handler.sendConfirmation(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if confirmation.sendID != 9 {
+		t.Fatalf("sent id = %d, want 9", confirmation.sendID)
+	}
+	if !strings.Contains(response.Body.String(), "Confirmation link sent") {
+		t.Errorf("body missing sent message")
+	}
+}
+
+func TestAdminConfirmationActionErrors(t *testing.T) {
+	tests := []struct {
+		name   string
+		err    error
+		status int
+	}{
+		{name: "missing", err: service.ErrRecordNotFound, status: http.StatusNotFound},
+		{name: "no email", err: service.ErrInvalidConfirmationAccount, status: http.StatusUnprocessableEntity},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dependencies := adminStubDependencies(t, true)
+			dependencies.AdminUserDetailer = &adminUserDetailerStub{}
+			dependencies.AdminConfirmation = &adminConfirmationStub{err: test.err}
+			handler := newAdminTestHandler(t, dependencies)
+			request := authenticatedRequest(http.MethodPost, "/en/admin/users/9/confirm-email", 7, "")
+			request.SetPathValue("id", "9")
+			response := httptest.NewRecorder()
+			handler.confirmEmailAccount(response, request)
+			if response.Code != test.status {
+				t.Fatalf("status = %d, want %d", response.Code, test.status)
+			}
+		})
+	}
+}
+
+func TestAdminConfirmationRejectsNonAdmin(t *testing.T) {
+	dependencies := adminStubDependencies(t, false)
+	dependencies.AdminConfirmation = &adminConfirmationStub{}
+	handler := newAdminTestHandler(t, dependencies)
+	request := authenticatedRequest(http.MethodPost, "/en/admin/users/9/send-confirmation", 7, "")
+	request.SetPathValue("id", "9")
+	response := httptest.NewRecorder()
+	handler.sendConfirmation(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+}
+
+type adminConfirmationStub struct {
+	confirmID int64
+	sendID    int64
+	err       error
+}
+
+func (s *adminConfirmationStub) ConfirmEmail(_ context.Context, _ service.AdminActionContext, id int64) error {
+	s.confirmID = id
+	return s.err
+}
+
+func (s *adminConfirmationStub) SendConfirmation(_ context.Context, _ service.AdminActionContext, id int64) error {
+	s.sendID = id
+	return s.err
+}

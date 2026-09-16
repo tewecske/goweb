@@ -49,6 +49,7 @@ type EmailConfirmationToken struct {
 type EmailConfirmationTokenRepository interface {
 	CreateEmailConfirmationToken(context.Context, EmailConfirmationToken) error
 	ConsumeEmailConfirmationToken(context.Context, string, int64) (EmailConfirmationToken, error)
+	FindActiveEmailConfirmationToken(context.Context, int64, int64) (EmailConfirmationToken, error)
 }
 
 // EmailConfirmationService issues confirmation links for password accounts.

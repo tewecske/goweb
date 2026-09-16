@@ -48,6 +48,26 @@
       <div class="card-body">
         <h2 id="admin-confirmation-heading" class="card-title">{{$.Labels.admin_detail_confirmation}}</h2>
         <p>{{if .Confirmed}}{{$.Labels.admin_detail_confirmed}}{{else}}{{$.Labels.admin_detail_unconfirmed}}{{end}}</p>
+        {{if .ConfirmationLinkActive}}
+          <p class="text-sm opacity-70">{{$.Labels.admin_detail_link_active}} {{.ConfirmationLinkExpiry}}</p>
+        {{else}}
+          <p class="text-sm opacity-70">{{$.Labels.admin_detail_link_none}}</p>
+        {{end}}
+        <div class="flex flex-wrap gap-2">
+          {{if not .Confirmed}}
+            <form method="post" action="{{.ConfirmURL}}" hx-post="{{.ConfirmURL}}"
+                  hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this"
+                  hx-confirm="{{$.Labels.admin_confirmation_confirm_confirm}}">
+              <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+              <button class="btn btn-sm btn-primary" type="submit">{{$.Labels.admin_confirmation_confirm}}</button>
+            </form>
+          {{end}}
+          <form method="post" action="{{.SendConfirmationURL}}" hx-post="{{.SendConfirmationURL}}"
+                hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this">
+            <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+            <button class="btn btn-sm" type="submit">{{$.Labels.admin_confirmation_send}}</button>
+          </form>
+        </div>
       </div>
     </section>
 

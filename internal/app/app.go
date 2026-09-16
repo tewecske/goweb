@@ -59,6 +59,7 @@ type Graph struct {
 	Group                *service.GroupService
 	GroupJoin            *service.RateLimitedGroupJoiner
 	AdminAccounts        *service.AdminAccountService
+	AdminConfirmation    *service.AdminConfirmationService
 	AdminDiagnostics     *service.AdminDiagnosticsService
 	Audit                *service.AuditService
 }
@@ -250,9 +251,13 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct admin account service: %w", err)
 	}
-	adminDiagnostics, err := service.NewAdminDiagnosticsService(users, sessionsRepository, loginAttemptsRepository, oauthIdentities)
+	adminDiagnostics, err := service.NewAdminDiagnosticsService(users, sessionsRepository, loginAttemptsRepository, oauthIdentities, emailTokens)
 	if err != nil {
 		return nil, fmt.Errorf("construct admin diagnostics service: %w", err)
+	}
+	adminConfirmation, err := service.NewAdminConfirmationService(users, confirmation, auditService)
+	if err != nil {
+		return nil, fmt.Errorf("construct admin confirmation service: %w", err)
 	}
 
 	return &Graph{
@@ -273,6 +278,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		AdminUsers: adminUsersRepository, AdminAccounts: adminAccounts,
 		AuditLogs: auditLogRepository, Audit: auditService,
 		LoginAttempts: loginAttemptsRepository, AdminDiagnostics: adminDiagnostics,
+		AdminConfirmation: adminConfirmation,
 	}, nil
 }
 

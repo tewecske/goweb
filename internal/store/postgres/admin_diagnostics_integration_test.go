@@ -132,3 +132,50 @@ func TestSessionRepositoryListsAndCountsActiveSessions(t *testing.T) {
 		t.Fatalf("active count after revoke = %d, want 0", count)
 	}
 }
+
+func TestEmailConfirmationTokenFinderReturnsOnlyActiveLinks(t *testing.T) {
+	harness := testpostgres.New(t)
+	runner, err := store.NewMigrator(harness.DB, migrations.FS)
+	if err != nil {
+		t.Fatalf("NewMigrator() error = %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := runner.Apply(ctx); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	users, err := NewUserRepository(harness.DB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	email := "link@example.test"
+	user, err := users.CreateUser(ctx, service.User{Email: &email, Theme: "light", Locale: "en", CreatedAt: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens, err := NewEmailConfirmationTokenRepository(harness.DB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().Unix()
+	token := service.EmailConfirmationToken{UserID: user.ID, Token: "active-token", CreatedAt: now, ExpiresAt: now + 3600}
+	if err := tokens.CreateEmailConfirmationToken(ctx, token); err != nil {
+		t.Fatalf("CreateEmailConfirmationToken() error = %v", err)
+	}
+	found, err := tokens.FindActiveEmailConfirmationToken(ctx, user.ID, now)
+	if err != nil {
+		t.Fatalf("FindActiveEmailConfirmationToken() error = %v", err)
+	}
+	if found.ExpiresAt != token.ExpiresAt {
+		t.Fatalf("found expiry = %d, want %d", found.ExpiresAt, token.ExpiresAt)
+	}
+	if _, err := tokens.FindActiveEmailConfirmationToken(ctx, user.ID, now+7200); err != service.ErrEmailConfirmationTokenNotFound {
+		t.Fatalf("expired lookup error = %v, want not found", err)
+	}
+	if _, err := tokens.ConsumeEmailConfirmationToken(ctx, token.Token, now); err != nil {
+		t.Fatalf("ConsumeEmailConfirmationToken() error = %v", err)
+	}
+	if _, err := tokens.FindActiveEmailConfirmationToken(ctx, user.ID, now); err != service.ErrEmailConfirmationTokenNotFound {
+		t.Fatalf("consumed lookup error = %v, want not found", err)
+	}
+}

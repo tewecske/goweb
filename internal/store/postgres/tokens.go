@@ -55,6 +55,29 @@ func (r *EmailConfirmationTokenRepository) ConsumeEmailConfirmationToken(ctx con
 	return consumed, nil
 }
 
+// FindActiveEmailConfirmationToken returns the newest unconsumed, unexpired
+// confirmation link for an account without exposing it outside the flow.
+func (r *EmailConfirmationTokenRepository) FindActiveEmailConfirmationToken(ctx context.Context, userID, now int64) (service.EmailConfirmationToken, error) {
+	db, err := r.database(ctx)
+	if err != nil {
+		return service.EmailConfirmationToken{}, err
+	}
+	if userID <= 0 {
+		return service.EmailConfirmationToken{}, service.ErrEmailConfirmationTokenNotFound
+	}
+	token, err := scanEmailConfirmationToken(db.QueryRowContext(ctx, `
+		SELECT user_id, token, created_at, expires_at, consumed_at
+		FROM email_verification_tokens
+		WHERE user_id = $1 AND consumed_at IS NULL AND expires_at > $2
+		ORDER BY expires_at DESC, id DESC
+		LIMIT 1
+	`, userID, now))
+	if err != nil {
+		return service.EmailConfirmationToken{}, mapTokenError(err, service.ErrEmailConfirmationTokenNotFound)
+	}
+	return token, nil
+}
+
 // PasswordResetTokenRepository persists password-reset links.
 type PasswordResetTokenRepository struct {
 	adapter *Adapter
