@@ -28,6 +28,7 @@ const (
 	AuditActionConfirmationSent = "admin.email.confirmation_sent"
 	AuditActionIdentityRemoved  = "admin.identity.removed"
 	AuditActionLockoutCleared   = "admin.lockout.cleared"
+	AuditActionMaintenanceRun   = "admin.maintenance.run"
 )
 
 var (

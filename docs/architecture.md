@@ -39,6 +39,7 @@ Delivered feature areas:
 - `internal/service/repository.go` provides `ClassifyStaleWrite`, `IsWriteConflict`, and `ErrRecordNotFound` for revision-checked writes.
 - `internal/store/postgres` implements the user, session, token, OAuth, group, and membership ports; `UpdateGroup` persists names and invite codes under a revision check.
 - `templates/settings.html`, `templates/groups.html`, and `templates/alerts.html` back the account-settings and group interfaces.
+- `internal/service/maintenance.go` owns the interval worker that runs registered cleanup jobs, retains per-job last-run state, and survives an individual job failure. `cmd/web` starts it with the signal context.
 - Localized routes live under `/{language}/account/settings`, `/{language}/account/theme`, and `/{language}/groups`.
 
 The public foundation route remains `GET /healthz`.

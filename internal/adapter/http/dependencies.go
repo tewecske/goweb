@@ -61,6 +61,8 @@ type Dependencies struct {
 	AdminIdentity       AdminIdentityManager
 	AdminLockout        AdminLockoutManager
 	AdminAudit          AdminAuditReader
+	AdminMaintenance    AdminMaintenanceRunner
+	AdminAuditRecorder  AdminActionRecorder
 }
 
 // AdminAccountLister lists accounts for the administrator area.
@@ -112,6 +114,19 @@ type AdminLockoutManager interface {
 // AdminAuditReader lists administrator action history.
 type AdminAuditReader interface {
 	List(context.Context, service.AuditQuery) (service.AuditPage, error)
+}
+
+// AdminActionRecorder stores a completed administrator action in the audit
+// trail without exposing credentials.
+type AdminActionRecorder interface {
+	Record(context.Context, service.AuditRecord) error
+}
+
+// AdminMaintenanceRunner inspects and runs scheduled cleanup jobs.
+type AdminMaintenanceRunner interface {
+	RunOnce(context.Context) ([]service.MaintenanceRun, error)
+	RunJob(context.Context, string) (service.MaintenanceRun, error)
+	Status() []service.MaintenanceStatus
 }
 
 // UserFinder resolves an account for an authenticated session.

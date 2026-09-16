@@ -32,6 +32,7 @@ func main() {
 
 	var serverOptions []appserver.Option
 	var database *sql.DB
+	var applicationGraph *app.Graph
 	if appConfig.DatabaseURL.IsSet() {
 		startupContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		var openErr error
@@ -53,7 +54,8 @@ func main() {
 			_ = database.Close()
 			log.Fatal(migrateErr)
 		}
-		applicationGraph, composeErr := app.New(database, appConfig)
+		var composeErr error
+		applicationGraph, composeErr = app.New(database, appConfig)
 		if composeErr != nil {
 			_ = database.Close()
 			log.Fatal(composeErr)
@@ -113,6 +115,8 @@ func main() {
 			AdminIdentity:        applicationGraph.AdminIdentity,
 			AdminLockout:         applicationGraph.Lockout,
 			AdminAudit:           applicationGraph.Audit,
+			AdminMaintenance:     applicationGraph.Maintenance,
+			AdminAuditRecorder:   applicationGraph.Audit,
 		})
 	}
 
@@ -126,6 +130,15 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if applicationGraph != nil && applicationGraph.Maintenance != nil {
+		applicationGraph.Maintenance.SetLogger(applicationLogger)
+		go func() {
+			if err := applicationGraph.Maintenance.Run(ctx); err != nil {
+				applicationLogger.Error("maintenance worker stopped", "error", err)
+			}
+		}()
+	}
 
 	logger.Application().Info("server listening", "address", appConfig.HTTPAddress)
 	if err := server.Run(ctx); err != nil {

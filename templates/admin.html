@@ -15,10 +15,66 @@
     {{template "admin-detail-content" .}}
   {{else if and .Admin (eq .Admin.Page "audit")}}
     {{template "admin-audit-content" .}}
+  {{else if and .Admin (eq .Admin.Page "system")}}
+    {{template "admin-system-content" .}}
   {{else if and .Admin (eq .Admin.Page "users")}}
     {{template "admin-users-content" .}}
   {{else}}
     {{template "admin-overview-content" .}}
+  {{end}}
+{{end}}
+
+{{define "admin-system-content"}}
+  {{with .Admin.System}}
+  <div id="page-content" class="mt-6 grid gap-6 w-full max-w-5xl">
+    <p class="text-sm opacity-70">{{$.Description}}</p>
+
+    <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="admin-system-jobs-heading">
+      <div class="card-body">
+        <h2 id="admin-system-jobs-heading" class="card-title">{{$.Labels.admin_system_jobs_heading}}</h2>
+        {{if .Jobs}}
+          <div class="overflow-x-auto">
+            <table class="table" aria-label="{{$.Labels.admin_system_jobs_heading}}">
+              <thead>
+                <tr>
+                  <th scope="col">{{$.Labels.admin_system_job}}</th>
+                  <th scope="col">{{$.Labels.admin_system_job_runs}}</th>
+                  <th scope="col">{{$.Labels.admin_system_job_failures}}</th>
+                  <th scope="col">{{$.Labels.admin_system_job_last_run}}</th>
+                  <th scope="col">{{$.Labels.admin_system_job_duration}}</th>
+                  <th scope="col">{{$.Labels.admin_system_job_removed}}</th>
+                  <th scope="col">{{$.Labels.admin_system_job_error}}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{range .Jobs}}
+                  <tr data-job="{{.Job}}">
+                    <td>{{.Label}}</td>
+                    <td>{{.Runs}}</td>
+                    <td>
+                      {{if .Failures}}<span class="badge badge-warning">{{.Failures}}</span>{{else}}<span class="badge badge-success">0</span>{{end}}
+                    </td>
+                    <td>{{.LastRun}}</td>
+                    <td>{{.LastDuration}}</td>
+                    <td>{{.LastDeleted}}</td>
+                    <td>{{if .Failed}}<span class="text-error">{{.LastError}}</span>{{end}}</td>
+                  </tr>
+                {{end}}
+              </tbody>
+            </table>
+          </div>
+        {{else}}
+          <p class="text-sm opacity-70">{{$.Labels.admin_system_job_empty}}</p>
+        {{end}}
+        <form method="post" action="{{.RunURL}}" hx-post="{{.RunURL}}"
+              hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this"
+              hx-confirm="{{$.Labels.admin_system_run_confirm}}">
+          <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+          <button class="btn btn-sm btn-primary" type="submit">{{$.Labels.admin_system_run}}</button>
+        </form>
+      </div>
+    </section>
+  </div>
   {{end}}
 {{end}}
 

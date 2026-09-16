@@ -76,6 +76,28 @@ type AdminView struct {
 	List     *AdminListView
 	Detail   *AdminDetailView
 	Audit    *AdminAuditView
+	System   *AdminSystemView
+}
+
+// AdminSystemView contains administrator system health data. It never carries
+// credentials; each ticket adds one section as it lands.
+type AdminSystemView struct {
+	RunURL     string
+	Jobs       []AdminMaintenanceJobView
+	RunConfirm string
+}
+
+// AdminMaintenanceJobView is one background job's retained last-run state.
+type AdminMaintenanceJobView struct {
+	Job          string
+	Label        string
+	Runs         int
+	Failures     int
+	LastRun      string
+	LastDuration string
+	LastDeleted  int
+	LastError    string
+	Failed       bool
 }
 
 // AdminAuditView contains one page of administrator action history.

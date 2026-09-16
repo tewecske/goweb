@@ -64,6 +64,7 @@ type Graph struct {
 	Lockout              *service.LockoutService
 	AdminDiagnostics     *service.AdminDiagnosticsService
 	Audit                *service.AuditService
+	Maintenance          *service.MaintenanceWorker
 }
 
 // New constructs the service graph over one migrated database. It performs no
@@ -269,6 +270,13 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct lockout service: %w", err)
 	}
+	maintenanceWorker, err := service.NewMaintenanceWorker(
+		service.DefaultMaintenanceInterval,
+		service.MaintenanceJob{Name: service.MaintenanceJobGuestCleanup, Run: guestCleanup.Cleanup},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("construct maintenance worker: %w", err)
+	}
 
 	return &Graph{
 		Database: database, Users: users, Sessions: sessionsRepository,
@@ -289,6 +297,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		AuditLogs: auditLogRepository, Audit: auditService,
 		LoginAttempts: loginAttemptsRepository, AdminDiagnostics: adminDiagnostics,
 		AdminConfirmation: adminConfirmation, AdminIdentity: adminIdentity, Lockout: lockoutService,
+		Maintenance: maintenanceWorker,
 	}, nil
 }
 

@@ -986,6 +986,7 @@ func (h *adminHandler) renderAdmin(writer http.ResponseWriter, request *http.Req
 			Sections: []AdminSectionView{
 				{ID: "accounts", Label: h.t(language, "admin.nav.accounts"), URL: localizedPath(language, "/admin/users")},
 				{ID: "audit", Label: h.t(language, "admin.nav.audit"), URL: localizedPath(language, "/admin/audit")},
+				{ID: "system", Label: h.t(language, "admin.nav.system"), URL: localizedPath(language, "/admin/system")},
 			},
 		},
 	}
@@ -1093,6 +1094,17 @@ func (h *adminHandler) labels(language locale.Code) map[string]string {
 		"admin_providers_provider":           h.t(language, "admin.providers.provider"),
 		"admin_providers_account":            h.t(language, "admin.providers.account"),
 		"admin_providers_empty":              h.t(language, "admin.providers.empty"),
+		"admin_system_jobs_heading":          h.t(language, "admin.system.jobs.heading"),
+		"admin_system_job":                   h.t(language, "admin.system.jobs.job"),
+		"admin_system_job_runs":              h.t(language, "admin.system.jobs.runs"),
+		"admin_system_job_failures":          h.t(language, "admin.system.jobs.failures"),
+		"admin_system_job_last_run":          h.t(language, "admin.system.jobs.last_run"),
+		"admin_system_job_duration":          h.t(language, "admin.system.jobs.duration"),
+		"admin_system_job_removed":           h.t(language, "admin.system.jobs.removed"),
+		"admin_system_job_error":             h.t(language, "admin.system.jobs.error"),
+		"admin_system_job_empty":             h.t(language, "admin.system.jobs.empty"),
+		"admin_system_run":                   h.t(language, "admin.system.maintenance.run"),
+		"admin_system_run_confirm":           h.t(language, "admin.system.maintenance.run_confirm"),
 	}
 }
 
@@ -1105,4 +1117,146 @@ func (h *adminHandler) t(language locale.Code, id string) string {
 		return id
 	}
 	return value
+}
+
+// system renders the administrator system health page.
+func (h *adminHandler) system(writer http.ResponseWriter, request *http.Request) {
+	user, language, ok := h.authorize(writer, request)
+	if !ok {
+		return
+	}
+	if request.Method != http.MethodGet {
+		writer.Header().Set("Allow", http.MethodGet)
+		writer.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	h.renderSystem(writer, request, language, user, nil, http.StatusOK)
+}
+
+// runMaintenance executes every scheduled cleanup job immediately as a separate,
+// confirmed, audited administrator action.
+func (h *adminHandler) runMaintenance(writer http.ResponseWriter, request *http.Request) {
+	user, language, ok := h.authorize(writer, request)
+	if !ok {
+		return
+	}
+	if request.Method != http.MethodPost {
+		writer.Header().Set("Allow", http.MethodPost)
+		writer.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if h.dependencies.AdminMaintenance == nil {
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+		return
+	}
+	runs, err := h.dependencies.AdminMaintenance.RunOnce(request.Context())
+	if err != nil {
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+		return
+	}
+	h.recordMaintenanceAudit(request, user, runs)
+	alerts := []Alert{{Level: "success", Message: h.t(language, "admin.system.maintenance.ran")}}
+	if maintenanceFailed(runs) {
+		alerts = []Alert{{Level: "warning", Message: h.t(language, "admin.system.maintenance.partial")}}
+	}
+	h.renderSystem(writer, request, language, user, alerts, http.StatusOK)
+}
+
+func (h *adminHandler) renderSystem(writer http.ResponseWriter, request *http.Request, language locale.Code, user service.User, alerts []Alert, status int) {
+	base := localizedPath(language, "/admin/system")
+	view := &AdminSystemView{RunURL: base + "/maintenance/run"}
+	if h.dependencies.AdminMaintenance != nil {
+		for _, job := range h.dependencies.AdminMaintenance.Status() {
+			view.Jobs = append(view.Jobs, adminMaintenanceJobView(h, language, job))
+		}
+	}
+	pageData := PageData{
+		Language:         string(language),
+		Title:            h.t(language, "admin.system.title"),
+		Heading:          h.t(language, "admin.system.heading"),
+		Description:      h.t(language, "admin.system.description"),
+		Kind:             "admin",
+		CSRFToken:        csrfToken(request),
+		Template:         "admin",
+		FragmentTemplate: "admin-fragment",
+		Alerts:           alerts,
+		Labels:           h.labels(language),
+		Account:          settingsAccountMenu(language, user),
+		Admin: &AdminView{
+			IsAdmin: true,
+			Page:    "system",
+			System:  view,
+		},
+	}
+	if err := h.settings.Render(writer, request, pageData, status); err != nil {
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+	}
+}
+
+func adminMaintenanceJobView(h *adminHandler, language locale.Code, status service.MaintenanceStatus) AdminMaintenanceJobView {
+	view := AdminMaintenanceJobView{
+		Job:          status.Job,
+		Runs:         status.Runs,
+		Failures:     status.Failures,
+		LastDeleted:  status.LastDeleted,
+		LastError:    status.LastError,
+		Failed:       status.LastError != "",
+		LastDuration: status.LastDuration.String(),
+	}
+	if status.LastFinishedAt > 0 {
+		view.LastRun = formatAdminTime(status.LastFinishedAt)
+	}
+	view.Label = h.jobLabel(language, status.Job)
+	return view
+}
+
+func (h *adminHandler) jobLabel(language locale.Code, job string) string {
+	switch job {
+	case service.MaintenanceJobGuestCleanup:
+		return h.t(language, "admin.system.job.guest_cleanup")
+	default:
+		return job
+	}
+}
+
+func (h *adminHandler) recordMaintenanceAudit(request *http.Request, user service.User, runs []service.MaintenanceRun) {
+	if h.dependencies.AdminAuditRecorder == nil {
+		return
+	}
+	_ = h.dependencies.AdminAuditRecorder.Record(request.Context(), service.AuditRecord{
+		ActorUserID: user.ID,
+		ActorEmail:  adminActorEmail(user),
+		Action:      service.AuditActionMaintenanceRun,
+		TargetType:  "maintenance",
+		Detail:      maintenanceAuditDetail(runs),
+		IP:          requestOrigin(request),
+	})
+}
+
+func maintenanceAuditDetail(runs []service.MaintenanceRun) string {
+	removed := 0
+	failures := 0
+	for _, run := range runs {
+		removed += run.Deleted
+		if run.Failed() {
+			failures++
+		}
+	}
+	return "jobs=" + strconv.Itoa(len(runs)) + " removed=" + strconv.Itoa(removed) + " failures=" + strconv.Itoa(failures)
+}
+
+func maintenanceFailed(runs []service.MaintenanceRun) bool {
+	for _, run := range runs {
+		if run.Failed() {
+			return true
+		}
+	}
+	return false
+}
+
+func adminActorEmail(user service.User) string {
+	if user.Email != nil {
+		return *user.Email
+	}
+	return ""
 }

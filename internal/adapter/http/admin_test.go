@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tewecske/goweb/internal/locale"
 	"github.com/tewecske/goweb/internal/service"
@@ -1093,4 +1094,136 @@ func (s *adminAuditReaderStub) List(_ context.Context, query service.AuditQuery)
 		return service.AuditPage{}, s.err
 	}
 	return s.page, nil
+}
+
+func TestAdminSystemRendersJobHealth(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminMaintenance = &adminMaintenanceStub{statuses: []service.MaintenanceStatus{
+		{Job: service.MaintenanceJobGuestCleanup, Runs: 4, Failures: 1, LastFinishedAt: 1700000000, LastDuration: 2 * time.Second, LastDeleted: 3, LastError: "postgres: database operation failed"},
+	}}
+	handler := newAdminTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.system(response, authenticatedRequest(http.MethodGet, "/en/admin/system", 7, ""))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	body := response.Body.String()
+	for _, want := range []string{"Background jobs", "Guest cleanup", `data-job="guest_cleanup"`, "postgres: database operation failed"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("system body missing %q", want)
+		}
+	}
+}
+
+func TestAdminSystemDeniesNonAdmin(t *testing.T) {
+	handler := newAdminTestHandler(t, adminStubDependencies(t, false))
+	response := httptest.NewRecorder()
+	handler.system(response, authenticatedRequest(http.MethodGet, "/en/admin/system", 7, ""))
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+}
+
+func TestAdminSystemRejectsNonGET(t *testing.T) {
+	handler := newAdminTestHandler(t, adminStubDependencies(t, true))
+	response := httptest.NewRecorder()
+	handler.system(response, authenticatedRequest(http.MethodPost, "/en/admin/system", 7, ""))
+	if response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestAdminRunMaintenanceAuditsAndReportsSuccess(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	maintenance := &adminMaintenanceStub{runs: []service.MaintenanceRun{
+		{Job: service.MaintenanceJobGuestCleanup, Deleted: 2},
+	}}
+	recorder := &adminAuditRecorderStub{}
+	dependencies.AdminMaintenance = maintenance
+	dependencies.AdminAuditRecorder = recorder
+	handler := newAdminTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.runMaintenance(response, authenticatedRequest(http.MethodPost, "/en/admin/system/maintenance/run", 7, "_csrf=token"))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if maintenance.calls != 1 {
+		t.Fatalf("RunOnce calls = %d, want 1", maintenance.calls)
+	}
+	if !strings.Contains(response.Body.String(), "Cleanup jobs completed.") {
+		t.Errorf("body missing success alert")
+	}
+	if len(recorder.records) != 1 || recorder.records[0].Action != service.AuditActionMaintenanceRun {
+		t.Fatalf("audit records = %+v, want maintenance run", recorder.records)
+	}
+	if !strings.Contains(recorder.records[0].Detail, "jobs=1") {
+		t.Errorf("audit detail = %q, want job count", recorder.records[0].Detail)
+	}
+}
+
+func TestAdminRunMaintenanceReportsPartialFailure(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminMaintenance = &adminMaintenanceStub{runs: []service.MaintenanceRun{
+		{Job: service.MaintenanceJobGuestCleanup, Err: "boom"},
+	}}
+	dependencies.AdminAuditRecorder = &adminAuditRecorderStub{}
+	handler := newAdminTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.runMaintenance(response, authenticatedRequest(http.MethodPost, "/en/admin/system/maintenance/run", 7, "_csrf=token"))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if !strings.Contains(response.Body.String(), "one or more job failures") {
+		t.Errorf("body missing partial-failure alert")
+	}
+}
+
+func TestAdminRunMaintenanceRejectsNonPOST(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminMaintenance = &adminMaintenanceStub{}
+	handler := newAdminTestHandler(t, dependencies)
+	response := httptest.NewRecorder()
+	handler.runMaintenance(response, authenticatedRequest(http.MethodGet, "/en/admin/system/maintenance/run", 7, ""))
+	if response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+type adminMaintenanceStub struct {
+	statuses []service.MaintenanceStatus
+	runs     []service.MaintenanceRun
+	err      error
+	calls    int
+}
+
+func (s *adminMaintenanceStub) RunOnce(context.Context) ([]service.MaintenanceRun, error) {
+	s.calls++
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.runs, nil
+}
+
+func (s *adminMaintenanceStub) RunJob(context.Context, string) (service.MaintenanceRun, error) {
+	if s.err != nil {
+		return service.MaintenanceRun{}, s.err
+	}
+	return service.MaintenanceRun{}, nil
+}
+
+func (s *adminMaintenanceStub) Status() []service.MaintenanceStatus {
+	return s.statuses
+}
+
+type adminAuditRecorderStub struct {
+	records []service.AuditRecord
+	err     error
+}
+
+func (s *adminAuditRecorderStub) Record(_ context.Context, record service.AuditRecord) error {
+	s.records = append(s.records, record)
+	return s.err
 }
