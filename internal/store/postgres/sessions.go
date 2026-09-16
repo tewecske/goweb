@@ -27,6 +27,62 @@ func NewSessionRepository(db *sql.DB) (*SessionRepository, error) {
 }
 
 var _ service.SessionRepository = (*SessionRepository)(nil)
+var _ service.AdminSessionRepository = (*SessionRepository)(nil)
+
+// ListActiveSessions returns sessions that are neither revoked nor expired,
+// newest first. The stored digest is never a usable credential.
+func (r *SessionRepository) ListActiveSessions(ctx context.Context, userID int64) ([]service.Session, error) {
+	db, err := r.database(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if userID <= 0 {
+		return nil, service.ErrInvalidSessionUserID
+	}
+	rows, err := db.QueryContext(ctx, `
+		SELECT id, user_id, created_at, expires_at, revoked_at
+		FROM sessions
+		WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > $2
+		ORDER BY created_at DESC, id DESC
+	`, userID, time.Now().Unix())
+	if err != nil {
+		return nil, mapSessionError(err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	sessions := make([]service.Session, 0)
+	for rows.Next() {
+		session, err := scanSession(rows)
+		if err != nil {
+			return nil, mapSessionError(err)
+		}
+		sessions = append(sessions, session)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, mapSessionError(err)
+	}
+	return sessions, nil
+}
+
+// CountActiveSessions returns how many sessions can currently authenticate.
+func (r *SessionRepository) CountActiveSessions(ctx context.Context, userID int64) (int, error) {
+	db, err := r.database(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if userID <= 0 {
+		return 0, service.ErrInvalidSessionUserID
+	}
+	var count int
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM sessions
+		WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > $2
+	`, userID, time.Now().Unix()).Scan(&count); err != nil {
+		return 0, mapSessionError(err)
+	}
+	return count, nil
+}
 
 // CreateSession stores one opaque session credential.
 func (r *SessionRepository) CreateSession(ctx context.Context, session service.Session) error {

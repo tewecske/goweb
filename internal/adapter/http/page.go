@@ -74,6 +74,42 @@ type AdminView struct {
 	Page     string
 	Sections []AdminSectionView
 	List     *AdminListView
+	Detail   *AdminDetailView
+}
+
+// AdminDetailView contains safe account diagnostics for one account.
+type AdminDetailView struct {
+	UserID        int64
+	Label         string
+	Email         string
+	Username      string
+	DisplayName   string
+	IsAdmin       bool
+	IsGuest       bool
+	Confirmed     bool
+	Locale        string
+	Theme         string
+	CreatedAt     string
+	Version       int64
+	EditURL       string
+	ListURL       string
+	Sessions      []AdminSessionView
+	LoginAttempts []AdminLoginAttemptView
+	Identities    []IdentityView
+}
+
+// AdminSessionView is one active session's safe timing.
+type AdminSessionView struct {
+	CreatedAt string
+	ExpiresAt string
+}
+
+// AdminLoginAttemptView is one sign-in history row's safe fields.
+type AdminLoginAttemptView struct {
+	CreatedAt    string
+	Outcome      string
+	OutcomeLabel string
+	Origin       string
 }
 
 // AdminSectionView is one administrator navigation entry.

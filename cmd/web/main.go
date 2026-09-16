@@ -99,6 +99,7 @@ func main() {
 			AdminAccounts:        applicationGraph.AdminAccounts,
 			AdminAccountCreator:  applicationGraph.AdminAccounts,
 			AdminAccountEditor:   applicationGraph.AdminAccounts,
+			AdminUserDetailer:    applicationGraph.AdminDiagnostics,
 		})
 	}
 

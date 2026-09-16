@@ -162,21 +162,28 @@ func validateRateLimitKey(value string) error {
 }
 
 // RateLimitedSignInService applies independent identifier and origin budgets
-// around password sign-in.
+// around password sign-in and records durable sign-in history.
 type RateLimitedSignInService struct {
-	signIn  *SignInService
-	limiter *RateLimiter
+	signIn   *SignInService
+	limiter  *RateLimiter
+	recorder LoginAttemptRecorder
 }
 
 // NewRateLimitedSignInService decorates sign-in with authentication budgets.
 func NewRateLimitedSignInService(signIn *SignInService, limiter *RateLimiter) (*RateLimitedSignInService, error) {
+	return NewRateLimitedSignInServiceWithRecorder(signIn, limiter, nil)
+}
+
+// NewRateLimitedSignInServiceWithRecorder decorates sign-in with authentication
+// budgets and best-effort durable sign-in history.
+func NewRateLimitedSignInServiceWithRecorder(signIn *SignInService, limiter *RateLimiter, recorder LoginAttemptRecorder) (*RateLimitedSignInService, error) {
 	if signIn == nil {
 		return nil, errors.New("service: nil signin service")
 	}
 	if limiter == nil {
 		return nil, ErrInvalidRateLimitConfig
 	}
-	return &RateLimitedSignInService{signIn: signIn, limiter: limiter}, nil
+	return &RateLimitedSignInService{signIn: signIn, limiter: limiter, recorder: recorder}, nil
 }
 
 // SignIn applies per-origin and per-normalized-identifier limits before
@@ -190,11 +197,15 @@ func (s *RateLimitedSignInService) SignIn(ctx context.Context, input SignInInput
 		return SignInResult{}, err
 	}
 	if !originDecision.Allowed {
+		s.recordAttempt(ctx, input, origin, LoginOutcomeRateLimited, 0)
 		return SignInResult{}, RateLimitError{RetryAfter: originDecision.RetryAfter}
 	}
 	identifier, _, identifierErr := normalizeSignInIdentifier(input.Identifier)
 	if identifierErr != nil {
 		_, err := s.signIn.SignIn(ctx, input)
+		if err != nil {
+			s.recordAttempt(ctx, input, origin, loginOutcomeForError(err), 0)
+		}
 		return SignInResult{}, err
 	}
 	identifierDecision, err := s.limiter.Allow(signInIdentifierAction, identifier)
@@ -202,10 +213,12 @@ func (s *RateLimitedSignInService) SignIn(ctx context.Context, input SignInInput
 		return SignInResult{}, err
 	}
 	if !identifierDecision.Allowed {
+		s.recordAttempt(ctx, input, origin, LoginOutcomeRateLimited, 0)
 		return SignInResult{}, RateLimitError{RetryAfter: identifierDecision.RetryAfter}
 	}
 	result, err := s.signIn.SignIn(ctx, input)
 	if err != nil {
+		s.recordAttempt(ctx, input, origin, loginOutcomeForError(err), 0)
 		return SignInResult{}, err
 	}
 	if err := s.limiter.Clear(signInOriginAction, origin); err != nil {
@@ -214,5 +227,48 @@ func (s *RateLimitedSignInService) SignIn(ctx context.Context, input SignInInput
 	if err := s.limiter.Clear(signInIdentifierAction, identifier); err != nil {
 		return SignInResult{}, fmt.Errorf("clear signin identifier limit: %w", err)
 	}
+	s.recordAttempt(ctx, input, origin, LoginOutcomeSuccess, result.User.ID)
 	return result, nil
+}
+
+func (s *RateLimitedSignInService) recordAttempt(ctx context.Context, input SignInInput, origin, outcome string, userID int64) {
+	if s == nil || s.recorder == nil {
+		return
+	}
+	email := normalizedAttemptEmail(input.Identifier)
+	if email == "" {
+		return
+	}
+	attempt := LoginAttempt{
+		Email:     email,
+		Outcome:   outcome,
+		CreatedAt: time.Now().Unix(),
+	}
+	if userID > 0 {
+		attempt.UserID = &userID
+	}
+	if origin = strings.TrimSpace(origin); origin != "" {
+		attempt.IP = &origin
+	}
+	RecordLoginAttempt(ctx, s.recorder, attempt)
+}
+
+func loginOutcomeForError(err error) string {
+	switch {
+	case errors.Is(err, ErrEmailUnconfirmed):
+		return LoginOutcomeUnconfirmed
+	case errors.Is(err, ErrRateLimited):
+		return LoginOutcomeRateLimited
+	case errors.Is(err, ErrInvalidCredentials):
+		return LoginOutcomeInvalidCredentials
+	default:
+		return LoginOutcomeError
+	}
+}
+
+func normalizedAttemptEmail(raw string) string {
+	if identifier, _, err := normalizeSignInIdentifier(raw); err == nil {
+		return identifier
+	}
+	return strings.ToLower(strings.TrimSpace(raw))
 }

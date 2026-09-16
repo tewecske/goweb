@@ -80,6 +80,123 @@ func (h *adminHandler) list(writer http.ResponseWriter, request *http.Request) {
 	h.renderUsers(writer, request, language, user, adminUsersRequest{state: state, page: page, form: FormData{}, mode: adminModeList, status: http.StatusOK})
 }
 
+// detail renders one account's safe diagnostics.
+func (h *adminHandler) detail(writer http.ResponseWriter, request *http.Request) {
+	user, language, ok := h.authorize(writer, request)
+	if !ok {
+		return
+	}
+	if request.Method != http.MethodGet {
+		writer.Header().Set("Allow", http.MethodGet)
+		writer.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	accountID, err := pathID(request)
+	if err != nil {
+		h.renderState(writer, request, language, PageStateNotFound)
+		return
+	}
+	if h.dependencies.AdminUserDetailer == nil {
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+		return
+	}
+	detail, err := h.dependencies.AdminUserDetailer.Detail(request.Context(), accountID)
+	if err != nil {
+		if errors.Is(err, service.ErrRecordNotFound) {
+			h.renderState(writer, request, language, PageStateNotFound)
+			return
+		}
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+		return
+	}
+	pageData := PageData{
+		Language:         string(language),
+		Title:            h.t(language, "admin.account.detail_title"),
+		Heading:          adminAccountLabel(detail.User),
+		Description:      h.t(language, "admin.account.detail_description"),
+		Kind:             "admin",
+		CSRFToken:        csrfToken(request),
+		Template:         "admin",
+		FragmentTemplate: "admin-fragment",
+		Labels:           h.labels(language),
+		Account:          settingsAccountMenu(language, user),
+		Admin: &AdminView{
+			IsAdmin: true,
+			Page:    "detail",
+			Detail:  h.detailView(language, detail),
+		},
+	}
+	if err := h.settings.Render(writer, request, pageData, http.StatusOK); err != nil {
+		renderSimpleError(writer, request, http.StatusInternalServerError)
+	}
+}
+
+func (h *adminHandler) detailView(language locale.Code, detail service.AdminUserDetail) *AdminDetailView {
+	account := detail.User
+	view := &AdminDetailView{
+		UserID:    account.ID,
+		Label:     adminAccountLabel(account),
+		IsAdmin:   account.IsAdmin,
+		IsGuest:   account.IsGuest,
+		Confirmed: detail.Confirmed,
+		Locale:    account.Locale,
+		Theme:     account.Theme,
+		CreatedAt: formatAdminTime(account.CreatedAt),
+		Version:   account.Version,
+		ListURL:   localizedPath(language, "/admin/users"),
+		EditURL:   localizedPath(language, "/admin/users/"+strconv.FormatInt(account.ID, 10)+"/edit"),
+	}
+	if account.Email != nil {
+		view.Email = *account.Email
+	}
+	if account.Username != nil {
+		view.Username = *account.Username
+	}
+	if account.DisplayName != nil {
+		view.DisplayName = *account.DisplayName
+	}
+	for _, session := range detail.Sessions {
+		view.Sessions = append(view.Sessions, AdminSessionView{
+			CreatedAt: formatAdminTime(session.CreatedAt),
+			ExpiresAt: formatAdminTime(session.ExpiresAt),
+		})
+	}
+	for _, attempt := range detail.LoginAttempts {
+		attemptView := AdminLoginAttemptView{
+			CreatedAt:    formatAdminTime(attempt.CreatedAt),
+			Outcome:      attempt.Outcome,
+			OutcomeLabel: h.t(language, "admin.attempt.outcome."+attempt.Outcome),
+		}
+		if attempt.IP != nil {
+			attemptView.Origin = *attempt.IP
+		}
+		view.LoginAttempts = append(view.LoginAttempts, attemptView)
+	}
+	for _, identity := range detail.Identities {
+		view.Identities = append(view.Identities, IdentityView{
+			ID:        identity.ID,
+			Provider:  identity.Provider,
+			Label:     identityLabelFor(identity),
+			Removable: true,
+		})
+	}
+	return view
+}
+
+func identityLabelFor(identity service.OAuthIdentity) string {
+	if strings.TrimSpace(identity.Email) != "" {
+		return identity.Email
+	}
+	return identity.Provider
+}
+
+func formatAdminTime(unix int64) string {
+	if unix <= 0 {
+		return ""
+	}
+	return time.Unix(unix, 0).UTC().Format("2006-01-02 15:04")
+}
+
 // createAccount renders and handles administrator account creation.
 func (h *adminHandler) createAccount(writer http.ResponseWriter, request *http.Request) {
 	user, language, ok := h.authorize(writer, request)
@@ -613,6 +730,31 @@ func (h *adminHandler) labels(language locale.Code) map[string]string {
 		"admin_account_delete":         h.t(language, "admin.account.delete"),
 		"admin_account_delete_confirm": h.t(language, "admin.account.delete_confirm"),
 		"admin_account_confirm_delete": h.t(language, "admin.account.confirm_delete"),
+		"admin_detail_confirmation":    h.t(language, "admin.detail.confirmation"),
+		"admin_detail_sessions":        h.t(language, "admin.detail.sessions"),
+		"admin_detail_attempts":        h.t(language, "admin.detail.attempts"),
+		"admin_detail_providers":       h.t(language, "admin.detail.providers"),
+		"admin_detail_username":        h.t(language, "admin.detail.username"),
+		"admin_detail_display_name":    h.t(language, "admin.detail.display_name"),
+		"admin_detail_role":            h.t(language, "admin.detail.role"),
+		"admin_detail_locale":          h.t(language, "admin.detail.locale"),
+		"admin_detail_theme":           h.t(language, "admin.detail.theme"),
+		"admin_detail_created":         h.t(language, "admin.detail.created"),
+		"admin_detail_version":         h.t(language, "admin.detail.version"),
+		"admin_detail_confirmed":       h.t(language, "admin.detail.confirmed"),
+		"admin_detail_unconfirmed":     h.t(language, "admin.detail.unconfirmed"),
+		"admin_detail_edit":            h.t(language, "admin.detail.edit"),
+		"admin_detail_back":            h.t(language, "admin.detail.back"),
+		"admin_sessions_created":       h.t(language, "admin.sessions.created"),
+		"admin_sessions_expires":       h.t(language, "admin.sessions.expires"),
+		"admin_sessions_empty":         h.t(language, "admin.sessions.empty"),
+		"admin_attempt_time":           h.t(language, "admin.attempt.time"),
+		"admin_attempt_outcome":        h.t(language, "admin.attempt.outcome"),
+		"admin_attempt_origin":         h.t(language, "admin.attempt.origin"),
+		"admin_attempts_empty":         h.t(language, "admin.attempts.empty"),
+		"admin_providers_provider":     h.t(language, "admin.providers.provider"),
+		"admin_providers_account":      h.t(language, "admin.providers.account"),
+		"admin_providers_empty":        h.t(language, "admin.providers.empty"),
 	}
 }
 

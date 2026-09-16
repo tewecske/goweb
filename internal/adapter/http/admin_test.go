@@ -559,6 +559,76 @@ func TestAdminEditAccountHidesSelfDelete(t *testing.T) {
 	}
 }
 
+func TestAdminDetailRendersSafeDiagnostics(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminUserDetailer = &adminUserDetailerStub{detail: service.AdminUserDetail{
+		User:          service.User{ID: 9, Email: strPtr("target@example.test"), IsAdmin: true, Version: 2},
+		Confirmed:     true,
+		Sessions:      []service.Session{{ID: "super-secret-session-digest", UserID: 9, CreatedAt: 100, ExpiresAt: 200}},
+		LoginAttempts: []service.LoginAttempt{{ID: 1, Email: "target@example.test", Outcome: service.LoginOutcomeSuccess, CreatedAt: 150}},
+		Identities:    []service.OAuthIdentity{{ID: 4, UserID: 9, Provider: "example", Email: "target@example.test"}},
+	}}
+	handler := newAdminTestHandler(t, dependencies)
+
+	request := authenticatedRequest(http.MethodGet, "/en/admin/users/9", 7, "")
+	request.SetPathValue("id", "9")
+	response := httptest.NewRecorder()
+	handler.detail(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	body := response.Body.String()
+	for _, want := range []string{"target@example.test", "Active sessions", "Success", "example", "Email confirmed"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("detail body missing %q", want)
+		}
+	}
+	if strings.Contains(body, "super-secret-session-digest") {
+		t.Errorf("detail body exposes a session identifier")
+	}
+	if strings.Contains(body, "password_hash") {
+		t.Errorf("detail body exposes credential fields")
+	}
+}
+
+func TestAdminDetailMissingAccountRendersNotFound(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminUserDetailer = &adminUserDetailerStub{err: service.ErrRecordNotFound}
+	handler := newAdminTestHandler(t, dependencies)
+	request := authenticatedRequest(http.MethodGet, "/en/admin/users/9", 7, "")
+	request.SetPathValue("id", "9")
+	response := httptest.NewRecorder()
+	handler.detail(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
+	}
+}
+
+func TestAdminDetailRejectsNonAdmin(t *testing.T) {
+	dependencies := adminStubDependencies(t, false)
+	dependencies.AdminUserDetailer = &adminUserDetailerStub{}
+	handler := newAdminTestHandler(t, dependencies)
+	request := authenticatedRequest(http.MethodGet, "/en/admin/users/9", 7, "")
+	request.SetPathValue("id", "9")
+	response := httptest.NewRecorder()
+	handler.detail(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+}
+
+type adminUserDetailerStub struct {
+	detail service.AdminUserDetail
+	err    error
+}
+
+func (s *adminUserDetailerStub) Detail(context.Context, int64) (service.AdminUserDetail, error) {
+	if s.err != nil {
+		return service.AdminUserDetail{}, s.err
+	}
+	return s.detail, nil
+}
+
 type adminAccountEditorStub struct {
 	found       service.User
 	findErr     error

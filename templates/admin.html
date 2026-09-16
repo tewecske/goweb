@@ -11,10 +11,100 @@
 {{end}}
 
 {{define "admin-content"}}
-  {{if and .Admin (eq .Admin.Page "users")}}
+  {{if and .Admin (eq .Admin.Page "detail")}}
+    {{template "admin-detail-content" .}}
+  {{else if and .Admin (eq .Admin.Page "users")}}
     {{template "admin-users-content" .}}
   {{else}}
     {{template "admin-overview-content" .}}
+  {{end}}
+{{end}}
+
+{{define "admin-detail-content"}}
+  {{with .Admin.Detail}}
+  <div id="page-content" class="mt-6 grid gap-6 w-full max-w-3xl">
+    <p><a class="link" href="{{.ListURL}}">{{$.Labels.admin_detail_back}}</a></p>
+    <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="admin-account-summary-heading">
+      <div class="card-body">
+        <h2 id="admin-account-summary-heading" class="card-title">{{.Label}}</h2>
+        <dl class="grid grid-cols-1 gap-2 md:grid-cols-2">
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_account_email}}</dt><dd>{{.Email}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_detail_username}}</dt><dd>{{.Username}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_detail_display_name}}</dt><dd>{{.DisplayName}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_detail_role}}</dt><dd>{{if .IsAdmin}}{{$.Labels.admin_role_admin}}{{else}}{{$.Labels.admin_role_user}}{{end}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_detail_locale}}</dt><dd>{{.Locale}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_detail_theme}}</dt><dd>{{.Theme}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_detail_created}}</dt><dd>{{.CreatedAt}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_detail_version}}</dt><dd>{{.Version}}</dd></div>
+        </dl>
+        <div class="mt-2">
+          <a class="btn btn-sm" href="{{.EditURL}}" hx-get="{{.EditURL}}"
+             hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_detail_edit}}</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="admin-confirmation-heading">
+      <div class="card-body">
+        <h2 id="admin-confirmation-heading" class="card-title">{{$.Labels.admin_detail_confirmation}}</h2>
+        <p>{{if .Confirmed}}{{$.Labels.admin_detail_confirmed}}{{else}}{{$.Labels.admin_detail_unconfirmed}}{{end}}</p>
+      </div>
+    </section>
+
+    <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="admin-sessions-heading">
+      <div class="card-body">
+        <h2 id="admin-sessions-heading" class="card-title">{{$.Labels.admin_detail_sessions}}</h2>
+        {{if .Sessions}}
+          <div class="overflow-x-auto">
+            <table class="table">
+              <thead><tr><th scope="col">{{$.Labels.admin_sessions_created}}</th><th scope="col">{{$.Labels.admin_sessions_expires}}</th></tr></thead>
+              <tbody>
+                {{range .Sessions}}<tr><td>{{.CreatedAt}}</td><td>{{.ExpiresAt}}</td></tr>{{end}}
+              </tbody>
+            </table>
+          </div>
+        {{else}}
+          <p class="text-sm opacity-70">{{$.Labels.admin_sessions_empty}}</p>
+        {{end}}
+      </div>
+    </section>
+
+    <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="admin-attempts-heading">
+      <div class="card-body">
+        <h2 id="admin-attempts-heading" class="card-title">{{$.Labels.admin_detail_attempts}}</h2>
+        {{if .LoginAttempts}}
+          <div class="overflow-x-auto">
+            <table class="table">
+              <thead><tr><th scope="col">{{$.Labels.admin_attempt_time}}</th><th scope="col">{{$.Labels.admin_attempt_outcome}}</th><th scope="col">{{$.Labels.admin_attempt_origin}}</th></tr></thead>
+              <tbody>
+                {{range .LoginAttempts}}<tr><td>{{.CreatedAt}}</td><td>{{.OutcomeLabel}}</td><td>{{.Origin}}</td></tr>{{end}}
+              </tbody>
+            </table>
+          </div>
+        {{else}}
+          <p class="text-sm opacity-70">{{$.Labels.admin_attempts_empty}}</p>
+        {{end}}
+      </div>
+    </section>
+
+    <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="admin-providers-heading">
+      <div class="card-body">
+        <h2 id="admin-providers-heading" class="card-title">{{$.Labels.admin_detail_providers}}</h2>
+        {{if .Identities}}
+          <div class="overflow-x-auto">
+            <table class="table">
+              <thead><tr><th scope="col">{{$.Labels.admin_providers_provider}}</th><th scope="col">{{$.Labels.admin_providers_account}}</th></tr></thead>
+              <tbody>
+                {{range .Identities}}<tr><td>{{.Provider}}</td><td>{{.Label}}</td></tr>{{end}}
+              </tbody>
+            </table>
+          </div>
+        {{else}}
+          <p class="text-sm opacity-70">{{$.Labels.admin_providers_empty}}</p>
+        {{end}}
+      </div>
+    </section>
+  </div>
   {{end}}
 {{end}}
 
@@ -178,8 +268,12 @@
                   {{else}}{{$.Labels.admin_status_unconfirmed}}{{end}}
                 </td>
                 <td class="text-right">
-                  <a class="btn btn-xs" href="{{.EditURL}}" hx-get="{{.EditURL}}"
-                     hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_edit}}</a>
+                  <div class="flex justify-end gap-2">
+                    <a class="btn btn-xs" href="{{.DetailURL}}" hx-get="{{.DetailURL}}"
+                       hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_view}}</a>
+                    <a class="btn btn-xs" href="{{.EditURL}}" hx-get="{{.EditURL}}"
+                       hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_edit}}</a>
+                  </div>
                 </td>
               </tr>
             {{else}}

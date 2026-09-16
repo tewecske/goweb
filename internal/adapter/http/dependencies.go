@@ -55,6 +55,7 @@ type Dependencies struct {
 	AdminAccounts       AdminAccountLister
 	AdminAccountCreator AdminAccountCreator
 	AdminAccountEditor  AdminAccountEditor
+	AdminUserDetailer   AdminUserDetailer
 }
 
 // AdminAccountLister lists accounts for the administrator area.
@@ -73,6 +74,11 @@ type AdminAccountEditor interface {
 	Find(context.Context, int64) (service.User, error)
 	Update(context.Context, service.AdminActionContext, int64, service.AdminAccountUpdateInput) (service.User, error)
 	Delete(context.Context, service.AdminActionContext, int64, int64) error
+}
+
+// AdminUserDetailer aggregates safe account diagnostics for an administrator.
+type AdminUserDetailer interface {
+	Detail(context.Context, int64) (service.AdminUserDetail, error)
 }
 
 // UserFinder resolves an account for an authenticated session.

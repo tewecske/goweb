@@ -34,6 +34,7 @@ type Graph struct {
 	GroupMemberships     *postgresstore.GroupMembershipRepository
 	AdminUsers           *postgresstore.AdminUserRepository
 	AuditLogs            *postgresstore.AuditLogRepository
+	LoginAttempts        *postgresstore.LoginAttemptRepository
 	Providers            *service.ProviderRegistry
 	SessionService       *service.SessionService
 	PasswordHasher       *service.PasswordHasher
@@ -58,6 +59,7 @@ type Graph struct {
 	Group                *service.GroupService
 	GroupJoin            *service.RateLimitedGroupJoiner
 	AdminAccounts        *service.AdminAccountService
+	AdminDiagnostics     *service.AdminDiagnosticsService
 	Audit                *service.AuditService
 }
 
@@ -115,6 +117,10 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct audit log repository: %w", err)
 	}
+	loginAttemptsRepository, err := postgresstore.NewLoginAttemptRepository(database)
+	if err != nil {
+		return nil, fmt.Errorf("construct login attempt repository: %w", err)
+	}
 
 	sessionService, err := service.NewSessionService(sessionsRepository, appConfig.SessionLifetime)
 	if err != nil {
@@ -148,7 +154,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct signin service: %w", err)
 	}
-	signIn, err := service.NewRateLimitedSignInService(signInBase, signInLimiter)
+	signIn, err := service.NewRateLimitedSignInServiceWithRecorder(signInBase, signInLimiter, loginAttemptsRepository)
 	if err != nil {
 		return nil, fmt.Errorf("construct rate limited signin service: %w", err)
 	}
@@ -244,6 +250,10 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct admin account service: %w", err)
 	}
+	adminDiagnostics, err := service.NewAdminDiagnosticsService(users, sessionsRepository, loginAttemptsRepository, oauthIdentities)
+	if err != nil {
+		return nil, fmt.Errorf("construct admin diagnostics service: %w", err)
+	}
 
 	return &Graph{
 		Database: database, Users: users, Sessions: sessionsRepository,
@@ -262,6 +272,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		Groups: groupsRepository, GroupMemberships: groupMembershipsRepository, Group: groupService, GroupJoin: groupJoinService,
 		AdminUsers: adminUsersRepository, AdminAccounts: adminAccounts,
 		AuditLogs: auditLogRepository, Audit: auditService,
+		LoginAttempts: loginAttemptsRepository, AdminDiagnostics: adminDiagnostics,
 	}, nil
 }
 

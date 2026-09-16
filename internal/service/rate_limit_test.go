@@ -87,6 +87,63 @@ func TestRateLimitedSignInClearsIdentifierAndOriginOnSuccess(t *testing.T) {
 	}
 }
 
+func TestRateLimitedSignInRecordsAttemptOutcomes(t *testing.T) {
+	verifiedAt := int64(100)
+	newService := func(valid bool, limit int) (*RateLimitedSignInService, *loginAttemptRecorderStub) {
+		t.Helper()
+		users := &signinUserRepositoryStub{user: User{ID: 42, PasswordHash: stringPointer("stored-hash"), EmailVerifiedAt: &verifiedAt}}
+		base, err := NewSignInService(users, signinVerifierStub{valid: valid}, &SessionService{sessions: &sessionRepositoryStub{}, lifetime: time.Hour}, &failedAttemptStateStub{}, false)
+		if err != nil {
+			t.Fatalf("NewSignInService() error = %v", err)
+		}
+		limiter, err := NewRateLimiter(RateLimitConfig{Limit: limit, Window: time.Minute, MaxKeys: 10})
+		if err != nil {
+			t.Fatalf("NewRateLimiter() error = %v", err)
+		}
+		recorder := &loginAttemptRecorderStub{}
+		limited, err := NewRateLimitedSignInServiceWithRecorder(base, limiter, recorder)
+		if err != nil {
+			t.Fatalf("NewRateLimitedSignInServiceWithRecorder() error = %v", err)
+		}
+		return limited, recorder
+	}
+
+	t.Run("success records account id", func(t *testing.T) {
+		limited, recorder := newService(true, 5)
+		if _, err := limited.SignIn(context.Background(), SignInInput{Identifier: "user@example.com", Password: "hunter42"}, "127.0.0.1"); err != nil {
+			t.Fatalf("SignIn() error = %v", err)
+		}
+		if len(recorder.attempts) != 1 || recorder.attempts[0].Outcome != LoginOutcomeSuccess {
+			t.Fatalf("attempts = %+v, want one success", recorder.attempts)
+		}
+		if recorder.attempts[0].UserID == nil || *recorder.attempts[0].UserID != 42 {
+			t.Fatalf("attempt user id = %v, want 42", recorder.attempts[0].UserID)
+		}
+	})
+
+	t.Run("invalid credentials recorded", func(t *testing.T) {
+		limited, recorder := newService(false, 5)
+		_, _ = limited.SignIn(context.Background(), SignInInput{Identifier: "user@example.com", Password: "wrong"}, "127.0.0.1")
+		if len(recorder.attempts) != 1 || recorder.attempts[0].Outcome != LoginOutcomeInvalidCredentials {
+			t.Fatalf("attempts = %+v, want invalid credentials", recorder.attempts)
+		}
+	})
+
+	t.Run("rate limited recorded", func(t *testing.T) {
+		limited, recorder := newService(false, 1)
+		input := SignInInput{Identifier: "user@example.com", Password: "wrong"}
+		_, _ = limited.SignIn(context.Background(), input, "127.0.0.1")
+		_, err := limited.SignIn(context.Background(), input, "127.0.0.1")
+		if !errors.Is(err, ErrRateLimited) {
+			t.Fatalf("second SignIn() error = %v, want rate limited", err)
+		}
+		last := recorder.attempts[len(recorder.attempts)-1]
+		if last.Outcome != LoginOutcomeRateLimited {
+			t.Fatalf("last attempt = %+v, want rate limited", last)
+		}
+	})
+}
+
 func TestRateLimitedSignInReturnsRateLimitError(t *testing.T) {
 	verifiedAt := int64(100)
 	users := &signinUserRepositoryStub{user: User{ID: 42, PasswordHash: stringPointer("stored-hash"), EmailVerifiedAt: &verifiedAt}}
@@ -109,4 +166,14 @@ func TestRateLimitedSignInReturnsRateLimitError(t *testing.T) {
 	if !errors.As(err, &rateLimitErr) || !errors.Is(err, ErrRateLimited) {
 		t.Fatalf("blocked SignIn() error = %v, want RateLimitError", err)
 	}
+}
+
+type loginAttemptRecorderStub struct {
+	attempts []LoginAttempt
+	err      error
+}
+
+func (s *loginAttemptRecorderStub) RecordLoginAttempt(_ context.Context, attempt LoginAttempt) error {
+	s.attempts = append(s.attempts, attempt)
+	return s.err
 }
