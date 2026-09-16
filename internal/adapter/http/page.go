@@ -71,7 +71,9 @@ type PageData struct {
 // not yet available, so navigation only advertises implemented routes.
 type AdminView struct {
 	IsAdmin  bool
+	Page     string
 	Sections []AdminSectionView
+	List     *AdminListView
 }
 
 // AdminSectionView is one administrator navigation entry.
@@ -80,6 +82,42 @@ type AdminSectionView struct {
 	Label   string
 	URL     string
 	Current bool
+}
+
+// AdminListView contains one page of accounts and every URL needed to change
+// the list state without client-side JavaScript.
+type AdminListView struct {
+	BaseURL         string
+	SearchURL       string
+	SearchValue     string
+	AdminFilter     string
+	GuestFilter     string
+	ConfirmedFilter string
+	Sort            string
+	Direction       string
+	Page            int
+	Size            int
+	Total           int
+	Pages           int
+	HasPrevious     bool
+	HasNext         bool
+	PreviousURL     string
+	NextURL         string
+	Rows            []AdminUserRowView
+	SortURLs        map[string]string
+	FilterURLs      map[string]string
+}
+
+// AdminUserRowView is one account row in the administrator list.
+type AdminUserRowView struct {
+	ID        int64
+	Label     string
+	Email     string
+	IsAdmin   bool
+	IsGuest   bool
+	Confirmed bool
+	CreatedAt string
+	DetailURL string
 }
 
 // GroupsView contains the group list and join/create affordances.

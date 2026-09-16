@@ -1,6 +1,8 @@
 package httpadapter
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -125,4 +127,126 @@ func TestAdminIndexLocalizesAccessDenied(t *testing.T) {
 	if !strings.Contains(response.Body.String(), "Hozzáférés megtagadva") {
 		t.Errorf("body missing localized access-denied heading")
 	}
+}
+
+func TestAdminListRendersAccountsAndPagination(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminAccounts = &adminAccountListerStub{page: service.AdminUserPage{
+		Total: 45,
+		Page:  2,
+		Size:  20,
+		Pages: 3,
+		Users: []service.User{
+			{ID: 1, Email: strPtr("alice@example.test"), IsAdmin: true, CreatedAt: 1700000000},
+			{ID: 2, Email: strPtr("bob@example.test"), CreatedAt: 1700000600, EmailVerifiedAt: intPtr(1700000600)},
+		},
+	}}
+	handler := newAdminTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.list(response, authenticatedRequest(http.MethodGet, "/en/admin/users?page=2", 7, ""))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	body := response.Body.String()
+	for _, want := range []string{"alice@example.test", "bob@example.test", "Administrator", "Unconfirmed", "Confirmed", `data-account-id="1"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("list body missing %q", want)
+		}
+	}
+	if !strings.Contains(body, "Previous") || !strings.Contains(body, "Next") {
+		t.Errorf("list body missing pagination controls")
+	}
+}
+
+func TestAdminListRendersEmptyState(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminAccounts = &adminAccountListerStub{page: service.AdminUserPage{Total: 0, Page: 1, Size: 20, Pages: 0}}
+	handler := newAdminTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.list(response, authenticatedRequest(http.MethodGet, "/en/admin/users?q=missing", 7, ""))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if !strings.Contains(response.Body.String(), "No accounts match") {
+		t.Errorf("body missing empty-state message")
+	}
+}
+
+func TestAdminListNormalizesQueryAndReflectsState(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	lister := &adminAccountListerStub{}
+	dependencies.AdminAccounts = lister
+	handler := newAdminTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	request := authenticatedRequest(http.MethodGet, "/en/admin/users?page=-3&size=9999&admin=yes&q=%20alice%20", 7, "")
+	handler.list(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if lister.received.Page != 1 || lister.received.Size != service.MaxAdminPageSize {
+		t.Fatalf("received query = %+v, want page 1 size %d", lister.received, service.MaxAdminPageSize)
+	}
+	if lister.received.Admin != service.AdminFilterYes || lister.received.Search != "alice" {
+		t.Fatalf("received filters = %+v, want admin yes search alice", lister.received)
+	}
+	if !strings.Contains(response.Body.String(), `value="alice"`) {
+		t.Errorf("body missing preserved search value")
+	}
+}
+
+func TestAdminListFragmentForHTMX(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminAccounts = &adminAccountListerStub{page: service.AdminUserPage{Total: 1, Page: 1, Size: 20, Pages: 1, Users: []service.User{{ID: 1, Email: strPtr("alice@example.test")}}}}
+	handler := newAdminTestHandler(t, dependencies)
+
+	request := authenticatedRequest(http.MethodGet, "/en/admin/users", 7, "")
+	request.Header.Set("HX-Request", "true")
+	response := httptest.NewRecorder()
+	handler.list(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	body := response.Body.String()
+	if strings.Contains(body, "<!doctype html>") {
+		t.Errorf("HTMX request returned a full document")
+	}
+	if !strings.Contains(body, `id="page-content"`) {
+		t.Errorf("fragment missing page-content region")
+	}
+	if !strings.Contains(body, "alice@example.test") {
+		t.Errorf("fragment missing account row")
+	}
+}
+
+func TestAdminListReportsRepositoryFailure(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminAccounts = &adminAccountListerStub{err: errListFailure}
+	handler := newAdminTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.list(response, authenticatedRequest(http.MethodGet, "/en/admin/users", 7, ""))
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusInternalServerError)
+	}
+}
+
+func intPtr(value int64) *int64 { return &value }
+
+var errListFailure = errors.New("list failure")
+
+type adminAccountListerStub struct {
+	page     service.AdminUserPage
+	err      error
+	received service.AdminUserQuery
+}
+
+func (s *adminAccountListerStub) List(_ context.Context, query service.AdminUserQuery) (service.AdminUserPage, error) {
+	s.received = query
+	if s.err != nil {
+		return service.AdminUserPage{}, s.err
+	}
+	return s.page, nil
 }
