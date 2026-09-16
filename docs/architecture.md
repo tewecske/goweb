@@ -45,6 +45,7 @@ Delivered feature areas:
 - `internal/service/runtime.go` reports live version, uptime, runtime, and migration state on the same page; `internal/app` adapts the migration runner so the HTTP adapter never imports the store package.
 - `internal/service/stats.go` and `internal/store/postgres/stats.go` supply cached aggregate data-store counts for the system page while current lockouts stay live.
 - `internal/service/rate_limit_admin.go` lists live budgets with redacted key hints and clears them through a separate, confirmed, audited action on `/{language}/admin/ratelimits`.
+- `internal/service/usage.go`, `internal/adapter/http/middleware/usage.go`, and `internal/store/postgres/usage.go` record one normalized usage event per request through a bounded queue that applies backpressure and never fails the request.
 - Localized routes live under `/{language}/account/settings`, `/{language}/account/theme`, and `/{language}/groups`.
 
 The public foundation route remains `GET /healthz`.

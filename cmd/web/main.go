@@ -122,6 +122,7 @@ func main() {
 			AdminRuntime:         applicationGraph.RuntimeInfo,
 			AdminDatastoreStats:  applicationGraph.DatastoreStatsService,
 			AdminRateLimits:      applicationGraph.RateLimits,
+			Usage:                httpadapter.NewUsageRecorder(applicationGraph.Usage),
 		})
 	}
 
@@ -141,6 +142,14 @@ func main() {
 		go func() {
 			if err := applicationGraph.Maintenance.Run(ctx); err != nil {
 				applicationLogger.Error("maintenance worker stopped", "error", err)
+			}
+		}()
+	}
+	if applicationGraph != nil && applicationGraph.Usage != nil {
+		applicationGraph.Usage.SetLogger(applicationLogger)
+		go func() {
+			if err := applicationGraph.Usage.Run(ctx); err != nil {
+				applicationLogger.Error("usage queue stopped", "error", err)
 			}
 		}()
 	}

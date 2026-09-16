@@ -67,6 +67,8 @@ type Dependencies struct {
 	AdminRuntime        AdminRuntimeProvider
 	AdminDatastoreStats AdminDatastoreStatsReader
 	AdminRateLimits     AdminRateLimitManager
+
+	Usage middleware.UsageRecorder
 }
 
 // AdminAccountLister lists accounts for the administrator area.

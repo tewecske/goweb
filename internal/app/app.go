@@ -37,6 +37,7 @@ type Graph struct {
 	LoginAttempts         *postgresstore.LoginAttemptRepository
 	Retention             *postgresstore.RetentionRepository
 	DatastoreStats        *postgresstore.DatastoreStatsRepository
+	UsageEvents           *postgresstore.UsageEventRepository
 	Providers             *service.ProviderRegistry
 	SessionService        *service.SessionService
 	PasswordHasher        *service.PasswordHasher
@@ -72,6 +73,7 @@ type Graph struct {
 	RuntimeInfo           *service.RuntimeInfoService
 	DatastoreStatsService *service.DatastoreStatsService
 	RateLimits            *service.RateLimitAdminService
+	Usage                 *service.UsageQueue
 }
 
 // New constructs the service graph over one migrated database. It performs no
@@ -140,6 +142,10 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	datastoreStatsRepository, err := postgresstore.NewDatastoreStatsRepository(database)
 	if err != nil {
 		return nil, fmt.Errorf("construct datastore stats repository: %w", err)
+	}
+	usageEventRepository, err := postgresstore.NewUsageEventRepository(database)
+	if err != nil {
+		return nil, fmt.Errorf("construct usage event repository: %w", err)
 	}
 
 	sessionService, err := service.NewSessionService(sessionsRepository, appConfig.SessionLifetime)
@@ -303,6 +309,10 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct rate limit admin service: %w", err)
 	}
+	usageQueue, err := service.NewUsageQueue(usageEventRepository, service.DefaultUsageQueueCapacity)
+	if err != nil {
+		return nil, fmt.Errorf("construct usage queue: %w", err)
+	}
 	maintenanceWorker, err := service.NewMaintenanceWorker(
 		service.DefaultMaintenanceInterval,
 		service.MaintenanceJob{Name: service.MaintenanceJobGuestCleanup, Run: guestCleanup.Cleanup},
@@ -356,6 +366,8 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		DatastoreStats:        datastoreStatsRepository,
 		DatastoreStatsService: datastoreStats,
 		RateLimits:            rateLimits,
+		UsageEvents:           usageEventRepository,
+		Usage:                 usageQueue,
 	}, nil
 }
 
