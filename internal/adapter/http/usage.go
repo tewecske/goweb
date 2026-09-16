@@ -29,6 +29,7 @@ func (r usageRecorder) EnqueueUsage(ctx context.Context, event middleware.UsageE
 		Route:     event.Route,
 		Status:    event.Status,
 		RequestID: event.RequestID,
+		TraceID:   event.TraceID,
 		UserID:    event.UserID,
 	}
 	if event.IP != "" {

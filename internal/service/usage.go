@@ -47,6 +47,7 @@ type UsageEvent struct {
 	Route     string
 	Status    int
 	RequestID string
+	TraceID   string
 	UserID    *int64
 	IP        *string
 }
@@ -242,6 +243,11 @@ func normalizeUsageEvent(event UsageEvent, now int64) (UsageEvent, error) {
 		return UsageEvent{}, ErrInvalidUsageEvent
 	}
 	normalized.RequestID = requestID
+	traceID := strings.TrimSpace(event.TraceID)
+	if len(traceID) > MaxUsageRequestIDLength || (traceID != "" && !printable(traceID)) {
+		return UsageEvent{}, ErrInvalidUsageEvent
+	}
+	normalized.TraceID = traceID
 	if event.UserID != nil && *event.UserID > 0 {
 		userID := *event.UserID
 		normalized.UserID = &userID

@@ -92,6 +92,24 @@ test.describe("M8 rate-limit administration", () => {
   });
 });
 
+test.describe("M8 tracing boundaries", () => {
+  test.skip(!enabled, "set GOWEB_BROWSER_E2E=1 to run browser acceptance specs");
+
+  test("requests carry a server request id and tolerate trace context", async ({ request }) => {
+    const response = await request.get("/healthz", {
+      headers: { traceparent: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01" },
+    });
+    expect(response.status()).toBe(200);
+    expect(response.headers()["x-request-id"]).toBeTruthy();
+  });
+
+  test("denied admin requests still resolve to access control", async ({ request }) => {
+    const response = await request.get("/en/admin/system", { maxRedirects: 0 });
+    expect([301, 302, 303, 307, 308]).toContain(response.status());
+    expect(response.headers()["x-request-id"]).toBeTruthy();
+  });
+});
+
 test.describe("M8 usage reports", () => {
   test.skip(!enabled, "set GOWEB_BROWSER_E2E=1 to run browser acceptance specs");
   test.skip(!adminEnabled, "requires database and bootstrap administrator fixture");

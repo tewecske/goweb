@@ -19,6 +19,7 @@ type UsageEvent struct {
 	Route     string
 	Status    int
 	RequestID string
+	TraceID   string
 	UserID    *int64
 	IP        string
 }
@@ -56,6 +57,9 @@ func Usage(recorder UsageRecorder, normalize RouteNormalizer) Middleware {
 				Status:    status,
 				RequestID: requestID(request.Context()),
 				IP:        requestOriginHost(request.RemoteAddr),
+			}
+			if trace, ok := TraceContextFromContext(request.Context()); ok {
+				event.TraceID = trace.TraceID
 			}
 			if principal, ok := PrincipalFromContext(request.Context()); ok {
 				if id, err := strconv.ParseInt(principal.ID, 10, 64); err == nil && id > 0 {

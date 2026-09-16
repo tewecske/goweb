@@ -38,9 +38,9 @@ func (r *UsageEventRepository) RecordUsageEvent(ctx context.Context, event servi
 		createdAt = time.Now().Unix()
 	}
 	if _, err := db.ExecContext(ctx, `
-		INSERT INTO usage_events (created_at, method, route, status, request_id, user_id, ip)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`, createdAt, event.Method, event.Route, event.Status, nullableUsageRequestID(event.RequestID), event.UserID, event.IP); err != nil {
+		INSERT INTO usage_events (created_at, method, route, status, request_id, trace_id, user_id, ip)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`, createdAt, event.Method, event.Route, event.Status, nullableUsageRequestID(event.RequestID), nullableUsageRequestID(event.TraceID), event.UserID, event.IP); err != nil {
 		return wrapOperation("record usage event", err)
 	}
 	return nil

@@ -46,6 +46,7 @@ Use Go 1.26 language features only. Prefer standard-library packages. Add third-
 - Never log or return passwords, hashes, session credentials, tokens, provider identifiers, database credentials, mail credentials, query strings, or other secrets.
 - Do not log full URLs. Use safe method, status, duration, and request ID fields.
 - Keep security events separately identifiable from ordinary application logs.
+- Start one server span per request with stable, low-cardinality route names. Continue an incoming W3C trace context only from a configured trusted proxy, and keep query strings out of span names and attributes.
 - Use `html/template` for user-controlled HTML output. Keep authorization, CSRF protection, and validation server-side.
 - State-changing form and HTMX requests require a server-validated CSRF token; compare tokens in constant time.
 - Protected routes must use authentication middleware explicitly.

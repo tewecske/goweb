@@ -72,6 +72,9 @@ type Dependencies struct {
 
 	AdminUsage      AdminUsageReporter
 	AdminSuspicious AdminSuspiciousReporter
+
+	Tracer         middleware.SpanTracer
+	SecurityLogger middleware.SecurityRequestLogger
 }
 
 // AdminAccountLister lists accounts for the administrator area.

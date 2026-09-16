@@ -48,6 +48,7 @@ Delivered feature areas:
 - `internal/service/usage.go`, `internal/adapter/http/middleware/usage.go`, and `internal/store/postgres/usage.go` record one normalized usage event per request through a bounded queue that applies backpressure and never fails the request. Storage failures are retried with bounded backoff and each event keeps the server request ID that links it back to the originating request.
 - `internal/service/usage_report.go` and `internal/store/postgres/usage_report.go` report most-used and least-used normalized routes for a URL-selected window, plus live queue health, on `/{language}/admin/usage`.
 - `internal/service/suspicious.go` and `internal/store/postgres/suspicious.go` flag accounts exceeding action-count or distinct-origin thresholds on `/{language}/admin/suspicious`; the page frames the flags as investigation signals.
+- `internal/adapter/http/tracer.go` starts one server span per request, continues a valid W3C `traceparent` only from a configured trusted proxy, and logs stable route names. Denied and rate-limited requests emit separately identifiable security events, and usage events keep both the request ID and trace ID that link them to the originating request.
 - Localized routes live under `/{language}/account/settings`, `/{language}/account/theme`, and `/{language}/groups`.
 
 The public foundation route remains `GET /healthz`.

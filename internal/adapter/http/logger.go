@@ -58,6 +58,19 @@ func (l *Logger) LogSecurity(ctx context.Context, event SecurityEvent) {
 	)
 }
 
+// LogSecurityRequest implements middleware.SecurityRequestLogger. Denied and
+// rate-limited requests are emitted only on the security stream.
+func (l *Logger) LogSecurityRequest(ctx context.Context, event middleware.SecurityRequestEvent) {
+	l.security.WarnContext(ctx, "security event",
+		"stream", "security",
+		"event", "http_denied",
+		"request_id", event.RequestID,
+		"method", event.Method,
+		"route", event.Route,
+		"status", event.Status,
+	)
+}
+
 // AuditSecuritySink mirrors stored administrator actions to the security log
 // stream. It never includes target identifiers, credentials, or tokens.
 type AuditSecuritySink struct {
@@ -84,3 +97,5 @@ func (s *AuditSecuritySink) AuditRecorded(ctx context.Context, record service.Au
 var _ service.AuditSink = (*AuditSecuritySink)(nil)
 
 var _ middleware.RequestLogger = (*Logger)(nil)
+
+var _ middleware.SecurityRequestLogger = (*Logger)(nil)

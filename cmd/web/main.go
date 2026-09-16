@@ -77,6 +77,10 @@ func main() {
 		}
 		applicationGraph.Audit.SetSink(httpadapter.NewAuditSecuritySink(logger))
 		applicationGraph.RuntimeInfo.SetMigrations(app.NewMigrationStatusProvider(migrator))
+		spanTracer := httpadapter.NewSpanTracer(httpadapter.SpanTracerConfig{
+			Logger:       applicationLogger,
+			TrustedProxy: appConfig.TrustedProxy,
+		})
 		serverOptions = append(serverOptions, appserver.WithDependency(database))
 		router = httpadapter.NewLoggedRouterWithServices(logger, httpadapter.Dependencies{
 			Users:                applicationGraph.Users,
@@ -125,6 +129,8 @@ func main() {
 			Usage:                httpadapter.NewUsageRecorder(applicationGraph.Usage),
 			AdminUsage:           applicationGraph.UsageReportService,
 			AdminSuspicious:      applicationGraph.SuspiciousService,
+			Tracer:               spanTracer,
+			SecurityLogger:       logger,
 		})
 	}
 

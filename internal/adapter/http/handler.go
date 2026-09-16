@@ -145,6 +145,12 @@ func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware
 		middleware.WithRequestInfo(),
 		middleware.Recover(recoveryLogger),
 	}
+	if dependencies.Tracer != nil {
+		shared = append(shared, middleware.Span(dependencies.Tracer, NormalizeUsageRoute))
+	}
+	if dependencies.SecurityLogger != nil {
+		shared = append(shared, middleware.SecurityEvents(dependencies.SecurityLogger, NormalizeUsageRoute))
+	}
 	if dependencies.Usage != nil {
 		shared = append(shared, middleware.Usage(dependencies.Usage, NormalizeUsageRoute))
 	}

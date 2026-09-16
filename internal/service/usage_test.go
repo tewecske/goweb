@@ -213,14 +213,15 @@ func TestUsageQueuePreservesRequestLink(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() { done <- queue.Run(ctx) }()
-	if err := queue.EnqueueUsage(context.Background(), UsageEvent{Method: "GET", Route: "/a", Status: 200, RequestID: "request-123"}); err != nil {
+	if err := queue.EnqueueUsage(context.Background(), UsageEvent{Method: "GET", Route: "/a", Status: 200, RequestID: "request-123", TraceID: "trace-456"}); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool { return repository.count() == 1 })
 	cancel()
 	<-done
-	if stored := repository.last(); stored.RequestID != "request-123" {
-		t.Fatalf("stored request id = %q, want request-123", stored.RequestID)
+	stored := repository.last()
+	if stored.RequestID != "request-123" || stored.TraceID != "trace-456" {
+		t.Fatalf("stored link = %q/%q, want request-123/trace-456", stored.RequestID, stored.TraceID)
 	}
 }
 
