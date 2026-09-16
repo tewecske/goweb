@@ -1,0 +1,29 @@
+{{define "admin"}}
+  {{template "layout" .}}
+{{end}}
+
+{{define "admin-fragment"}}
+  {{template "alerts-oob" .}}
+  <section id="page-content" aria-labelledby="page-heading">
+    <h1 id="page-heading" class="text-3xl font-semibold tracking-tight">{{.Heading}}</h1>
+    {{template "admin-content" .}}
+  </section>
+{{end}}
+
+{{define "admin-content"}}
+  <div id="page-content" class="mt-6 grid gap-6 w-full max-w-3xl">
+    <p class="text-sm opacity-70">{{.Description}}</p>
+    <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="admin-sections-heading">
+      <div class="card-body">
+        <h2 id="admin-sections-heading" class="card-title">{{.Labels.admin_sections}}</h2>
+        <ul class="menu">
+          {{with .Admin}}
+            {{range .Sections}}
+              <li><a href="{{.URL}}">{{.Label}}</a></li>
+            {{end}}
+          {{end}}
+        </ul>
+      </div>
+    </section>
+  </div>
+{{end}}

@@ -59,6 +59,7 @@ func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware
 	auth := newAuthHandler(renderer, dependencies)
 	settings := newSettingsHandler(renderer, dependencies)
 	groups := newGroupHandler(renderer, dependencies)
+	admin := newAdminHandler(renderer, dependencies)
 	for _, language := range locale.Codes() {
 		prefix := "/" + string(language)
 		mux.HandleFunc("GET "+prefix+"/sign-up", auth.signUp)
@@ -76,6 +77,7 @@ func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware
 		mux.HandleFunc("POST "+prefix+"/account/theme", settings.updateTheme)
 		mux.HandleFunc("GET "+prefix+"/groups", groups.list)
 		mux.HandleFunc("POST "+prefix+"/groups", groups.create)
+		mux.HandleFunc("GET "+prefix+"/admin", admin.index)
 		mux.HandleFunc("GET "+prefix+"/groups/join", groups.join)
 		mux.HandleFunc("POST "+prefix+"/groups/join", groups.join)
 		mux.HandleFunc("GET "+prefix+"/groups/{id}", groups.detail)

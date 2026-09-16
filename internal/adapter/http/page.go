@@ -64,6 +64,22 @@ type PageData struct {
 	Settings          *SettingsView
 	Groups            *GroupsView
 	Group             *GroupDetailView
+	Admin             *AdminView
+}
+
+// AdminView contains administrator page data. URLs are empty when a section is
+// not yet available, so navigation only advertises implemented routes.
+type AdminView struct {
+	IsAdmin  bool
+	Sections []AdminSectionView
+}
+
+// AdminSectionView is one administrator navigation entry.
+type AdminSectionView struct {
+	ID      string
+	Label   string
+	URL     string
+	Current bool
 }
 
 // GroupsView contains the group list and join/create affordances.
