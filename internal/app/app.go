@@ -33,6 +33,7 @@ type Graph struct {
 	Groups               *postgresstore.GroupRepository
 	GroupMemberships     *postgresstore.GroupMembershipRepository
 	AdminUsers           *postgresstore.AdminUserRepository
+	AuditLogs            *postgresstore.AuditLogRepository
 	Providers            *service.ProviderRegistry
 	SessionService       *service.SessionService
 	PasswordHasher       *service.PasswordHasher
@@ -57,6 +58,7 @@ type Graph struct {
 	Group                *service.GroupService
 	GroupJoin            *service.RateLimitedGroupJoiner
 	AdminAccounts        *service.AdminAccountService
+	Audit                *service.AuditService
 }
 
 // New constructs the service graph over one migrated database. It performs no
@@ -108,6 +110,10 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	adminUsersRepository, err := postgresstore.NewAdminUserRepository(database)
 	if err != nil {
 		return nil, fmt.Errorf("construct admin user repository: %w", err)
+	}
+	auditLogRepository, err := postgresstore.NewAuditLogRepository(database)
+	if err != nil {
+		return nil, fmt.Errorf("construct audit log repository: %w", err)
 	}
 
 	sessionService, err := service.NewSessionService(sessionsRepository, appConfig.SessionLifetime)
@@ -230,7 +236,11 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct group join service: %w", err)
 	}
-	adminAccounts, err := service.NewAdminAccountService(users, adminUsersRepository)
+	auditService, err := service.NewAuditService(auditLogRepository)
+	if err != nil {
+		return nil, fmt.Errorf("construct audit service: %w", err)
+	}
+	adminAccounts, err := service.NewAdminAccountService(users, adminUsersRepository, passwordHasher, auditService)
 	if err != nil {
 		return nil, fmt.Errorf("construct admin account service: %w", err)
 	}
@@ -251,6 +261,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		ProfileSettings: profileSettings, PasswordSettings: passwordSettings, LocaleSettings: localeSettings,
 		Groups: groupsRepository, GroupMemberships: groupMembershipsRepository, Group: groupService, GroupJoin: groupJoinService,
 		AdminUsers: adminUsersRepository, AdminAccounts: adminAccounts,
+		AuditLogs: auditLogRepository, Audit: auditService,
 	}, nil
 }
 

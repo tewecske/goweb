@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -102,23 +104,114 @@ type AdminUserRepository interface {
 	ListUsers(context.Context, AdminUserQuery) (AdminUserPage, error)
 }
 
+// AdminActionContext identifies the acting administrator and request origin
+// for one audited action. Origin is a safe client identifier, never a URL.
+type AdminActionContext struct {
+	ActorID int64
+	Origin  string
+}
+
+// AdminAccountInput contains the values an administrator supplies when creating
+// or editing an account. An empty password leaves the account without a
+// password; on edit it keeps the existing password.
+type AdminAccountInput struct {
+	Email    string
+	Password string
+	IsAdmin  bool
+}
+
 // AdminAccountService owns administrator account use cases. It applies server
 // side validation before every repository call.
 type AdminAccountService struct {
 	users      UserRepository
 	adminUsers AdminUserRepository
+	hasher     PasswordHashProvider
+	auditor    AuditRecorder
 }
 
 // NewAdminAccountService constructs administrator account use cases with
-// explicit account and list persistence.
-func NewAdminAccountService(users UserRepository, adminUsers AdminUserRepository) (*AdminAccountService, error) {
+// explicit account, list, password, and audit dependencies. The auditor is
+// optional and never blocks an account action on a recording failure.
+func NewAdminAccountService(users UserRepository, adminUsers AdminUserRepository, hasher PasswordHashProvider, auditor AuditRecorder) (*AdminAccountService, error) {
 	if users == nil {
 		return nil, ErrNilUserRepository
 	}
 	if adminUsers == nil {
 		return nil, ErrNilAdminUserRepository
 	}
-	return &AdminAccountService{users: users, adminUsers: adminUsers}, nil
+	if hasher == nil {
+		return nil, errors.New("service: nil admin password hasher")
+	}
+	return &AdminAccountService{users: users, adminUsers: adminUsers, hasher: hasher, auditor: auditor}, nil
+}
+
+// Create provisions a confirmed account with an optional password and
+// administrator status. A supplied audit failure never undoes the creation.
+func (s *AdminAccountService) Create(ctx context.Context, actor AdminActionContext, input AdminAccountInput) (User, error) {
+	if s == nil || s.users == nil || s.adminUsers == nil || s.hasher == nil {
+		return User{}, ErrInvalidAdminQuery
+	}
+	if ctx == nil {
+		return User{}, errors.New("service: nil admin create context")
+	}
+	if actor.ActorID <= 0 {
+		return User{}, ErrInvalidAdminQuery
+	}
+	email, err := NormalizeEmail(input.Email)
+	if err != nil || email == "" {
+		return User{}, ErrInvalidEmail
+	}
+	var passwordHash *string
+	if input.Password != "" {
+		if err := ValidatePassword(input.Password); err != nil {
+			return User{}, err
+		}
+		hash, err := s.hasher.Hash(input.Password)
+		if err != nil {
+			return User{}, err
+		}
+		passwordHash = &hash
+	}
+	now := time.Now().Unix()
+	verifiedAt := now
+	created, err := s.users.CreateUser(ctx, User{
+		Email:           &email,
+		PasswordHash:    passwordHash,
+		IsAdmin:         input.IsAdmin,
+		Theme:           defaultUserTheme,
+		Locale:          defaultUserLocale,
+		CreatedAt:       now,
+		EmailVerifiedAt: &verifiedAt,
+	})
+	if err != nil {
+		return User{}, err
+	}
+	if created.ID <= 0 {
+		return User{}, ErrInvalidCreatedUser
+	}
+	created.PasswordHash = nil
+	s.record(ctx, actor, AuditActionAccountCreated, created, email)
+	return created, nil
+}
+
+// record stores one administrator action as a best-effort audit event. A
+// recording failure must not undo the completed account action.
+func (s *AdminAccountService) record(ctx context.Context, actor AdminActionContext, action string, target User, detail string) {
+	if s == nil || s.auditor == nil {
+		return
+	}
+	record := AuditRecord{
+		ActorUserID: actor.ActorID,
+		Action:      action,
+		TargetType:  "user",
+		TargetID:    strconv.FormatInt(target.ID, 10),
+		Detail:      detail,
+		IP:          actor.Origin,
+	}
+	if actorUser, err := s.users.FindUserByID(ctx, actor.ActorID); err == nil && actorUser.Email != nil {
+		record.ActorEmail = *actorUser.Email
+	}
+	_ = s.auditor.Record(ctx, record)
 }
 
 // List returns one bounded page of accounts.

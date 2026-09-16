@@ -106,6 +106,9 @@ type AdminListView struct {
 	Rows            []AdminUserRowView
 	SortURLs        map[string]string
 	FilterURLs      map[string]string
+	Creating        bool
+	CreateURL       string
+	CreateLabel     string
 }
 
 // AdminUserRowView is one account row in the administrator list.

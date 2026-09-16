@@ -97,6 +97,7 @@ func main() {
 			GroupInvites:         applicationGraph.Group,
 			JoinGroup:            applicationGraph.GroupJoin,
 			AdminAccounts:        applicationGraph.AdminAccounts,
+			AdminAccountCreator:  applicationGraph.AdminAccounts,
 		})
 	}
 

@@ -52,12 +52,18 @@ type Dependencies struct {
 	GroupInvites GroupInviter
 	JoinGroup    JoinRateLimitedGroupJoiner
 
-	AdminAccounts AdminAccountLister
+	AdminAccounts       AdminAccountLister
+	AdminAccountCreator AdminAccountCreator
 }
 
 // AdminAccountLister lists accounts for the administrator area.
 type AdminAccountLister interface {
 	List(context.Context, service.AdminUserQuery) (service.AdminUserPage, error)
+}
+
+// AdminAccountCreator provisions a confirmed account for an administrator.
+type AdminAccountCreator interface {
+	Create(context.Context, service.AdminActionContext, service.AdminAccountInput) (service.User, error)
 }
 
 // UserFinder resolves an account for an authenticated session.

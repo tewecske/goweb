@@ -250,3 +250,129 @@ func (s *adminAccountListerStub) List(_ context.Context, query service.AdminUser
 	}
 	return s.page, nil
 }
+
+func TestAdminCreateAccountRendersForm(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminAccountCreator = &adminAccountCreatorStub{}
+	handler := newAdminTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.createAccount(response, authenticatedRequest(http.MethodGet, "/en/admin/users/new", 7, ""))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	body := response.Body.String()
+	for _, want := range []string{"Create account", `name="email"`, `name="password"`, `name="is_admin"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("create form missing %q", want)
+		}
+	}
+}
+
+func TestAdminCreateAccountSucceeds(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	creator := &adminAccountCreatorStub{created: service.User{ID: 11}}
+	dependencies.AdminAccountCreator = creator
+	handler := newAdminTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.createAccount(response, authenticatedRequest(http.MethodPost, "/en/admin/users/new", 7, "email=New@Example.Test&password=correct-horse-battery&is_admin=true"))
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusSeeOther)
+	}
+	if location := response.Header().Get("Location"); location != "/en/admin/users" {
+		t.Fatalf("redirect = %q, want /en/admin/users", location)
+	}
+	if creator.received.Email != "New@Example.Test" || !creator.received.IsAdmin {
+		t.Fatalf("input = %+v, want submitted values", creator.received)
+	}
+	if creator.actor.ActorID != 7 {
+		t.Fatalf("actor = %+v, want id 7", creator.actor)
+	}
+}
+
+func TestAdminCreateAccountHTMXRedirect(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminAccountCreator = &adminAccountCreatorStub{created: service.User{ID: 11}}
+	handler := newAdminTestHandler(t, dependencies)
+
+	request := authenticatedRequest(http.MethodPost, "/en/admin/users/new", 7, "email=new@example.test")
+	request.Header.Set("HX-Request", "true")
+	response := httptest.NewRecorder()
+	handler.createAccount(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if got := response.Header().Get("HX-Redirect"); got != "/en/admin/users" {
+		t.Fatalf("HX-Redirect = %q, want /en/admin/users", got)
+	}
+}
+
+func TestAdminCreateAccountRejectsDuplicateEmail(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminAccountCreator = &adminAccountCreatorStub{err: service.ErrDuplicateEmail}
+	handler := newAdminTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.createAccount(response, authenticatedRequest(http.MethodPost, "/en/admin/users/new", 7, "email=dup@example.test"))
+	if response.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusConflict)
+	}
+	if !strings.Contains(response.Body.String(), "already uses this email") {
+		t.Errorf("body missing duplicate-email message")
+	}
+}
+
+func TestAdminCreateAccountRejectsInvalidInput(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		contains string
+	}{
+		{name: "invalid email", err: service.ErrInvalidEmail, contains: "valid email"},
+		{name: "weak password", err: service.ErrPasswordTooShort, contains: "between 8 and 128"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dependencies := adminStubDependencies(t, true)
+			dependencies.AdminAccountCreator = &adminAccountCreatorStub{err: test.err}
+			handler := newAdminTestHandler(t, dependencies)
+			response := httptest.NewRecorder()
+			handler.createAccount(response, authenticatedRequest(http.MethodPost, "/en/admin/users/new", 7, "email=a@example.test"))
+			if response.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("status = %d, want %d", response.Code, http.StatusUnprocessableEntity)
+			}
+			if !strings.Contains(response.Body.String(), test.contains) {
+				t.Errorf("body missing %q", test.contains)
+			}
+		})
+	}
+}
+
+func TestAdminCreateAccountRejectsNonAdmin(t *testing.T) {
+	dependencies := adminStubDependencies(t, false)
+	dependencies.AdminAccountCreator = &adminAccountCreatorStub{}
+	handler := newAdminTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.createAccount(response, authenticatedRequest(http.MethodGet, "/en/admin/users/new", 7, ""))
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+}
+
+type adminAccountCreatorStub struct {
+	created  service.User
+	err      error
+	actor    service.AdminActionContext
+	received service.AdminAccountInput
+}
+
+func (s *adminAccountCreatorStub) Create(_ context.Context, actor service.AdminActionContext, input service.AdminAccountInput) (service.User, error) {
+	s.actor = actor
+	s.received = input
+	if s.err != nil {
+		return service.User{}, s.err
+	}
+	return s.created, nil
+}

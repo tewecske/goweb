@@ -41,6 +41,43 @@
   <div id="page-content" class="mt-6 grid gap-6 w-full max-w-5xl">
     <p class="text-sm opacity-70">{{$.Description}}</p>
 
+    {{if .Creating}}
+      <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="admin-create-heading">
+        <div class="card-body">
+          <h2 id="admin-create-heading" class="card-title">{{$.Labels.admin_create_heading}}</h2>
+          <form class="grid gap-4" method="post" action="{{.CreateURL}}"
+                hx-post="{{.CreateURL}}" hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this">
+            <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+            <fieldset class="fieldset">
+              <label class="fieldset-legend" for="admin-account-email">{{$.Labels.admin_account_email}}</label>
+              <input id="admin-account-email" class="input w-full" type="email" name="email" required
+                     value="{{$.Form.Value "email"}}" aria-describedby="admin-account-email-error">
+              {{with $.Form.Error "email"}}<p id="admin-account-email-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
+            </fieldset>
+            <fieldset class="fieldset">
+              <label class="fieldset-legend" for="admin-account-password">{{$.Labels.admin_account_password}}</label>
+              <input id="admin-account-password" class="input w-full" type="password" name="password"
+                     autocomplete="new-password" aria-describedby="admin-account-password-error admin-account-password-help">
+              <p id="admin-account-password-help" class="text-sm opacity-70">{{$.Labels.admin_account_password_help}}</p>
+              {{with $.Form.Error "password"}}<p id="admin-account-password-error" class="text-sm text-error" role="alert">{{.}}</p>{{end}}
+            </fieldset>
+            <label class="label cursor-pointer justify-start gap-3" for="admin-account-is-admin">
+              <input id="admin-account-is-admin" class="checkbox" type="checkbox" name="is_admin" value="true">
+              <span class="label-text">{{$.Labels.admin_account_is_admin}}</span>
+            </label>
+            <div class="flex gap-2">
+              <button class="btn btn-primary" type="submit">{{$.Labels.admin_account_submit}}</button>
+              <a class="btn btn-ghost" href="{{.BaseURL}}">{{$.Labels.admin_account_cancel}}</a>
+              <span class="htmx-indicator loading loading-spinner" aria-hidden="true"></span>
+            </div>
+          </form>
+        </div>
+      </section>
+    {{else}}
+      <div class="flex justify-end">
+        <a class="btn btn-primary btn-sm" href="{{.CreateURL}}">{{$.Labels.admin_create}}</a>
+      </div>
+
     <form class="grid gap-4" method="get" action="{{.BaseURL}}"
           hx-get="{{.BaseURL}}" hx-target="#page-content" hx-swap="outerHTML"
           hx-replace-url="true" hx-trigger="input changed delay:350ms from:#admin-search, submit">
@@ -138,6 +175,7 @@
            hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{$.Labels.admin_next}}</a>
       {{end}}
     </nav>
+    {{end}}
   </div>
   {{end}}
 {{end}}
