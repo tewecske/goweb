@@ -141,6 +141,7 @@ func (h *authHandler) home(writer http.ResponseWriter, request *http.Request) {
 		FragmentTemplate: "home-fragment",
 		CSRFToken:        csrfToken(request),
 		GroupsURL:        groupsPath,
+		Labels:           h.formLabels(language),
 		Account: &AccountMenu{
 			Label:       accountLabel(user),
 			SettingsURL: settingsURL,
