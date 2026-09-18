@@ -40,11 +40,6 @@
           </div>
         </section>
       {{else}}
-        <div role="tablist" class="tabs tabs-box" aria-label="{{$.Labels.groups_sections}}">
-          <input id="groups-tab-list" type="radio" name="groups-tabs" class="tab" aria-label="{{$.Labels.groups_mine}}" checked>
-          <input id="groups-tab-join" type="radio" name="groups-tabs" class="tab" aria-label="{{$.Labels.groups_join}}">
-          <input id="groups-tab-create" type="radio" name="groups-tabs" class="tab" aria-label="{{$.Labels.groups_create}}">
-        </div>
         <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="groups-mine-heading">
           <div class="card-body">
             <h2 id="groups-mine-heading" class="card-title">{{$.Labels.groups_mine}}</h2>

@@ -13,13 +13,6 @@
 {{define "settings-content"}}
   <div id="page-content" class="grid gap-6 mt-6 w-full max-w-3xl">
     {{with .Settings}}
-    <div role="tablist" class="tabs tabs-box" aria-label="Account settings sections">
-      <input id="settings-tab-profile" type="radio" name="settings-tabs" class="tab" aria-label="{{$.Labels.settings_profile}}" checked>
-      <input id="settings-tab-password" type="radio" name="settings-tabs" class="tab" aria-label="{{$.Labels.settings_password}}">
-      <input id="settings-tab-preferences" type="radio" name="settings-tabs" class="tab" aria-label="{{$.Labels.settings_preferences}}">
-      <input id="settings-tab-identities" type="radio" name="settings-tabs" class="tab" aria-label="{{$.Labels.settings_identities}}">
-    </div>
-
     <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="profile-heading">
       <div class="card-body">
         <h2 id="profile-heading" class="card-title">{{$.Labels.settings_profile}}</h2>
