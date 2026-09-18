@@ -136,7 +136,7 @@ func TestNewHandlerRendersHTMXFragment(t *testing.T) {
 	if strings.Contains(body, "<!doctype html>") {
 		t.Error("HTMX response contains full document")
 	}
-	for _, fragment := range []string{`<section aria-labelledby="page-heading">`, `<h1 id="page-heading"`, "Welcome to GoWeb"} {
+	for _, fragment := range []string{`<section id="page-content" aria-labelledby="page-heading">`, `<h1 id="page-heading"`, "Welcome to GoWeb"} {
 		if !strings.Contains(body, fragment) {
 			t.Errorf("HTMX response missing %q", fragment)
 		}

@@ -4,8 +4,7 @@
 
 {{define "admin-fragment"}}
   {{template "alerts-oob" .}}
-  <section id="page-content" aria-labelledby="page-heading">
-    <h1 id="page-heading" class="text-3xl font-semibold tracking-tight">{{.Heading}}</h1>
+  <section id="page-content">
     {{template "admin-content" .}}
   </section>
 {{end}}
@@ -38,7 +37,7 @@
     {{if .Sections}}
       <div role="tablist" class="tabs tabs-border mt-6" aria-label="{{$.Labels.admin_sections}}">
         {{range .Sections}}
-          <a role="tab" class="tab {{if .Current}}tab-active{{end}}" href="{{.URL}}"
+          <a role="tab" class="tab text-lg {{if .Current}}tab-active{{end}}" href="{{.URL}}"
              aria-selected="{{if .Current}}true{{else}}false{{end}}" {{if .Current}}aria-current="page"{{end}}
              hx-get="{{.URL}}" hx-target="#page-content" hx-swap="outerHTML" hx-push-url="true">{{.Label}}</a>
         {{end}}

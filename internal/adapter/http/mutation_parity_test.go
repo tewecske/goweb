@@ -46,8 +46,8 @@ func assertMutationParity(t *testing.T, name string, full, htmx *httptest.Respon
 	if strings.Contains(htmxBody, "<!doctype html>") {
 		t.Errorf("%s HTMX response contains a complete document", name)
 	}
-	if !strings.Contains(htmxBody, `id="page-heading"`) {
-		t.Errorf("%s HTMX response missing accessible heading", name)
+	if !strings.Contains(htmxBody, `id="page-content"`) {
+		t.Errorf("%s HTMX response missing page content swap target", name)
 	}
 	if message != "" {
 		if !strings.Contains(fullBody, message) {

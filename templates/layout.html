@@ -76,7 +76,7 @@
     </header>
 
     <main class="mx-auto w-full max-w-5xl px-4 py-8">
-      <section aria-labelledby="page-heading">
+      <section{{if not .Admin}} aria-labelledby="page-heading"{{end}}>
         <div id="alerts" class="mb-6 space-y-2" role="region" aria-live="polite" aria-atomic="true">
           {{template "alerts-inner" .}}
         </div>
@@ -89,7 +89,7 @@
             </ul>
           </div>
         {{end}}
-        <h1 id="page-heading" class="text-3xl font-semibold tracking-tight">{{.Heading}}</h1>
+        {{if not .Admin}}<h1 id="page-heading" class="text-3xl font-semibold tracking-tight">{{.Heading}}</h1>{{end}}
         {{block "content" .}}{{end}}
       </section>
     </main>

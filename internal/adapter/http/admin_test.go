@@ -239,7 +239,7 @@ func TestAdminListRendersActiveSectionTab(t *testing.T) {
 	if wrapper < 0 || tabs < wrapper {
 		t.Errorf("section tabs must render inside the #page-content swap target")
 	}
-	if !strings.Contains(body, `<a role="tab" class="tab tab-active" href="/en/admin/users"`) {
+	if !strings.Contains(body, `<a role="tab" class="tab text-lg tab-active" href="/en/admin/users"`) {
 		t.Errorf("accounts section tab is not marked active")
 	}
 	if !strings.Contains(body, `href="/en/admin/audit"`) {
