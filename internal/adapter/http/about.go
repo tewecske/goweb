@@ -8,7 +8,7 @@ import (
 
 // about renders the public about page. It credits bundled third-party assets
 // and reproduces their license notices.
-func about(renderer *PageRenderer) http.HandlerFunc {
+func about(renderer *PageRenderer, auth *authHandler) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		language := resolveRequestLanguage(request, "")
 		messageIDs := []string{
@@ -45,7 +45,7 @@ func about(renderer *PageRenderer) http.HandlerFunc {
 			},
 		}
 		page.CSRFToken, _ = middleware.CSRFTokenFromContext(request.Context())
-		page.Navigation = publicNavigation(renderer, language)
+		applySessionState(renderer, auth, request, language, &page)
 		if err := renderer.RenderRequest(writer, request, page); err != nil {
 			http.Error(writer, "internal server error", http.StatusInternalServerError)
 		}

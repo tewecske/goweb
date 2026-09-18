@@ -54,7 +54,6 @@ type PageData struct {
 	Account           *AccountMenu
 	SignInURL         string
 	SignUpURL         string
-	GroupsURL         string
 	OAuthProviders    []OAuthProviderView
 	GuestBanner       bool
 	GuestOwned        bool

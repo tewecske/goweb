@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/tewecske/goweb/internal/adapter/http/middleware"
 )
 
 func TestNewHandler(t *testing.T) {
@@ -47,6 +49,38 @@ func TestNewHandlerAddsRequestID(t *testing.T) {
 	}
 	if len(requestID) != 32 {
 		t.Errorf("request id length = %d, want 32", len(requestID))
+	}
+}
+
+func TestAuthenticatedPublicPagesReflectSessionHeader(t *testing.T) {
+	dependencies := newHTTPTestDependencies(t)
+	handler := NewRouterWithServices(dependencies)
+	session := &http.Cookie{Name: middleware.DefaultSessionCookieName, Value: "opaque-session"}
+
+	for _, path := range []string{"/en/", "/en/about", "/en/home"} {
+		t.Run(path, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, path, nil)
+			request.AddCookie(session)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+
+			if response.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+			}
+			body := response.Body.String()
+			if strings.Contains(body, `href="/en/sign-in"`) {
+				t.Error("authenticated page advertised sign-in navigation")
+			}
+			if strings.Contains(body, `href="/en/sign-up"`) {
+				t.Error("authenticated page advertised sign-up navigation")
+			}
+			if !strings.Contains(body, `href="/en/groups"`) {
+				t.Error("authenticated page missing groups navigation")
+			}
+			if !strings.Contains(body, "user@example.test") {
+				t.Error("authenticated page missing account menu label")
+			}
+		})
 	}
 }
 

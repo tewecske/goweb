@@ -3,7 +3,6 @@ package httpadapter
 import (
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -110,28 +109,11 @@ func (h *authHandler) home(writer http.ResponseWriter, request *http.Request) {
 		h.renderError(writer, request, http.StatusUnauthorized)
 		return
 	}
-	principal, err := h.authenticator.Authenticate(request.Context(), request)
-	if errors.Is(err, middleware.ErrUnauthenticated) {
+	user, ok := h.currentUser(request)
+	if !ok {
 		h.redirectLocalized(writer, request, language, "/sign-in")
 		return
 	}
-	if err != nil {
-		h.renderError(writer, request, http.StatusInternalServerError)
-		return
-	}
-	userID, err := strconv.ParseInt(principal.ID, 10, 64)
-	if err != nil {
-		h.renderError(writer, request, http.StatusInternalServerError)
-		return
-	}
-	user, err := h.dependencies.Users.FindUserByID(request.Context(), userID)
-	if err != nil {
-		h.renderError(writer, request, http.StatusInternalServerError)
-		return
-	}
-	settingsURL := h.path(language, "/account/settings")
-	themeURL := h.path(language, "/account/theme")
-	groupsPath, _ := locale.Path(language, "/groups")
 	page := PageData{
 		Language:         string(language),
 		Title:            "GoWeb",
@@ -140,18 +122,18 @@ func (h *authHandler) home(writer http.ResponseWriter, request *http.Request) {
 		Template:         "home",
 		FragmentTemplate: "home-fragment",
 		CSRFToken:        csrfToken(request),
-		GroupsURL:        groupsPath,
 		Labels:           h.formLabels(language),
 		Account: &AccountMenu{
 			Label:       accountLabel(user),
-			SettingsURL: settingsURL,
+			SettingsURL: h.path(language, "/account/settings"),
 			SignOutURL:  h.path(language, "/sign-out"),
 			Theme:       user.Theme,
-			ThemeURL:    themeURL,
+			ThemeURL:    h.path(language, "/account/theme"),
 			IsAdmin:     user.IsAdmin,
 			AdminURL:    h.path(language, "/admin"),
 		},
 	}
+	page.Navigation = primaryNavigation(h.renderer, language, true)
 	h.renderPage(writer, request, page)
 }
 

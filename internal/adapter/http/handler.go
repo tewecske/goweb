@@ -54,9 +54,9 @@ func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware
 		panic(err)
 	}
 	mux.HandleFunc("GET /", defaultLocale)
-	mux.HandleFunc("GET /{language}", home(renderer))
-	mux.HandleFunc("GET /{language}/{path...}", localized(renderer))
 	auth := newAuthHandler(renderer, dependencies)
+	mux.HandleFunc("GET /{language}", home(renderer, auth))
+	mux.HandleFunc("GET /{language}/{path...}", localized(renderer, auth))
 	settings := newSettingsHandler(renderer, dependencies)
 	groups := newGroupHandler(renderer, dependencies)
 	admin := newAdminHandler(renderer, dependencies)
@@ -67,7 +67,7 @@ func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware
 		mux.HandleFunc("GET "+prefix+"/sign-in", auth.signIn)
 		mux.HandleFunc("POST "+prefix+"/sign-in", auth.signIn)
 		mux.HandleFunc("GET "+prefix+"/home", auth.home)
-		mux.HandleFunc("GET "+prefix+"/about", about(renderer))
+		mux.HandleFunc("GET "+prefix+"/about", about(renderer, auth))
 		mux.HandleFunc("POST "+prefix+"/sign-out", auth.signOut)
 		mux.HandleFunc("GET "+prefix+"/account/settings", settings.page)
 		mux.HandleFunc("POST "+prefix+"/account/settings/profile", settings.updateProfile)
@@ -197,7 +197,7 @@ func resolveRequestLanguage(request *http.Request, accountLanguage locale.Code) 
 	return language
 }
 
-func home(renderer *PageRenderer) http.HandlerFunc {
+func home(renderer *PageRenderer, auth *authHandler) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		language, route, ok := locale.ParsePath(request.URL.Path)
 		if !ok || route != "/" {
@@ -225,23 +225,38 @@ func home(renderer *PageRenderer) http.HandlerFunc {
 			SignUpURL:        mustLocalePath(language, "/sign-up"),
 		}
 		page.CSRFToken, _ = middleware.CSRFTokenFromContext(request.Context())
-		page.Navigation = publicNavigation(renderer, language)
+		applySessionState(renderer, auth, request, language, &page)
 		if err := renderer.RenderRequest(writer, request, page); err != nil {
 			http.Error(writer, "internal server error", http.StatusInternalServerError)
 		}
 	}
 }
 
-// publicNavigation builds the localized primary navigation for public pages.
-func publicNavigation(renderer *PageRenderer, language locale.Code) []NavigationItem {
-	defs := []struct {
-		messageID string
-		route     string
-	}{
+// applySessionState fills the shared header state so public pages reflect the
+// visitor's session instead of always advertising anonymous navigation.
+func applySessionState(renderer *PageRenderer, auth *authHandler, request *http.Request, language locale.Code, page *PageData) {
+	if user, ok := auth.currentUser(request); ok {
+		page.Account = settingsAccountMenu(language, user)
+		page.Navigation = primaryNavigation(renderer, language, true)
+		return
+	}
+	page.Navigation = primaryNavigation(renderer, language, false)
+}
+
+// primaryNavigation builds the localized primary navigation. Authenticated
+// clients see their account destinations; anonymous clients see sign-in.
+func primaryNavigation(renderer *PageRenderer, language locale.Code, authenticated bool) []NavigationItem {
+	defs := []navigationDefinition{
 		{messageID: "nav.home", route: "/"},
 		{messageID: "nav.about", route: "/about"},
-		{messageID: "nav.sign_in", route: "/sign-in"},
-		{messageID: "nav.sign_up", route: "/sign-up"},
+	}
+	if authenticated {
+		defs = append(defs, navigationDefinition{messageID: "groups.nav", route: "/groups"})
+	} else {
+		defs = append(defs,
+			navigationDefinition{messageID: "nav.sign_in", route: "/sign-in"},
+			navigationDefinition{messageID: "nav.sign_up", route: "/sign-up"},
+		)
 	}
 	navigation := make([]NavigationItem, 0, len(defs))
 	for _, def := range defs {
@@ -254,16 +269,21 @@ func publicNavigation(renderer *PageRenderer, language locale.Code) []Navigation
 	return navigation
 }
 
+type navigationDefinition struct {
+	messageID string
+	route     string
+}
+
 func mustLocalePath(language locale.Code, route string) string {
 	path, _ := locale.Path(language, route)
 	return path
 }
 
-func localized(renderer *PageRenderer) http.HandlerFunc {
+func localized(renderer *PageRenderer, auth *authHandler) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		_, route, ok := locale.ParsePath(request.URL.Path)
 		if ok && route == "/" {
-			home(renderer).ServeHTTP(writer, request)
+			home(renderer, auth).ServeHTTP(writer, request)
 			return
 		}
 		renderNotFound(renderer, writer, request)
