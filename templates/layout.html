@@ -58,6 +58,9 @@
             <summary class="btn btn-ghost" aria-label="Account menu">{{.Account.Label}}</summary>
             <ul class="menu dropdown-content z-10 mt-2 w-52 rounded-box bg-base-200 p-2 shadow" role="menu">
               <li role="none"><a role="menuitem" href="{{.Account.SettingsURL}}">Account settings</a></li>
+              {{if .Account.IsAdmin}}
+              <li role="none"><a role="menuitem" href="{{.Account.AdminURL}}">Admin</a></li>
+              {{end}}
                <li role="none">
                  <form method="post" action="{{.Account.SignOutURL}}">
                    <input type="hidden" name="_csrf" value="{{.CSRFToken}}">

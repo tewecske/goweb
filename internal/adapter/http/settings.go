@@ -419,6 +419,8 @@ func settingsAccountMenu(language locale.Code, user service.User) *AccountMenu {
 		SignOutURL:  mustLocalePath(language, "/sign-out"),
 		Theme:       user.Theme,
 		ThemeURL:    mustLocalePath(language, "/account/theme"),
+		IsAdmin:     user.IsAdmin,
+		AdminURL:    mustLocalePath(language, "/admin"),
 	}
 }
 

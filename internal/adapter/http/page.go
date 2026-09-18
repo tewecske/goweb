@@ -494,6 +494,8 @@ type AccountMenu struct {
 	SignOutURL  string
 	Theme       string
 	ThemeURL    string
+	IsAdmin     bool
+	AdminURL    string
 }
 
 // Alert is a user-facing status message. Level accepts info, success, warning,

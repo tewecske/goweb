@@ -148,6 +148,8 @@ func (h *authHandler) home(writer http.ResponseWriter, request *http.Request) {
 			SignOutURL:  h.path(language, "/sign-out"),
 			Theme:       user.Theme,
 			ThemeURL:    themeURL,
+			IsAdmin:     user.IsAdmin,
+			AdminURL:    h.path(language, "/admin"),
 		},
 	}
 	h.renderPage(writer, request, page)
