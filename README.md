@@ -68,6 +68,15 @@ sources `.env` automatically when the file exists. See
 make check
 ```
 
+## Credits
+
+Theme icons use [Heroicons](https://github.com/tailwindlabs/heroicons) by
+[Tailwind Labs](https://tailwindlabs.com), licensed under the
+[MIT License](https://github.com/tailwindlabs/heroicons/blob/master/LICENSE).
+
+Copyright (c) Tailwind Labs, Inc. The full license text is reproduced on the
+application about page.
+
 ## Decisions
 
 - Go 1.26.0 is language baseline; `go1.26.5` is current toolchain pin.

@@ -67,6 +67,7 @@ func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware
 		mux.HandleFunc("GET "+prefix+"/sign-in", auth.signIn)
 		mux.HandleFunc("POST "+prefix+"/sign-in", auth.signIn)
 		mux.HandleFunc("GET "+prefix+"/home", auth.home)
+		mux.HandleFunc("GET "+prefix+"/about", about(renderer))
 		mux.HandleFunc("POST "+prefix+"/sign-out", auth.signOut)
 		mux.HandleFunc("GET "+prefix+"/account/settings", settings.page)
 		mux.HandleFunc("POST "+prefix+"/account/settings/profile", settings.updateProfile)
@@ -224,25 +225,33 @@ func home(renderer *PageRenderer) http.HandlerFunc {
 			SignUpURL:        mustLocalePath(language, "/sign-up"),
 		}
 		page.CSRFToken, _ = middleware.CSRFTokenFromContext(request.Context())
-		for _, item := range []struct {
-			label string
-			route string
-		}{
-			{label: "Home", route: "/"},
-			{label: "Sign in", route: "/sign-in"},
-			{label: "Create account", route: "/sign-up"},
-		} {
-			path, err := locale.Path(language, item.route)
-			if err != nil {
-				http.Error(writer, "internal server error", http.StatusInternalServerError)
-				return
-			}
-			page.Navigation = append(page.Navigation, NavigationItem{Label: item.label, URL: path})
-		}
+		page.Navigation = publicNavigation(renderer, language)
 		if err := renderer.RenderRequest(writer, request, page); err != nil {
 			http.Error(writer, "internal server error", http.StatusInternalServerError)
 		}
 	}
+}
+
+// publicNavigation builds the localized primary navigation for public pages.
+func publicNavigation(renderer *PageRenderer, language locale.Code) []NavigationItem {
+	defs := []struct {
+		messageID string
+		route     string
+	}{
+		{messageID: "nav.home", route: "/"},
+		{messageID: "nav.about", route: "/about"},
+		{messageID: "nav.sign_in", route: "/sign-in"},
+		{messageID: "nav.sign_up", route: "/sign-up"},
+	}
+	navigation := make([]NavigationItem, 0, len(defs))
+	for _, def := range defs {
+		label, err := renderer.Translate(language, def.messageID)
+		if err != nil {
+			continue
+		}
+		navigation = append(navigation, NavigationItem{Label: label, URL: mustLocalePath(language, def.route)})
+	}
+	return navigation
 }
 
 func mustLocalePath(language locale.Code, route string) string {
