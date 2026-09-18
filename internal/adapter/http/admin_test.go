@@ -112,6 +112,41 @@ func TestAdminIndexAllowsAdministrator(t *testing.T) {
 	}
 }
 
+func TestAdminIndexRendersSectionTabs(t *testing.T) {
+	handler := newAdminTestHandler(t, adminStubDependencies(t, true))
+	response := httptest.NewRecorder()
+	handler.index(response, authenticatedRequest(http.MethodGet, "/en/admin", 7, ""))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, `role="tablist"`) {
+		t.Fatalf("body missing administrator section tablist")
+	}
+	if !strings.Contains(body, `href="/en/admin/users"`) || !strings.Contains(body, `href="/en/admin/suspicious"`) {
+		t.Errorf("body missing administrator section tab links")
+	}
+	if strings.Contains(body, "tab tab-active") {
+		t.Errorf("overview unexpectedly marks a section tab active")
+	}
+}
+
+func TestAdminSectionsMarksCurrentEntry(t *testing.T) {
+	handler := newAdminTestHandler(t, adminStubDependencies(t, true))
+	sections := handler.adminSections(locale.Code("en"), "system")
+	if len(sections) != len(adminSectionDefs) {
+		t.Fatalf("sections = %d, want %d", len(sections), len(adminSectionDefs))
+	}
+	for _, section := range sections {
+		if section.Label == "" || section.URL == "" {
+			t.Errorf("section %q missing label or URL", section.ID)
+		}
+		if want := section.ID == "system"; section.Current != want {
+			t.Errorf("section %q Current = %v, want %v", section.ID, section.Current, want)
+		}
+	}
+}
+
 func TestAdminIndexRejectsNonGET(t *testing.T) {
 	handler := newAdminTestHandler(t, adminStubDependencies(t, true))
 	response := httptest.NewRecorder()
@@ -160,6 +195,55 @@ func TestAdminListRendersAccountsAndPagination(t *testing.T) {
 	}
 	if !strings.Contains(body, "Previous") || !strings.Contains(body, "Next") {
 		t.Errorf("list body missing pagination controls")
+	}
+}
+
+func TestAdminListRendersVisibleFilterLabels(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminAccounts = &adminAccountListerStub{}
+	handler := newAdminTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.list(response, authenticatedRequest(http.MethodGet, "/en/admin/users", 7, ""))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	body := response.Body.String()
+	for _, legend := range []string{
+		`<legend class="fieldset-legend">Administrator</legend>`,
+		`<legend class="fieldset-legend">Guest</legend>`,
+		`<legend class="fieldset-legend">Confirmed</legend>`,
+	} {
+		if !strings.Contains(body, legend) {
+			t.Errorf("account filter missing visible label %q", legend)
+		}
+	}
+}
+
+func TestAdminListRendersActiveSectionTab(t *testing.T) {
+	dependencies := adminStubDependencies(t, true)
+	dependencies.AdminAccounts = &adminAccountListerStub{}
+	handler := newAdminTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.list(response, authenticatedRequest(http.MethodGet, "/en/admin/users", 7, ""))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	body := response.Body.String()
+	wrapper := strings.Index(body, `<div id="page-content">`)
+	tabs := strings.Index(body, `role="tablist"`)
+	if tabs < 0 {
+		t.Fatalf("body missing administrator section tablist")
+	}
+	if wrapper < 0 || tabs < wrapper {
+		t.Errorf("section tabs must render inside the #page-content swap target")
+	}
+	if !strings.Contains(body, `<a role="tab" class="tab tab-active" href="/en/admin/users"`) {
+		t.Errorf("accounts section tab is not marked active")
+	}
+	if !strings.Contains(body, `href="/en/admin/audit"`) {
+		t.Errorf("body missing audit section tab link")
 	}
 }
 

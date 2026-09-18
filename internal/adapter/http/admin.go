@@ -143,9 +143,10 @@ func (h *adminHandler) renderAudit(writer http.ResponseWriter, request *http.Req
 		Labels:           h.labels(language),
 		Account:          settingsAccountMenu(language, user),
 		Admin: &AdminView{
-			IsAdmin: true,
-			Page:    "audit",
-			Audit:   view,
+			IsAdmin:  true,
+			Page:     "audit",
+			Sections: h.adminSections(language, "audit"),
+			Audit:    view,
 		},
 	}
 	if err := h.settings.Render(writer, request, pageData, status); err != nil {
@@ -392,9 +393,10 @@ func (h *adminHandler) renderDetail(writer http.ResponseWriter, request *http.Re
 		Labels:           h.labels(language),
 		Account:          settingsAccountMenu(language, user),
 		Admin: &AdminView{
-			IsAdmin: true,
-			Page:    "detail",
-			Detail:  h.detailView(language, detail, lockout),
+			IsAdmin:  true,
+			Page:     "detail",
+			Sections: h.adminSections(language, "accounts"),
+			Detail:   h.detailView(language, detail, lockout),
 		},
 	}
 	if err := h.settings.Render(writer, request, pageData, status); err != nil {
@@ -803,9 +805,10 @@ func (h *adminHandler) renderUsers(writer http.ResponseWriter, request *http.Req
 		Labels:           h.labels(language),
 		Account:          settingsAccountMenu(language, user),
 		Admin: &AdminView{
-			IsAdmin: true,
-			Page:    "users",
-			List:    view,
+			IsAdmin:  true,
+			Page:     "users",
+			Sections: h.adminSections(language, "accounts"),
+			List:     view,
 		},
 	}
 	if err := h.settings.Render(writer, request, pageData, render.status); err != nil {
@@ -982,21 +985,45 @@ func (h *adminHandler) renderAdmin(writer http.ResponseWriter, request *http.Req
 		Labels:           h.labels(language),
 		Account:          settingsAccountMenu(language, user),
 		Admin: &AdminView{
-			IsAdmin: true,
-			Page:    "overview",
-			Sections: []AdminSectionView{
-				{ID: "accounts", Label: h.t(language, "admin.nav.accounts"), URL: localizedPath(language, "/admin/users")},
-				{ID: "audit", Label: h.t(language, "admin.nav.audit"), URL: localizedPath(language, "/admin/audit")},
-				{ID: "system", Label: h.t(language, "admin.nav.system"), URL: localizedPath(language, "/admin/system")},
-				{ID: "ratelimits", Label: h.t(language, "admin.nav.ratelimits"), URL: localizedPath(language, "/admin/ratelimits")},
-				{ID: "usage", Label: h.t(language, "admin.nav.usage"), URL: localizedPath(language, "/admin/usage")},
-				{ID: "suspicious", Label: h.t(language, "admin.nav.suspicious"), URL: localizedPath(language, "/admin/suspicious")},
-			},
+			IsAdmin:  true,
+			Page:     "overview",
+			Sections: h.adminSections(language, ""),
 		},
 	}
 	if err := h.settings.Render(writer, request, page, status); err != nil {
 		renderSimpleError(writer, request, http.StatusInternalServerError)
 	}
+}
+
+// adminSectionDefs lists the administrator navigation entries in display order.
+// Each entry maps one section ID to its translation key and canonical route.
+var adminSectionDefs = []struct {
+	ID      string
+	LabelID string
+	Route   string
+}{
+	{ID: "accounts", LabelID: "admin.nav.accounts", Route: "/admin/users"},
+	{ID: "audit", LabelID: "admin.nav.audit", Route: "/admin/audit"},
+	{ID: "system", LabelID: "admin.nav.system", Route: "/admin/system"},
+	{ID: "ratelimits", LabelID: "admin.nav.ratelimits", Route: "/admin/ratelimits"},
+	{ID: "usage", LabelID: "admin.nav.usage", Route: "/admin/usage"},
+	{ID: "suspicious", LabelID: "admin.nav.suspicious", Route: "/admin/suspicious"},
+}
+
+// adminSections builds the administrator tab navigation and marks the entry
+// whose ID matches current as active. An empty current marks no entry, which is
+// the case on the overview page.
+func (h *adminHandler) adminSections(language locale.Code, current string) []AdminSectionView {
+	sections := make([]AdminSectionView, 0, len(adminSectionDefs))
+	for _, def := range adminSectionDefs {
+		sections = append(sections, AdminSectionView{
+			ID:      def.ID,
+			Label:   h.t(language, def.LabelID),
+			URL:     localizedPath(language, def.Route),
+			Current: def.ID == current,
+		})
+	}
+	return sections
 }
 
 func (h *adminHandler) labels(language locale.Code) map[string]string {
@@ -1294,6 +1321,7 @@ func (h *adminHandler) renderSuspicious(writer http.ResponseWriter, request *htt
 		Admin: &AdminView{
 			IsAdmin:    true,
 			Page:       "suspicious",
+			Sections:   h.adminSections(language, "suspicious"),
 			Suspicious: view,
 		},
 	}
@@ -1371,9 +1399,10 @@ func (h *adminHandler) renderUsage(writer http.ResponseWriter, request *http.Req
 		Labels:           h.labels(language),
 		Account:          settingsAccountMenu(language, user),
 		Admin: &AdminView{
-			IsAdmin: true,
-			Page:    "usage",
-			Usage:   view,
+			IsAdmin:  true,
+			Page:     "usage",
+			Sections: h.adminSections(language, "usage"),
+			Usage:    view,
 		},
 	}
 	if err := h.settings.Render(writer, request, pageData, status); err != nil {
@@ -1478,9 +1507,10 @@ func (h *adminHandler) renderRateLimits(writer http.ResponseWriter, request *htt
 		Labels:           h.labels(language),
 		Account:          settingsAccountMenu(language, user),
 		Admin: &AdminView{
-			IsAdmin: true,
-			Page:    "ratelimits",
-			Limits:  view,
+			IsAdmin:  true,
+			Page:     "ratelimits",
+			Sections: h.adminSections(language, "ratelimits"),
+			Limits:   view,
 		},
 	}
 	if err := h.settings.Render(writer, request, pageData, status); err != nil {
@@ -1561,9 +1591,10 @@ func (h *adminHandler) renderSystem(writer http.ResponseWriter, request *http.Re
 		Labels:           h.labels(language),
 		Account:          settingsAccountMenu(language, user),
 		Admin: &AdminView{
-			IsAdmin: true,
-			Page:    "system",
-			System:  view,
+			IsAdmin:  true,
+			Page:     "system",
+			Sections: h.adminSections(language, "system"),
+			System:   view,
 		},
 	}
 	if err := h.settings.Render(writer, request, pageData, status); err != nil {

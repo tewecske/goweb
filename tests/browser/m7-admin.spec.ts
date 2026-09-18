@@ -144,6 +144,23 @@ test.describe("M7 administrator workflows", () => {
     await expect(page.getByText(/no accounts match/i)).toBeVisible();
   });
 
+  test("sections render as labelled tabs and account filters are labelled", async ({ page }) => {
+    await signInAdmin(page);
+    await page.goto("/en/admin/users");
+
+    const sections = page.getByRole("tablist", { name: /sections/i });
+    await expect(sections).toBeVisible();
+    await expect(page.getByRole("tab", { name: /^accounts$/i })).toHaveAttribute("aria-current", "page");
+
+    for (const name of ["Administrator", "Guest", "Confirmed"]) {
+      await expect(page.getByRole("group", { name })).toBeVisible();
+    }
+
+    await page.getByRole("tab", { name: /^audit log$/i }).click();
+    await expect(page).toHaveURL(/\/en\/admin\/audit$/);
+    await expect(page.getByRole("tab", { name: /^audit log$/i })).toHaveAttribute("aria-current", "page");
+  });
+
   test("audit log lists recent administrator actions", async ({ page }) => {
     await signInAdmin(page);
     const email = uniqueEmail("admin-audit");
