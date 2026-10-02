@@ -51,6 +51,7 @@ type PageData struct {
 	Template          string
 	FragmentTemplate  string
 	Navigation        []NavigationItem
+	Languages         []LanguageOption
 	Account           *AccountMenu
 	SignInURL         string
 	SignUpURL         string
@@ -463,10 +464,13 @@ type SettingsView struct {
 	LinkLabel      string
 }
 
-// LanguageOption is one selectable account language.
+// LanguageOption is one selectable site language. URL is empty where a
+// language option is not tied to a page (for example the account settings
+// form, which persists the choice instead of navigating).
 type LanguageOption struct {
 	Code    string
 	Label   string
+	URL     string
 	Current bool
 }
 
@@ -668,6 +672,9 @@ func (r *PageRenderer) RenderRequestStatus(writer http.ResponseWriter, request *
 	}
 	if page.Language == "" || page.Title == "" || page.Heading == "" {
 		return fmt.Errorf("%w: language, title, and heading are required", ErrInvalidPage)
+	}
+	if page.Languages == nil {
+		page.Languages = navbarLanguageOptions(locale.Code(page.Language), request)
 	}
 	name := page.Template
 	if IsHTMX(request) {

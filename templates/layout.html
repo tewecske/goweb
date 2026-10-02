@@ -48,6 +48,20 @@
         {{end}}
       </nav>
       <div class="navbar-end">
+        {{if .Languages}}
+          <details class="dropdown dropdown-end">
+            <summary class="btn btn-ghost btn-circle" aria-label="Choose language" title="Choose language">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9 9 0 100-18 9 9 0 000 18zM3.6 9h16.8M3.6 15h16.8M12 3a14.98 14.98 0 013 9 14.98 14.98 0 01-3 9 14.98 14.98 0 01-3-9 14.98 14.98 0 013-9z"/>
+              </svg>
+            </summary>
+            <ul class="menu dropdown-content z-10 mt-2 w-40 rounded-box bg-base-200 p-2 shadow" role="menu">
+              {{range .Languages}}
+                <li role="none"><a role="menuitem" aria-current="{{if .Current}}true{{else}}false{{end}}" class="{{if .Current}}menu-active{{end}}" href="{{.URL}}">{{.Label}}</a></li>
+              {{end}}
+            </ul>
+          </details>
+        {{end}}
         <label class="swap swap-rotate btn btn-ghost" title="Toggle theme">
           <input id="theme-toggle" type="checkbox" class="theme-controller" value="dark" aria-label="Toggle dark mode">
           <svg class="swap-off size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">

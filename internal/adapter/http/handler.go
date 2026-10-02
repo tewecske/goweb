@@ -264,6 +264,32 @@ func primaryNavigation(renderer *PageRenderer, language locale.Code, authenticat
 	return navigation
 }
 
+// navbarLanguageOptions builds the site-wide language picker, linking each
+// supported language to the equivalent URL for the current page. Query
+// strings are dropped rather than carried over: some carry one-time secrets
+// (confirmation and password-reset tokens, invite codes) that must never be
+// echoed into a link on the rendered page.
+func navbarLanguageOptions(current locale.Code, request *http.Request) []LanguageOption {
+	_, route, ok := locale.ParsePath(request.URL.Path)
+	if !ok {
+		route = "/"
+	}
+	options := make([]LanguageOption, 0, len(locale.Codes()))
+	for _, code := range locale.Codes() {
+		path, err := locale.Path(code, route)
+		if err != nil {
+			continue
+		}
+		options = append(options, LanguageOption{
+			Code:    string(code),
+			Label:   languageLabel(code),
+			URL:     path,
+			Current: code == current,
+		})
+	}
+	return options
+}
+
 type navigationDefinition struct {
 	messageID string
 	route     string

@@ -142,6 +142,7 @@ func (h *adminHandler) renderAudit(writer http.ResponseWriter, request *http.Req
 		Alerts:           alerts,
 		Labels:           h.labels(language),
 		Account:          settingsAccountMenu(language, user),
+		Navigation:       primaryNavigation(h.renderer, language, true),
 		Admin: &AdminView{
 			IsAdmin:  true,
 			Page:     "audit",
@@ -392,6 +393,7 @@ func (h *adminHandler) renderDetail(writer http.ResponseWriter, request *http.Re
 		Alerts:           alerts,
 		Labels:           h.labels(language),
 		Account:          settingsAccountMenu(language, user),
+		Navigation:       primaryNavigation(h.renderer, language, true),
 		Admin: &AdminView{
 			IsAdmin:  true,
 			Page:     "detail",
@@ -804,6 +806,7 @@ func (h *adminHandler) renderUsers(writer http.ResponseWriter, request *http.Req
 		Alerts:           render.alerts,
 		Labels:           h.labels(language),
 		Account:          settingsAccountMenu(language, user),
+		Navigation:       primaryNavigation(h.renderer, language, true),
 		Admin: &AdminView{
 			IsAdmin:  true,
 			Page:     "users",
@@ -984,6 +987,7 @@ func (h *adminHandler) renderAdmin(writer http.ResponseWriter, request *http.Req
 		Alerts:           alerts,
 		Labels:           h.labels(language),
 		Account:          settingsAccountMenu(language, user),
+		Navigation:       primaryNavigation(h.renderer, language, true),
 		Admin: &AdminView{
 			IsAdmin:  true,
 			Page:     "overview",
@@ -1318,6 +1322,7 @@ func (h *adminHandler) renderSuspicious(writer http.ResponseWriter, request *htt
 		Alerts:           alerts,
 		Labels:           h.labels(language),
 		Account:          settingsAccountMenu(language, user),
+		Navigation:       primaryNavigation(h.renderer, language, true),
 		Admin: &AdminView{
 			IsAdmin:    true,
 			Page:       "suspicious",
@@ -1398,6 +1403,7 @@ func (h *adminHandler) renderUsage(writer http.ResponseWriter, request *http.Req
 		Alerts:           alerts,
 		Labels:           h.labels(language),
 		Account:          settingsAccountMenu(language, user),
+		Navigation:       primaryNavigation(h.renderer, language, true),
 		Admin: &AdminView{
 			IsAdmin:  true,
 			Page:     "usage",
@@ -1506,6 +1512,7 @@ func (h *adminHandler) renderRateLimits(writer http.ResponseWriter, request *htt
 		Alerts:           alerts,
 		Labels:           h.labels(language),
 		Account:          settingsAccountMenu(language, user),
+		Navigation:       primaryNavigation(h.renderer, language, true),
 		Admin: &AdminView{
 			IsAdmin:  true,
 			Page:     "ratelimits",
@@ -1590,6 +1597,7 @@ func (h *adminHandler) renderSystem(writer http.ResponseWriter, request *http.Re
 		Alerts:           alerts,
 		Labels:           h.labels(language),
 		Account:          settingsAccountMenu(language, user),
+		Navigation:       primaryNavigation(h.renderer, language, true),
 		Admin: &AdminView{
 			IsAdmin:  true,
 			Page:     "system",

@@ -405,6 +405,7 @@ func (h *groupHandler) renderGroups(writer http.ResponseWriter, request *http.Re
 		Alerts:           alerts,
 		Labels:           h.auth.formLabels(language),
 		Account:          h.accountMenu(language, user),
+		Navigation:       primaryNavigation(h.renderer, language, true),
 		Groups: &GroupsView{
 			ListURL:     h.path(language, "/groups"),
 			CreateURL:   h.path(language, "/groups"),
@@ -434,6 +435,7 @@ func (h *groupHandler) renderGroupDetail(writer http.ResponseWriter, request *ht
 		Alerts:           alerts,
 		Labels:           h.auth.formLabels(language),
 		Account:          h.accountMenu(language, user),
+		Navigation:       primaryNavigation(h.renderer, language, true),
 		Group:            h.groupDetailView(language, user, detail),
 	}
 	if err := h.settings.Render(writer, request, page, status); err != nil {

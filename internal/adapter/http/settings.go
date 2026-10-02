@@ -342,6 +342,7 @@ func (h *settingsHandler) renderSettings(writer http.ResponseWriter, request *ht
 		Alerts:           alerts,
 		Labels:           h.auth.formLabels(language),
 		Account:          settingsAccountMenu(language, user),
+		Navigation:       primaryNavigation(h.auth.renderer, language, true),
 		Settings: &SettingsView{
 			Username:       optionalValueString(user.Username),
 			DisplayName:    optionalValueString(user.DisplayName),
