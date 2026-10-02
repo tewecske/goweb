@@ -252,11 +252,6 @@ func primaryNavigation(renderer *PageRenderer, language locale.Code, authenticat
 	}
 	if authenticated {
 		defs = append(defs, navigationDefinition{messageID: "groups.nav", route: "/groups"})
-	} else {
-		defs = append(defs,
-			navigationDefinition{messageID: "nav.sign_in", route: "/sign-in"},
-			navigationDefinition{messageID: "nav.sign_up", route: "/sign-up"},
-		)
 	}
 	navigation := make([]NavigationItem, 0, len(defs))
 	for _, def := range defs {

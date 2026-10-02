@@ -218,6 +218,7 @@ func (h *authHandler) renderPasswordPageWithStatus(writer http.ResponseWriter, r
 		SubmitLabel:      h.translate(language, prefix+".submit"),
 		SignInURL:        h.path(language, "/sign-in"),
 		SignUpURL:        h.path(language, "/sign-up"),
+		Navigation:       primaryNavigation(h.renderer, language, false),
 		Template:         "auth",
 		FragmentTemplate: "auth-fragment",
 		Alerts:           alerts,
@@ -285,6 +286,14 @@ func (h *authHandler) oauthProviders(language locale.Code) []OAuthProviderView {
 func (h *authHandler) finishSignIn(writer http.ResponseWriter, request *http.Request, language locale.Code, sessionID, destination string) {
 	if err := h.dependencies.SessionCookie.Set(writer, sessionID, time.Now()); err != nil {
 		h.renderError(writer, request, http.StatusInternalServerError)
+		return
+	}
+	if IsHTMX(request) {
+		// A full browser navigation (not an htmx swap) is required so the
+		// header reflects the new session immediately: account menu, avatar,
+		// and the authenticated navigation items.
+		writer.Header().Set("HX-Redirect", localizedPath(language, destination))
+		writer.WriteHeader(http.StatusOK)
 		return
 	}
 	h.redirectLocalized(writer, request, language, destination)
