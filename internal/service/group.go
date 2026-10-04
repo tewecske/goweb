@@ -96,6 +96,9 @@ type GroupRepository interface {
 	FindGroupByID(context.Context, int64) (Group, error)
 	FindGroupByInviteCode(context.Context, string) (Group, error)
 	ListGroupsForUser(context.Context, int64) ([]GroupSummary, error)
+	// ListAllGroupsForUser returns every group with the account's real
+	// membership role when present. It backs site-administrator listing.
+	ListAllGroupsForUser(context.Context, int64) ([]GroupSummary, error)
 	UpdateGroup(context.Context, Group, int64) (Group, error)
 }
 
@@ -180,6 +183,8 @@ func (s *GroupService) Create(ctx context.Context, userID int64, name string) (G
 }
 
 // List returns the groups the account belongs to with member counts and roles.
+// A site administrator sees every group; roles still reflect real memberships
+// so the list never presents superuser access as a group role.
 func (s *GroupService) List(ctx context.Context, userID int64) ([]GroupSummary, error) {
 	if err := s.validate(ctx); err != nil {
 		return nil, err
@@ -187,7 +192,16 @@ func (s *GroupService) List(ctx context.Context, userID int64) ([]GroupSummary, 
 	if userID <= 0 {
 		return nil, ErrInvalidUserID
 	}
-	summaries, err := s.groups.ListGroupsForUser(ctx, userID)
+	administrator, err := s.actorIsGlobalAdmin(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	var summaries []GroupSummary
+	if administrator {
+		summaries, err = s.groups.ListAllGroupsForUser(ctx, userID)
+	} else {
+		summaries, err = s.groups.ListGroupsForUser(ctx, userID)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("list groups: %w", err)
 	}
@@ -199,9 +213,9 @@ func (s *GroupService) List(ctx context.Context, userID int64) ([]GroupSummary, 
 	return summaries, nil
 }
 
-// Detail returns the full group roster to members only. Non-members receive a
-// not-found outcome so the group's private details stay hidden. The current
-// invite code is withheld from ordinary members.
+// Detail returns the full group roster to members and to site administrators.
+// Other non-members receive a not-found outcome so the group's private details
+// stay hidden. The current invite code is withheld from ordinary members.
 func (s *GroupService) Detail(ctx context.Context, userID, groupID int64) (GroupDetail, error) {
 	if err := s.validate(ctx); err != nil {
 		return GroupDetail{}, err
@@ -209,12 +223,17 @@ func (s *GroupService) Detail(ctx context.Context, userID, groupID int64) (Group
 	if userID <= 0 || groupID <= 0 {
 		return GroupDetail{}, ErrInvalidGroup
 	}
-	membership, err := s.memberships.FindMembership(ctx, groupID, userID)
+	membership, membershipErr := s.memberships.FindMembership(ctx, groupID, userID)
+	isMember := membershipErr == nil
+	if membershipErr != nil && !errors.Is(membershipErr, ErrMembershipNotFound) {
+		return GroupDetail{}, fmt.Errorf("find group membership: %w", membershipErr)
+	}
+	administrator, err := s.actorIsGlobalAdmin(ctx, userID)
 	if err != nil {
-		if errors.Is(err, ErrMembershipNotFound) {
-			return GroupDetail{}, ErrGroupNotFound
-		}
-		return GroupDetail{}, fmt.Errorf("find group membership: %w", err)
+		return GroupDetail{}, err
+	}
+	if !isMember && !administrator {
+		return GroupDetail{}, ErrGroupNotFound
 	}
 	group, err := s.groups.FindGroupByID(ctx, groupID)
 	if err != nil {
@@ -224,12 +243,18 @@ func (s *GroupService) Detail(ctx context.Context, userID, groupID int64) (Group
 	if err != nil {
 		return GroupDetail{}, fmt.Errorf("count group members: %w", err)
 	}
+	viewerRole := ""
+	if isMember {
+		viewerRole = membership.Role
+	}
 	detail := GroupDetail{
 		Group:       group,
 		MemberCount: count,
-		ViewerRole:  membership.Role,
-		IsMember:    true,
-		IsAdmin:     membership.Role == GroupRoleAdmin,
+		ViewerRole:  viewerRole,
+		IsMember:    isMember,
+		// A site administrator holds administrator rights without a group
+		// membership, so the roster and invite code stay fully available.
+		IsAdmin: administrator || viewerRole == GroupRoleAdmin,
 	}
 	if detail.IsAdmin {
 		detail.InviteCode = group.InviteCode
@@ -456,18 +481,35 @@ func (s *GroupService) Leave(ctx context.Context, userID, groupID int64) error {
 	return nil
 }
 
+// requireAdmin authorizes a group management action. Group administrators and
+// site administrators both pass; the returned membership is zero for a site
+// administrator acting without a group membership.
 func (s *GroupService) requireAdmin(ctx context.Context, userID, groupID int64) (GroupMembership, error) {
 	membership, err := s.memberships.FindMembership(ctx, groupID, userID)
-	if err != nil {
-		if errors.Is(err, ErrMembershipNotFound) {
-			return GroupMembership{}, ErrNotGroupAdmin
-		}
+	if err != nil && !errors.Is(err, ErrMembershipNotFound) {
 		return GroupMembership{}, fmt.Errorf("find group admin: %w", err)
 	}
-	if membership.Role != GroupRoleAdmin {
+	if err == nil && membership.Role == GroupRoleAdmin {
+		return membership, nil
+	}
+	administrator, err := s.actorIsGlobalAdmin(ctx, userID)
+	if err != nil {
+		return GroupMembership{}, err
+	}
+	if !administrator {
 		return GroupMembership{}, ErrNotGroupAdmin
 	}
-	return membership, nil
+	return GroupMembership{}, nil
+}
+
+// actorIsGlobalAdmin reports whether the account is a non-guest site
+// administrator with management rights over every group.
+func (s *GroupService) actorIsGlobalAdmin(ctx context.Context, userID int64) (bool, error) {
+	user, err := s.users.FindUserByID(ctx, userID)
+	if err != nil {
+		return false, fmt.Errorf("find group actor: %w", err)
+	}
+	return user.IsAdmin && !user.IsGuest, nil
 }
 
 func (s *GroupService) validate(ctx context.Context) error {

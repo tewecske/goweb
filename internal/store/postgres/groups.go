@@ -108,6 +108,56 @@ func (r *GroupRepository) ListGroupsForUser(ctx context.Context, userID int64) (
 	return summaries, nil
 }
 
+// ListAllGroupsForUser returns every group with member counts and the account's
+// real membership role when one exists. Role is empty for groups the account
+// does not belong to, so superuser access is never reported as a group role.
+func (r *GroupRepository) ListAllGroupsForUser(ctx context.Context, userID int64) ([]service.GroupSummary, error) {
+	db, err := r.database(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if userID <= 0 {
+		return nil, service.ErrInvalidUserID
+	}
+	rows, err := db.QueryContext(ctx, `
+		SELECT g.id, g.name, g.name_norm, g.invite_code, g.created_by, g.created_at, g.version,
+			gm.role, (SELECT count(*) FROM group_members counted WHERE counted.group_id = g.id)
+		FROM groups g
+		LEFT JOIN group_members gm ON gm.group_id = g.id AND gm.user_id = $1
+		ORDER BY g.name_norm, g.id
+	`, userID)
+	if err != nil {
+		return nil, mapGroupError(err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	summaries := make([]service.GroupSummary, 0)
+	for rows.Next() {
+		var (
+			summary     service.GroupSummary
+			createdBy   sql.NullInt64
+			role        sql.NullString
+			memberCount int64
+		)
+		if err := rows.Scan(
+			&summary.Group.ID, &summary.Group.Name, &summary.Group.NameNorm, &summary.Group.InviteCode,
+			&createdBy, &summary.Group.CreatedAt, &summary.Group.Version, &role, &memberCount,
+		); err != nil {
+			return nil, mapGroupError(err)
+		}
+		summary.Group.CreatedBy = nullableInt64(createdBy)
+		if role.Valid {
+			summary.Role = role.String
+		}
+		summary.MemberCount = int(memberCount)
+		summaries = append(summaries, summary)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, mapGroupError(err)
+	}
+	return summaries, nil
+}
+
 // UpdateGroup replaces editable group fields when expectedVersion is current.
 func (r *GroupRepository) UpdateGroup(ctx context.Context, group service.Group, expectedVersion int64) (service.Group, error) {
 	db, err := r.database(ctx)

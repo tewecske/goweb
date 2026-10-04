@@ -42,7 +42,7 @@
       {{else}}
         <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="groups-mine-heading">
           <div class="card-body">
-            <h2 id="groups-mine-heading" class="card-title">{{$.Labels.groups_mine}}</h2>
+            <h2 id="groups-mine-heading" class="card-title">{{$.Groups.MineLabel}}</h2>
             {{if .Summaries}}
               <div class="overflow-x-auto">
                 <table class="table">
@@ -52,7 +52,7 @@
                     <tr>
                       <td><a class="link" href="{{$.Groups.ListURL}}/{{.Group.ID}}">{{.Group.Name}}</a></td>
                       <td>{{.MemberCount}}</td>
-                      <td>{{.Role}}</td>
+                      <td>{{.RoleLabel}}</td>
                       <td class="text-right"><a class="btn btn-sm" href="{{$.Groups.ListURL}}/{{.Group.ID}}">{{$.Labels.groups_view}}</a></td>
                     </tr>
                     {{end}}
@@ -133,12 +133,14 @@
               </div>
             {{end}}
           {{end}}
-          <div class="divider"></div>
-          <form method="post" action="{{.LeaveURL}}" hx-post="{{.LeaveURL}}" hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this"
-                hx-confirm="{{$.Labels.groups_leave_confirm}}">
-            <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
-            <button class="btn btn-outline btn-error" type="submit">{{$.Labels.groups_leave}}</button>
-          </form>
+          {{if .IsMember}}
+            <div class="divider"></div>
+            <form method="post" action="{{.LeaveURL}}" hx-post="{{.LeaveURL}}" hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this"
+                  hx-confirm="{{$.Labels.groups_leave_confirm}}">
+              <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+              <button class="btn btn-outline btn-error" type="submit">{{$.Labels.groups_leave}}</button>
+            </form>
+          {{end}}
         </div>
       </section>
 

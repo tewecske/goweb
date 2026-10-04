@@ -51,6 +51,22 @@ func TestGroupRepositoryCreateAndList(t *testing.T) {
 	if len(empty) != 0 {
 		t.Fatalf("other summaries = %+v, want none", empty)
 	}
+
+	allForOwner, err := groups.ListAllGroupsForUser(ctx, ownerID)
+	if err != nil {
+		t.Fatalf("ListAllGroupsForUser(owner) error = %v", err)
+	}
+	if len(allForOwner) != 1 || allForOwner[0].Group.ID != created.ID || allForOwner[0].Role != service.GroupRoleAdmin {
+		t.Fatalf("owner all groups = %+v, want one group with the real admin role", allForOwner)
+	}
+
+	allForOther, err := groups.ListAllGroupsForUser(ctx, otherID)
+	if err != nil {
+		t.Fatalf("ListAllGroupsForUser(other) error = %v", err)
+	}
+	if len(allForOther) != 1 || allForOther[0].Group.ID != created.ID || allForOther[0].Role != "" {
+		t.Fatalf("other all groups = %+v, want the group with an empty non-member role", allForOther)
+	}
 }
 
 func TestGroupRepositoryOptimisticLockDistinguishesMissing(t *testing.T) {

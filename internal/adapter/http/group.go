@@ -411,9 +411,10 @@ func (h *groupHandler) renderGroups(writer http.ResponseWriter, request *http.Re
 			CreateURL:   h.path(language, "/groups"),
 			JoinURL:     h.path(language, "/groups/join"),
 			Creating:    creating,
-			Summaries:   summaries,
+			Summaries:   h.groupSummaryViews(language, summaries),
 			CreateLabel: h.t(language, "groups.create"),
 			JoinLabel:   h.t(language, "groups.join"),
+			MineLabel:   h.groupListLabel(language, user),
 		},
 	}
 	if err := h.settings.Render(writer, request, page, status); err != nil {
@@ -462,6 +463,35 @@ func loweredRequest(request *http.Request) *http.Request {
 	clone := request.Clone(request.Context())
 	clone.Method = http.MethodGet
 	return clone
+}
+
+// groupSummaryViews maps domain summaries to list rows with localized role
+// labels. A superuser who is not a member gets the non-member label so access
+// is never presented as a group role.
+func (h *groupHandler) groupSummaryViews(language locale.Code, summaries []service.GroupSummary) []GroupSummaryView {
+	views := make([]GroupSummaryView, 0, len(summaries))
+	for _, summary := range summaries {
+		view := GroupSummaryView{Group: summary.Group, MemberCount: summary.MemberCount}
+		switch summary.Role {
+		case service.GroupRoleAdmin:
+			view.RoleLabel = h.t(language, "groups.role.admin")
+		case service.GroupRoleMember:
+			view.RoleLabel = h.t(language, "groups.role.member")
+		default:
+			view.RoleLabel = h.t(language, "groups.role.none")
+		}
+		views = append(views, view)
+	}
+	return views
+}
+
+// groupListLabel names the list section. Site administrators see every group,
+// so the heading must not claim they all belong to the account.
+func (h *groupHandler) groupListLabel(language locale.Code, user service.User) string {
+	if user.IsAdmin {
+		return h.t(language, "groups.all")
+	}
+	return h.t(language, "groups.mine")
 }
 
 func (h *groupHandler) groupDetailView(language locale.Code, user service.User, detail service.GroupDetail) *GroupDetailView {

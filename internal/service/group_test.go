@@ -92,6 +92,49 @@ func TestGroupServiceList(t *testing.T) {
 	}
 }
 
+func TestGroupServiceListIncludesEveryGroupForSiteAdministrator(t *testing.T) {
+	memberGroups := []GroupSummary{{Group: Group{ID: 1}, MemberCount: 1, Role: GroupRoleMember}}
+	allGroups := []GroupSummary{
+		{Group: Group{ID: 1}, MemberCount: 1, Role: GroupRoleMember},
+		{Group: Group{ID: 2}, MemberCount: 3},
+	}
+
+	administrator, err := NewGroupService(
+		&groupRepositoryStub{summaries: memberGroups, allSummaries: allGroups},
+		&groupMembershipRepositoryStub{},
+		&groupUserRepositoryStub{user: User{ID: 7, IsAdmin: true}},
+	)
+	if err != nil {
+		t.Fatalf("NewGroupService() error = %v", err)
+	}
+	summaries, err := administrator.List(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(summaries) != 2 {
+		t.Fatalf("List() returned %d groups, want every group", len(summaries))
+	}
+	if summaries[1].Role != "" {
+		t.Fatalf("non-member group role = %q, want empty", summaries[1].Role)
+	}
+
+	ordinary, err := NewGroupService(
+		&groupRepositoryStub{summaries: memberGroups, allSummaries: allGroups},
+		&groupMembershipRepositoryStub{},
+		&groupUserRepositoryStub{user: User{ID: 7}},
+	)
+	if err != nil {
+		t.Fatalf("NewGroupService() error = %v", err)
+	}
+	memberships, err := ordinary.List(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(memberships) != 1 {
+		t.Fatalf("ordinary List() returned %d groups, want only memberships", len(memberships))
+	}
+}
+
 func TestGroupServiceDetailVisibility(t *testing.T) {
 	members := []GroupMember{{UserID: 7, Role: GroupRoleAdmin}, {UserID: 8, Role: GroupRoleMember}}
 	tests := []struct {
@@ -129,6 +172,60 @@ func TestGroupServiceDetailVisibility(t *testing.T) {
 			}
 			if (len(detail.Members) > 0) != test.wantRoster {
 				t.Errorf("roster visibility = %v, want %v", len(detail.Members) > 0, test.wantRoster)
+			}
+		})
+	}
+}
+
+func TestGroupServiceDetailAllowsSiteAdministratorWithoutMembership(t *testing.T) {
+	members := []GroupMember{{UserID: 8, Role: GroupRoleAdmin}}
+	memberships := &groupMembershipRepositoryStub{member: false, members: members}
+	users := &groupUserRepositoryStub{user: User{ID: 7, IsAdmin: true}}
+	service, err := NewGroupService(&groupRepositoryStub{group: Group{ID: 5, InviteCode: "ABCDEFGHJKLM"}}, memberships, users)
+	if err != nil {
+		t.Fatalf("NewGroupService() error = %v", err)
+	}
+	detail, err := service.Detail(context.Background(), 7, 5)
+	if err != nil {
+		t.Fatalf("Detail() error = %v, want nil", err)
+	}
+	if detail.IsMember {
+		t.Errorf("IsMember = true, want false for a non-member administrator")
+	}
+	if !detail.IsAdmin {
+		t.Errorf("IsAdmin = false, want true for a site administrator")
+	}
+	if detail.InviteCode != "ABCDEFGHJKLM" {
+		t.Errorf("InviteCode = %q, want the group invite code", detail.InviteCode)
+	}
+	if len(detail.Members) != len(members) {
+		t.Errorf("roster length = %d, want %d", len(detail.Members), len(members))
+	}
+	if detail.ViewerRole != "" {
+		t.Errorf("ViewerRole = %q, want empty without a membership", detail.ViewerRole)
+	}
+}
+
+func TestGroupServiceAdminRightsForSiteAdministrator(t *testing.T) {
+	tests := []struct {
+		name    string
+		user    User
+		wantErr error
+	}{
+		{name: "site administrator without membership", user: User{ID: 7, IsAdmin: true}},
+		{name: "ordinary non-member is refused", user: User{ID: 7}, wantErr: ErrNotGroupAdmin},
+		{name: "guest is never a site administrator", user: User{ID: 7, IsAdmin: true, IsGuest: true}, wantErr: ErrNotGroupAdmin},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			groups := &groupRepositoryStub{group: Group{ID: 5, Version: 1}}
+			service, err := NewGroupService(groups, &groupMembershipRepositoryStub{member: false}, &groupUserRepositoryStub{user: test.user})
+			if err != nil {
+				t.Fatalf("NewGroupService() error = %v", err)
+			}
+			if _, err := service.Rename(context.Background(), 7, 5, 1, "Renamed"); !errors.Is(err, test.wantErr) {
+				t.Fatalf("Rename() error = %v, want %v", err, test.wantErr)
 			}
 		})
 	}
@@ -205,6 +302,7 @@ func (r *groupUserRepositoryStub) DeleteUser(context.Context, int64, int64) erro
 type groupRepositoryStub struct {
 	group           Group
 	summaries       []GroupSummary
+	allSummaries    []GroupSummary
 	createErr       error
 	findErr         error
 	findByCodeErr   error
@@ -235,6 +333,13 @@ func (r *groupRepositoryStub) FindGroupByInviteCode(context.Context, string) (Gr
 }
 
 func (r *groupRepositoryStub) ListGroupsForUser(context.Context, int64) ([]GroupSummary, error) {
+	return r.summaries, nil
+}
+
+func (r *groupRepositoryStub) ListAllGroupsForUser(context.Context, int64) ([]GroupSummary, error) {
+	if r.allSummaries != nil {
+		return r.allSummaries, nil
+	}
 	return r.summaries, nil
 }
 

@@ -161,6 +161,33 @@ test.describe("M7 administrator workflows", () => {
     await expect(page.getByRole("tab", { name: /^audit log$/i })).toHaveAttribute("aria-current", "page");
   });
 
+  test("site administrators see and manage every group", async ({ browser, page }) => {
+    const groupName = `Admin ${crypto.randomUUID().slice(0, 8)}`;
+    const memberContext = await browser.newContext();
+    const memberPage = await memberContext.newPage();
+    try {
+      await signUp(memberPage, uniqueEmail("group-owner"), uniquePassword());
+      await memberPage.goto("/en/groups");
+      await memberPage.locator("#group-new-name").fill(groupName);
+      await memberPage.locator("#group-new-name").locator("xpath=ancestor::form").getByRole("button").click();
+      await memberPage.waitForURL(/\/en\/groups\/\d+$/);
+      await expect(memberPage.locator('[data-testid="group-invite-code"]')).toHaveText(/^[A-HJKMNPQRSTUVWXYZ2-9]{12}$/);
+    } finally {
+      await memberContext.close();
+    }
+
+    await signInAdmin(page);
+    await page.goto("/en/groups");
+    await expect(page.getByRole("heading", { name: /all groups/i })).toBeVisible();
+    const row = page.locator("tbody tr").filter({ hasText: groupName }).first();
+    await expect(row).toContainText(/not a member/i);
+
+    await row.getByRole("link", { name: /view/i }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toContainText(groupName);
+    await expect(page.locator('[data-testid="group-invite-code"]')).toBeVisible();
+    await expect(page.getByRole("button", { name: /leave group/i })).toHaveCount(0);
+  });
+
   test("audit log lists recent administrator actions", async ({ page }) => {
     await signInAdmin(page);
     const email = uniqueEmail("admin-audit");

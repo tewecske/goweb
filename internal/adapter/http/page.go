@@ -407,9 +407,18 @@ type GroupsView struct {
 	CreateURL   string
 	JoinURL     string
 	Creating    bool
-	Summaries   []service.GroupSummary
+	Summaries   []GroupSummaryView
 	CreateLabel string
 	JoinLabel   string
+	MineLabel   string
+}
+
+// GroupSummaryView is one group list row with a localized role label. A
+// non-member label keeps superuser access from reading as a group role.
+type GroupSummaryView struct {
+	Group       service.Group
+	MemberCount int
+	RoleLabel   string
 }
 
 // GroupDetailView contains one group's detail, roster, and management URLs.

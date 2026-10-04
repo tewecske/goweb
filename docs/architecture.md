@@ -35,7 +35,7 @@ Rules:
 Delivered feature areas:
 
 - `internal/service/settings.go` and `password_settings.go` own profile, password, and locale changes.
-- `internal/service/group.go` and `group_join.go` own group creation, listing, membership visibility, invite joining/rotation, role changes, removal, and voluntary leave.
+- `internal/service/group.go` and `group_join.go` own group creation, listing, membership visibility, invite joining/rotation, role changes, removal, and voluntary leave. Site administrators (`users.is_admin`) can list and fully manage every group without joining; their access is never stored or reported as a group membership or role.
 - `internal/service/repository.go` provides `ClassifyStaleWrite`, `IsWriteConflict`, and `ErrRecordNotFound` for revision-checked writes.
 - `internal/store/postgres` implements the user, session, token, OAuth, group, and membership ports; `UpdateGroup` persists names and invite codes under a revision check.
 - `templates/settings.html`, `templates/groups.html`, and `templates/alerts.html` back the account-settings and group interfaces.

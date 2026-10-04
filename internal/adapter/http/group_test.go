@@ -115,6 +115,61 @@ func TestGroupDetailVisibility(t *testing.T) {
 	}
 }
 
+func TestGroupsListLabelsAllGroupsAndNonMembersForAdmin(t *testing.T) {
+	dependencies := settingsStubDependencies(t)
+	dependencies.Users = testUserFinder{user: service.User{ID: 7, IsAdmin: true, Version: 1}}
+	dependencies.Groups = &groupsUseCaseStub{summaries: []service.GroupSummary{
+		{Group: service.Group{ID: 3, Name: "Team"}, MemberCount: 2, Role: service.GroupRoleAdmin},
+		{Group: service.Group{ID: 4, Name: "Other"}, MemberCount: 4},
+	}}
+	handler, _ := newGroupsTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.list(response, authenticatedRequest(http.MethodGet, "/en/groups", 7, ""))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, "All groups") {
+		t.Errorf("admin list missing all-groups heading")
+	}
+	if !strings.Contains(body, "Other") {
+		t.Errorf("admin list missing non-member group")
+	}
+	if !strings.Contains(body, "Not a member") {
+		t.Errorf("admin list missing non-member role label")
+	}
+}
+
+func TestGroupDetailHidesLeaveForNonMemberAdmin(t *testing.T) {
+	dependencies := settingsStubDependencies(t)
+	dependencies.Users = testUserFinder{user: service.User{ID: 7, IsAdmin: true, Version: 1}}
+	dependencies.Groups = &groupsUseCaseStub{detail: service.GroupDetail{
+		Group:      service.Group{ID: 3, Name: "Team", Version: 1},
+		IsAdmin:    true,
+		IsMember:   false,
+		InviteCode: "ABCDEFGHJKLM",
+		Members:    []service.GroupMember{{UserID: 8, Role: service.GroupRoleAdmin, Version: 0}},
+	}}
+	handler, _ := newGroupsTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.detail(response, authenticatedRequest(http.MethodGet, "/en/groups/3", 7, ""))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, "ABCDEFGHJKLM") {
+		t.Errorf("non-member admin detail missing invite code")
+	}
+	if !strings.Contains(body, "Group name") {
+		t.Errorf("non-member admin detail missing rename control")
+	}
+	if strings.Contains(body, "Leave group") {
+		t.Errorf("non-member admin detail unexpectedly offers leave")
+	}
+}
+
 func TestGroupsJoinRateLimited(t *testing.T) {
 	dependencies := settingsStubDependencies(t)
 	dependencies.JoinGroup = &rateLimitedJoinStub{err: service.RateLimitError{RetryAfter: 30}}
