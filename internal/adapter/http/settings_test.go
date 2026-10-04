@@ -261,6 +261,39 @@ func TestSettingsFragmentResponseForHTMX(t *testing.T) {
 	}
 }
 
+// TestSettingsFragmentReplacesHeadingRegion guards against the HTMX fragment
+// introducing a second page heading: the full page and the fragment must each
+// expose exactly one #page-content swap target and one #page-heading, with the
+// heading nested inside the swap target so an outerHTML swap stays idempotent.
+func TestSettingsFragmentReplacesHeadingRegion(t *testing.T) {
+	dependencies := settingsStubDependencies(t)
+	dependencies.Users = testUserFinder{user: service.User{ID: 7, Username: strPtr("alice"), Locale: "en", Version: 1}}
+	handler, _ := newSettingsTestHandler(t, dependencies)
+
+	full := httptest.NewRecorder()
+	handler.page(full, authenticatedRequest(http.MethodGet, "/en/account/settings", 7, ""))
+
+	fragment := httptest.NewRecorder()
+	request := authenticatedRequest(http.MethodGet, "/en/account/settings", 7, "")
+	request.Header.Set("HX-Request", "true")
+	handler.page(fragment, request)
+
+	responses := map[string]string{"full page": full.Body.String(), "fragment": fragment.Body.String()}
+	for name, body := range responses {
+		if got := strings.Count(body, `id="page-content"`); got != 1 {
+			t.Errorf("%s has %d #page-content swap targets, want 1", name, got)
+		}
+		if got := strings.Count(body, `id="page-heading"`); got != 1 {
+			t.Errorf("%s has %d #page-heading elements, want 1", name, got)
+		}
+		content := strings.Index(body, `id="page-content"`)
+		heading := strings.Index(body, `id="page-heading"`)
+		if content < 0 || heading < content {
+			t.Errorf("%s renders the page heading outside the #page-content swap target", name)
+		}
+	}
+}
+
 func TestSettingsHTMXUnauthenticatedRedirect(t *testing.T) {
 	handler, _ := newSettingsTestHandler(t, settingsStubDependencies(t))
 	request := httptest.NewRequest(http.MethodGet, "/en/account/settings", nil)

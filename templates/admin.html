@@ -10,7 +10,7 @@
 {{end}}
 
 {{define "admin-content"}}
-  <div id="page-content">
+  <div>
     {{template "admin-tabs" .}}
     {{if and .Admin (eq .Admin.Page "detail")}}
       {{template "admin-detail-content" .}}

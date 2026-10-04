@@ -19,7 +19,7 @@
 {{end}}
 
 {{define "group-list-content"}}
-  <div id="page-content" class="grid gap-6 mt-6 w-full max-w-3xl">
+  <div class="grid gap-6 mt-6 w-full max-w-3xl">
     {{with .Groups}}
       {{if .Creating}}
         <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="group-create-heading">
@@ -104,7 +104,7 @@
 {{end}}
 
 {{define "group-detail-content"}}
-  <div id="page-content" class="grid gap-6 mt-6 w-full max-w-3xl">
+  <div class="grid gap-6 mt-6 w-full max-w-3xl">
     {{with .Group}}
       <p><a class="link" href="{{.ListURL}}">{{$.Labels.groups_back}}</a></p>
       <section class="card card-border bg-base-100 shadow-sm" aria-labelledby="group-summary-heading">

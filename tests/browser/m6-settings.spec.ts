@@ -33,11 +33,15 @@ test.describe("M6 account settings", () => {
     await page.getByLabel("Username", { exact: true }).fill("invalid user");
     await page.getByRole("button", { name: /^save$/i }).first().click();
     await expect(page.getByRole("alert").first()).toContainText(/cannot be used/i);
+    // The HTMX validation swap replaces the heading-bearing region rather than
+    // appending a second page heading.
+    await expect(page.getByRole("heading", { level: 1, name: /account settings/i })).toHaveCount(1);
 
     await page.getByLabel("Username", { exact: true }).fill(username);
     await page.getByLabel("Display name", { exact: true }).fill("Settings Tester");
     await page.getByRole("button", { name: /^save$/i }).first().click();
     await expect(page.getByRole("status").first()).toContainText(/profile updated/i);
+    await expect(page.getByRole("heading", { level: 1, name: /account settings/i })).toHaveCount(1);
 
     await page.reload();
     await expect(page.getByLabel("Username", { exact: true })).toHaveValue(username);

@@ -3,7 +3,7 @@
 {{end}}
 
 {{define "auth-content"}}
-  <div id="page-content" class="card card-border mt-6 w-full max-w-xl bg-base-100 shadow-sm">
+  <div class="card card-border mt-6 w-full max-w-xl bg-base-100 shadow-sm">
     <div class="card-body">
       {{if .Description}}<p class="text-base-content/70">{{.Description}}</p>{{end}}
       <form class="mt-4 grid gap-4" method="{{.FormMethod}}" action="{{.FormAction}}" hx-post="{{.FormAction}}" hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this" hx-indicator=".htmx-indicator">

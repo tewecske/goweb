@@ -231,7 +231,7 @@ func TestAdminListRendersActiveSectionTab(t *testing.T) {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
 	}
 	body := response.Body.String()
-	wrapper := strings.Index(body, `<div id="page-content">`)
+	wrapper := strings.Index(body, `<section id="page-content">`)
 	tabs := strings.Index(body, `role="tablist"`)
 	if tabs < 0 {
 		t.Fatalf("body missing administrator section tablist")
