@@ -26,7 +26,7 @@ func (h *authHandler) oauthCallback(writer http.ResponseWriter, request *http.Re
 		h.oauthFailureRedirect(writer, request)
 		return
 	}
-	result, err := h.dependencies.OAuth.Callback(
+	result, err := h.dependencies.OAuth.CompleteCallback(
 		request.Context(),
 		provider,
 		request.URL.Query().Get("code"),
@@ -37,11 +37,15 @@ func (h *authHandler) oauthCallback(writer http.ResponseWriter, request *http.Re
 		return
 	}
 	language := recoveryLanguage(request)
+	if result.Linked {
+		h.redirectLocalized(writer, request, language, "/account/settings?identity=linked")
+		return
+	}
 	if h.dependencies.SessionCookie == nil {
 		h.renderError(writer, request, http.StatusInternalServerError)
 		return
 	}
-	if err := h.dependencies.SessionCookie.Set(writer, result.Session.ID, time.Now()); err != nil {
+	if err := h.dependencies.SessionCookie.Set(writer, result.SignIn.Session.ID, time.Now()); err != nil {
 		h.renderError(writer, request, http.StatusInternalServerError)
 		return
 	}

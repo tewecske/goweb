@@ -106,14 +106,14 @@
               <tbody>
                 {{range .Identities}}
                 <tr>
-                  <td>{{.Provider}}</td>
+                  <td>{{.ProviderLabel}}</td>
                   <td>{{.Label}}</td>
                   <td class="text-right">
                     {{if .Removable}}
                     <form method="post" action="{{$.Settings.IdentityAction}}" hx-post="{{$.Settings.IdentityAction}}" hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this">
                       <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
                       <input type="hidden" name="identity_id" value="{{.ID}}">
-                      <button class="btn btn-sm btn-error btn-outline" type="submit" aria-label="{{$.Settings.UnlinkLabel}} {{.Provider}}">{{$.Settings.UnlinkLabel}}</button>
+                      <button class="btn btn-sm btn-error btn-outline" type="submit" aria-label="{{$.Settings.UnlinkLabel}} {{.ProviderLabel}}">{{$.Settings.UnlinkLabel}}</button>
                     </form>
                     {{end}}
                   </td>
@@ -132,7 +132,10 @@
             <form method="post" action="{{$.Settings.LinkAction}}" hx-post="{{$.Settings.LinkAction}}" hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this">
               <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
               <input type="hidden" name="provider" value="{{.Name}}">
-              <button class="btn btn-outline" type="submit" aria-label="{{$.Settings.LinkLabel}} {{.Name}}">{{$.Settings.LinkLabel}} {{.Name}}</button>
+              <button class="btn btn-outline" type="submit" aria-label="{{$.Settings.LinkLabel}} {{.Label}}">
+                {{template "oauth-provider-icon" .}}
+                <span>{{$.Settings.LinkLabel}} {{.Label}}</span>
+              </button>
             </form>
             {{end}}
           </div>

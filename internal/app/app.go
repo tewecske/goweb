@@ -9,6 +9,7 @@ import (
 	"time"
 
 	mailadapter "github.com/tewecske/goweb/internal/adapter/mail"
+	oauthadapter "github.com/tewecske/goweb/internal/adapter/oauth"
 	"github.com/tewecske/goweb/internal/config"
 	"github.com/tewecske/goweb/internal/service"
 	postgresstore "github.com/tewecske/goweb/internal/store/postgres"
@@ -210,9 +211,9 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct password reset consumer: %w", err)
 	}
-	providers, err := service.NewProviderRegistry()
+	providers, err := newProviderRegistry(appConfig)
 	if err != nil {
-		return nil, fmt.Errorf("construct oauth provider registry: %w", err)
+		return nil, err
 	}
 	oauth, err := service.NewOAuthSignInService(providers, oauthStates, oauthIdentities, users, sessionService, service.DefaultOAuthStateLifetime)
 	if err != nil {
@@ -393,6 +394,31 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		Suspicious:            suspiciousRepository,
 		SuspiciousService:     suspiciousService,
 	}, nil
+}
+
+// newProviderRegistry registers only the external identity providers this
+// deployment has configured. An empty registry disables external sign-in.
+func newProviderRegistry(appConfig config.Config) (*service.ProviderRegistry, error) {
+	if !appConfig.GoogleOAuthConfigured() {
+		registry, err := service.NewProviderRegistry()
+		if err != nil {
+			return nil, fmt.Errorf("construct oauth provider registry: %w", err)
+		}
+		return registry, nil
+	}
+	google, err := oauthadapter.NewGoogleClient(oauthadapter.GoogleConfig{
+		ClientID:     appConfig.GoogleClientID,
+		ClientSecret: appConfig.GoogleClientSecret.Reveal(),
+		RedirectURL:  appConfig.GoogleRedirectURL,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("construct google oauth client: %w", err)
+	}
+	registry, err := service.NewProviderRegistry(google)
+	if err != nil {
+		return nil, fmt.Errorf("construct oauth provider registry: %w", err)
+	}
+	return registry, nil
 }
 
 type noopFailedAttemptState struct{}

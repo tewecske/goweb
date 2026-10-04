@@ -14,10 +14,13 @@ these is true:
 - `GOWEB_DATABASE_URL` is unset.
 - `GOWEB_SESSION_SECRET` is unset (and it must be at least 32 characters).
 - `GOWEB_EMAIL_CONFIRMATION_REQUIRED` is `true` but `GOWEB_MAIL_RELAY` is unset.
+- Google sign-in is configured with a non-HTTPS `GOWEB_GOOGLE_REDIRECT_URL`.
 
 Every environment also rejects a credential-bearing public URL, a malformed
-mail relay, an invalid `GOWEB_TRUSTED_PROXY`, and bootstrap administrator
-values in production. See [README configuration](../README.md#configuration)
+mail relay, an invalid `GOWEB_TRUSTED_PROXY`, partially configured Google OAuth
+credentials, and bootstrap administrator values in production. When enabling
+Google sign-in, register the effective `GOWEB_GOOGLE_REDIRECT_URL` as an
+authorized redirect URI in the Google Cloud console. See [README configuration](../README.md#configuration)
 for the full variable table and the
 [bootstrap administrator procedure](bootstrap-admin.md) for first-admin
 provisioning. Secret values are redacted from diagnostics and must come from the

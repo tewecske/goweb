@@ -224,13 +224,11 @@ func (h *authHandler) renderPasswordPageWithStatus(writer http.ResponseWriter, r
 		Alerts:           alerts,
 		Labels:           h.formLabels(language),
 	}
-	if kind == "sign-in" {
-		for _, provider := range h.oauthProviders(language) {
-			page.OAuthProviders = append(page.OAuthProviders, provider)
-		}
-		if request.URL.Query().Get("oauth") == "error" {
-			page.Alerts = append(page.Alerts, Alert{Level: "error", Message: h.translate(language, "oauth.error.generic")})
-		}
+	for _, provider := range h.oauthProviders(language) {
+		page.OAuthProviders = append(page.OAuthProviders, provider)
+	}
+	if kind == "sign-in" && request.URL.Query().Get("oauth") == "error" {
+		page.Alerts = append(page.Alerts, Alert{Level: "error", Message: h.translate(language, "oauth.error.generic")})
 	}
 	h.renderPageWithStatus(writer, request, page, status)
 }
@@ -278,9 +276,20 @@ func (h *authHandler) oauthProviders(language locale.Code) []OAuthProviderView {
 	names := h.dependencies.OAuthProviders.Names()
 	providers := make([]OAuthProviderView, 0, len(names))
 	for _, name := range names {
-		providers = append(providers, OAuthProviderView{Name: name, URL: h.path(language, "/oauth/"+name)})
+		providers = append(providers, OAuthProviderView{Name: name, Label: oauthProviderLabel(name), URL: h.path(language, "/oauth/"+name)})
 	}
 	return providers
+}
+
+// oauthProviderLabel returns a display name for a configured provider. The
+// canonical registry identifier is never shown to users.
+func oauthProviderLabel(name string) string {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "google":
+		return "Google"
+	default:
+		return name
+	}
 }
 
 func (h *authHandler) finishSignIn(writer http.ResponseWriter, request *http.Request, language locale.Code, sessionID, destination string) {

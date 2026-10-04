@@ -188,6 +188,78 @@ func TestConfigDiagnosticsRedactSecrets(t *testing.T) {
 	}
 }
 
+func TestLoadGoogleOAuthConfiguration(t *testing.T) {
+	t.Run("disabled without credentials", func(t *testing.T) {
+		config, err := loadValues(map[string]string{})
+		if err != nil {
+			t.Fatalf("Load() error = %v, want nil", err)
+		}
+		if config.GoogleOAuthConfigured() {
+			t.Fatal("GoogleOAuthConfigured() = true, want false")
+		}
+	})
+
+	t.Run("derives redirect from public url", func(t *testing.T) {
+		config, err := loadValues(map[string]string{
+			GoogleClientIDEnv:     "client-id",
+			GoogleClientSecretEnv: "client-secret",
+		})
+		if err != nil {
+			t.Fatalf("Load() error = %v, want nil", err)
+		}
+		if !config.GoogleOAuthConfigured() {
+			t.Fatal("GoogleOAuthConfigured() = false, want true")
+		}
+		if config.GoogleClientID != "client-id" || config.GoogleClientSecret.Reveal() != "client-secret" {
+			t.Fatalf("Google settings not retained: %+v", config)
+		}
+		if config.GoogleRedirectURL != "http://localhost:8080/en/oauth/google/callback" {
+			t.Fatalf("GoogleRedirectURL = %q", config.GoogleRedirectURL)
+		}
+	})
+
+	t.Run("honours redirect override", func(t *testing.T) {
+		config, err := loadValues(map[string]string{
+			GoogleClientIDEnv:     "client-id",
+			GoogleClientSecretEnv: "client-secret",
+			GoogleRedirectURLEnv:  "https://app.example.test/callback",
+		})
+		if err != nil {
+			t.Fatalf("Load() error = %v, want nil", err)
+		}
+		if config.GoogleRedirectURL != "https://app.example.test/callback" {
+			t.Fatalf("GoogleRedirectURL = %q, want override", config.GoogleRedirectURL)
+		}
+	})
+}
+
+func TestLoadGoogleOAuthRejectsInvalidConfiguration(t *testing.T) {
+	tests := []struct {
+		name   string
+		values map[string]string
+	}{
+		{name: "missing secret", values: map[string]string{GoogleClientIDEnv: "client-id"}},
+		{name: "missing client id", values: map[string]string{GoogleClientSecretEnv: "client-secret"}},
+		{name: "credential bearing redirect", values: map[string]string{
+			GoogleClientIDEnv:     "client-id",
+			GoogleClientSecretEnv: "client-secret",
+			GoogleRedirectURLEnv:  "https://user:pass@app.example.test/callback",
+		}},
+		{name: "relative redirect", values: map[string]string{
+			GoogleClientIDEnv:     "client-id",
+			GoogleClientSecretEnv: "client-secret",
+			GoogleRedirectURLEnv:  "/callback",
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := loadValues(test.values); !errors.Is(err, ErrInvalidOAuth) {
+				t.Fatalf("Load() error = %v, want errors.Is(_, %v)", err, ErrInvalidOAuth)
+			}
+		})
+	}
+}
+
 func TestLoadNilEnvironmentLookup(t *testing.T) {
 	_, err := Load(nil)
 	if err == nil {

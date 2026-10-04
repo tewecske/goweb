@@ -39,8 +39,17 @@ Configuration comes from environment variables. Defaults keep local development 
 | `GOWEB_TRUSTED_PROXY` | unset; optional trusted proxy IP or CIDR network |
 | `GOWEB_BOOTSTRAP_ADMIN_EMAIL` | unset; non-production bootstrap administrator email |
 | `GOWEB_BOOTSTRAP_ADMIN_PASSWORD` | unset; non-production bootstrap administrator password |
+| `GOWEB_GOOGLE_CLIENT_ID` | unset; enables Google sign-in when set with the client secret |
+| `GOWEB_GOOGLE_CLIENT_SECRET` | unset; Google OAuth client secret |
+| `GOWEB_GOOGLE_REDIRECT_URL` | derived as `<GOWEB_PUBLIC_URL>/en/oauth/google/callback` |
 
 `GOWEB_DATABASE_URL` and `GOWEB_SESSION_SECRET` are optional foundation inputs. Secret values are redacted from formatting and JSON diagnostics; callers must not log or return revealed values.
+
+Google sign-in is optional and only appears on the sign-in and sign-up pages when
+both `GOWEB_GOOGLE_CLIENT_ID` and `GOWEB_GOOGLE_CLIENT_SECRET` are set. Register
+the effective `GOWEB_GOOGLE_REDIRECT_URL` (HTTPS) as an authorized redirect URI in
+the Google Cloud console. Linked accounts are managed in the account settings
+page.
 
 Copy [.env.example](.env.example) to `.env` for local example values. It is not a
 secret file: every value is a throwaway example. `make run` sources `.env`

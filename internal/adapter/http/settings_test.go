@@ -209,6 +209,62 @@ func TestSettingsIdentityLinkRedirectsToProvider(t *testing.T) {
 	}
 }
 
+func TestSettingsIdentityLinkUsesRedirectHeaderForHTMX(t *testing.T) {
+	dependencies := settingsStubDependencies(t)
+	dependencies.Users = testUserFinder{user: service.User{ID: 7, Version: 1}}
+	dependencies.IdentityLink = settingsLinker{url: "https://accounts.google.com/o/oauth2/v2/auth"}
+	handler, _ := newSettingsTestHandler(t, dependencies)
+
+	request := authenticatedRequest(http.MethodPost, "/en/account/settings/identity/link", 7, "provider=google")
+	request.Header.Set("HX-Request", "true")
+	response := httptest.NewRecorder()
+	handler.linkIdentity(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if redirect := response.Header().Get("HX-Redirect"); redirect != "https://accounts.google.com/o/oauth2/v2/auth" {
+		t.Fatalf("HX-Redirect = %q, want provider URL", redirect)
+	}
+}
+
+func TestSettingsIdentityLinkRendersProviderLabel(t *testing.T) {
+	dependencies := settingsStubDependencies(t)
+	dependencies.Users = testUserFinder{user: service.User{ID: 7, Version: 1}}
+	dependencies.IdentityLister = settingsIdentityLister{}
+	dependencies.OAuthProviders = httpOAuthProvidersStub{names: []string{"google"}}
+	handler, _ := newSettingsTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.page(response, authenticatedRequest(http.MethodGet, "/en/account/settings", 7, ""))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, "Link Google") {
+		t.Fatalf("settings page missing Google link button")
+	}
+	if !strings.Contains(body, "#4285F4") {
+		t.Errorf("settings page missing Google brand icon")
+	}
+}
+
+func TestSettingsPageConfirmsLinkedIdentity(t *testing.T) {
+	dependencies := settingsStubDependencies(t)
+	dependencies.Users = testUserFinder{user: service.User{ID: 7, Version: 1}}
+	dependencies.IdentityLister = settingsIdentityLister{}
+	handler, _ := newSettingsTestHandler(t, dependencies)
+
+	response := httptest.NewRecorder()
+	handler.page(response, authenticatedRequest(http.MethodGet, "/en/account/settings?identity=linked", 7, ""))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if !strings.Contains(response.Body.String(), "External identity linked") {
+		t.Errorf("settings page missing linked confirmation")
+	}
+}
+
 func TestSettingsThemeUpdate(t *testing.T) {
 	tests := []struct {
 		name           string

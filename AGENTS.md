@@ -16,6 +16,7 @@ Package responsibilities:
 - `tests/browser` contains opt-in Playwright acceptance specs; do not commit browser credentials or bearer-token fixtures.
 - `internal/adapter/http` owns routes, page rendering, full-page/HTMX responses, and transport adapters.
 - `internal/adapter/mail` owns mail delivery adapters; mail ports stay in consuming services.
+- `internal/adapter/oauth` owns external identity provider clients; OAuth ports and flow state stay in `internal/service`.
 - `internal/adapter/http/middleware` owns request context, recovery, logging, tracing, authentication, and CSRF boundaries.
 - `internal/server` owns listener lifecycle, graceful shutdown, and dependency closure.
 - `internal/store` owns database connection settings, migration execution, and persistence adapters.

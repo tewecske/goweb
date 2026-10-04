@@ -176,7 +176,9 @@ configured mail and external-provider test fixtures; they never use committed
 credentials or token fixtures.
 Guest acceptance fixtures may override logical guest routes with
 `GOWEB_BROWSER_GUEST_WRITE_PATH`, `GOWEB_BROWSER_GUEST_TRANSFER_PATH`, and
-`GOWEB_BROWSER_GUEST_UPGRADE_PATH`.
+`GOWEB_BROWSER_GUEST_UPGRADE_PATH`. OAuth failure specs default to an
+unconfigured provider name; override `GOWEB_BROWSER_OAUTH_PROVIDER` when a
+provider is configured in the test environment.
 
 ## Project conventions
 

@@ -95,7 +95,11 @@ func (h *settingsHandler) page(writer http.ResponseWriter, request *http.Request
 	if !ok {
 		return
 	}
-	h.renderSettings(writer, request, language, user, FormData{}, nil, http.StatusOK)
+	var alerts []Alert
+	if request.URL.Query().Get("identity") == "linked" {
+		alerts = append(alerts, Alert{Level: "success", Message: settingsTranslate(h.settings, language, "settings.success.identity_linked")})
+	}
+	h.renderSettings(writer, request, language, user, FormData{}, alerts, http.StatusOK)
 }
 
 func (h *settingsHandler) updateProfile(writer http.ResponseWriter, request *http.Request) {
@@ -291,6 +295,13 @@ func (h *settingsHandler) linkIdentity(writer http.ResponseWriter, request *http
 		h.renderSettings(writer, request, language, user, FormData{}, []Alert{{Level: "error", Message: settingsTranslate(h.settings, language, "settings.error.identity_link")}}, http.StatusUnprocessableEntity)
 		return
 	}
+	// HTMX would follow the redirect with XHR and fail cross-origin, so ask the
+	// browser to navigate to the provider authorization URL instead.
+	if IsHTMX(request) {
+		writer.Header().Set("HX-Redirect", url)
+		writer.WriteHeader(http.StatusOK)
+		return
+	}
 	http.Redirect(writer, request, url, http.StatusFound)
 }
 
@@ -375,17 +386,18 @@ func (h *settingsHandler) identityViews(request *http.Request, userID int64) ([]
 		}
 		for _, identity := range linked {
 			identities = append(identities, IdentityView{
-				ID:        identity.ID,
-				Provider:  identity.Provider,
-				Label:     identityLabel(identity),
-				Removable: true,
+				ID:            identity.ID,
+				Provider:      identity.Provider,
+				ProviderLabel: oauthProviderLabel(identity.Provider),
+				Label:         identityLabel(identity),
+				Removable:     true,
 			})
 		}
 	}
 	var providers []OAuthProviderView
 	if h.dependencies.OAuthProviders != nil {
 		for _, name := range h.dependencies.OAuthProviders.Names() {
-			providers = append(providers, OAuthProviderView{Name: name, URL: localizedPath(recoveryLanguage(request), "/oauth/"+name)})
+			providers = append(providers, OAuthProviderView{Name: name, Label: oauthProviderLabel(name), URL: localizedPath(recoveryLanguage(request), "/oauth/"+name)})
 		}
 	}
 	return identities, providers, nil

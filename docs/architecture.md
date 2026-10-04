@@ -39,6 +39,7 @@ Delivered feature areas:
 - `internal/service/repository.go` provides `ClassifyStaleWrite`, `IsWriteConflict`, and `ErrRecordNotFound` for revision-checked writes.
 - `internal/store/postgres` implements the user, session, token, OAuth, group, and membership ports; `UpdateGroup` persists names and invite codes under a revision check.
 - `templates/settings.html`, `templates/groups.html`, and `templates/alerts.html` back the account-settings and group interfaces.
+- `internal/adapter/oauth` implements the external identity provider client. Only providers configured through `internal/config` are registered by `internal/app`; the same registry drives sign-in/sign-up buttons and link/unlink controls in account settings.
 - `internal/service/maintenance.go` owns the interval worker that runs registered cleanup jobs, retains per-job last-run state, and survives an individual job failure. `cmd/web` starts it with the signal context.
 - `internal/service/retention.go` and `internal/store/postgres/retention.go` remove expired or consumed tokens, expired OAuth states, and login/usage history past the configured retention.
 - `internal/service/system.go` produces the credential-free deployment configuration rendered on `/{language}/admin/system`; connection addresses are reduced to scheme and host.

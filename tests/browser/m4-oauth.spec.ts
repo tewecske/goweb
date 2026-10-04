@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const enabled = process.env.GOWEB_BROWSER_E2E === "1";
-const provider = process.env.GOWEB_BROWSER_OAUTH_PROVIDER ?? "google";
+const provider = process.env.GOWEB_BROWSER_OAUTH_PROVIDER ?? "unconfigured";
 
 test.describe("M4 external identity", () => {
   test.skip(!enabled, "set GOWEB_BROWSER_E2E=1 to run browser acceptance specs");
@@ -20,7 +20,7 @@ test.describe("M4 external identity", () => {
 
   test("linked provider controls enforce last sign-in method", async ({ page }) => {
     test.skip(!process.env.GOWEB_BROWSER_DATABASE_FIXTURE, "requires signed-in settings fixture");
-    await page.goto("/en/settings/identities");
+    await page.goto("/en/account/settings");
     await expect(page.locator("body")).toContainText(/external|identity|sign-in/i);
     await expect(page.locator("body")).not.toContainText(/client secret|access token|provider subject/i);
   });

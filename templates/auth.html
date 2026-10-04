@@ -41,7 +41,10 @@
         <div class="divider" role="presentation">{{.Labels.or}}</div>
         <div class="grid gap-2" aria-label="{{.Labels.external_providers}}">
           {{range .OAuthProviders}}
-            <a class="btn btn-outline" data-oauth-provider="{{.Name}}" href="{{.URL}}">{{$.Labels.continue}} {{.Name}}</a>
+            <a class="btn btn-outline btn-block" data-oauth-provider="{{.Name}}" href="{{.URL}}">
+              {{template "oauth-provider-icon" .}}
+              <span>{{$.Labels.continue}} {{.Label}}</span>
+            </a>
           {{end}}
         </div>
       {{end}}

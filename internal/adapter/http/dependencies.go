@@ -222,7 +222,7 @@ type PasswordResetterUse interface {
 
 type OAuthAuthenticator interface {
 	Start(context.Context, string) (string, error)
-	Callback(context.Context, string, string, string) (service.OAuthSignInResult, error)
+	CompleteCallback(context.Context, string, string, string) (service.OAuthCallbackResult, error)
 }
 
 type OAuthProviderLister interface {

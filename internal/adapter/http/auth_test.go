@@ -71,7 +71,7 @@ func (s httpResetUseStub) Redeem(context.Context, string, string) error { return
 
 type httpOAuthStub struct {
 	startURL string
-	result   service.OAuthSignInResult
+	result   service.OAuthCallbackResult
 	err      error
 }
 
@@ -79,7 +79,7 @@ func (s httpOAuthStub) Start(context.Context, string) (string, error) {
 	return s.startURL, s.err
 }
 
-func (s httpOAuthStub) Callback(context.Context, string, string, string) (service.OAuthSignInResult, error) {
+func (s httpOAuthStub) CompleteCallback(context.Context, string, string, string) (service.OAuthCallbackResult, error) {
 	return s.result, s.err
 }
 
@@ -410,6 +410,24 @@ func TestOAuthControlsOnlyRenderConfiguredProviders(t *testing.T) {
 	}
 }
 
+func TestOAuthGoogleButtonRendersOnSignInAndSignUp(t *testing.T) {
+	dependencies := newHTTPTestDependencies(t)
+	dependencies.OAuthProviders = httpOAuthProvidersStub{names: []string{"google"}}
+	handler := NewRouterWithServices(dependencies)
+
+	for _, path := range []string{"/en/sign-in", "/en/sign-up"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		body := response.Body.String()
+		if !strings.Contains(body, `data-oauth-provider="google"`) || !strings.Contains(body, "Continue with Google") {
+			t.Fatalf("%s missing Google social login button", path)
+		}
+		if !strings.Contains(body, "#4285F4") {
+			t.Errorf("%s missing Google brand icon", path)
+		}
+	}
+}
+
 func TestOAuthCallbackFailureRedirectsWithoutProviderSecrets(t *testing.T) {
 	dependencies := newHTTPTestDependencies(t)
 	dependencies.OAuthProviders = httpOAuthProvidersStub{names: []string{"github"}}
@@ -430,7 +448,7 @@ func TestOAuthCallbackFailureRedirectsWithoutProviderSecrets(t *testing.T) {
 func TestOAuthCallbackSuccessCreatesSessionCookie(t *testing.T) {
 	dependencies := newHTTPTestDependencies(t)
 	dependencies.OAuthProviders = httpOAuthProvidersStub{names: []string{"github"}}
-	dependencies.OAuth = httpOAuthStub{result: service.OAuthSignInResult{Session: service.Session{ID: "oauth-session"}}}
+	dependencies.OAuth = httpOAuthStub{result: service.OAuthCallbackResult{SignIn: service.OAuthSignInResult{Session: service.Session{ID: "oauth-session"}}}}
 	handler := NewRouterWithServices(dependencies)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/en/oauth/github/callback?code=provider-code&state=opaque-state", nil))
@@ -446,6 +464,24 @@ func TestOAuthCallbackSuccessCreatesSessionCookie(t *testing.T) {
 	}
 	if sessionCookie == nil || sessionCookie.Value != "oauth-session" {
 		t.Fatalf("OAuth success session cookie = %+v", sessionCookie)
+	}
+}
+
+func TestOAuthLinkCallbackReturnsToSettingsWithoutSession(t *testing.T) {
+	dependencies := newHTTPTestDependencies(t)
+	dependencies.OAuthProviders = httpOAuthProvidersStub{names: []string{"google"}}
+	dependencies.OAuth = httpOAuthStub{result: service.OAuthCallbackResult{Linked: true, UserID: 7}}
+	handler := NewRouterWithServices(dependencies)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/en/oauth/google/callback?code=provider-code&state=opaque-state", nil))
+
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/en/account/settings?identity=linked" {
+		t.Fatalf("OAuth link response = %d %q", response.Code, response.Header().Get("Location"))
+	}
+	for _, cookie := range response.Result().Cookies() {
+		if cookie.Name == middleware.DefaultSessionCookieName {
+			t.Fatal("OAuth link callback set a new session cookie")
+		}
 	}
 }
 

@@ -165,6 +165,14 @@ func (s *OAuthSignInService) Start(ctx context.Context, providerName string) (st
 	return authorizationURL, nil
 }
 
+// OAuthCallbackResult is the outcome of one provider callback. Linked selects
+// whether the callback attached an identity to an account or signed one in.
+type OAuthCallbackResult struct {
+	Linked bool
+	UserID int64
+	SignIn OAuthSignInResult
+}
+
 // Callback consumes state and authenticates the provider profile. Provider
 // subject, never reported email, selects an existing account.
 func (s *OAuthSignInService) Callback(ctx context.Context, providerName, code, rawState string) (OAuthSignInResult, error) {
@@ -174,32 +182,99 @@ func (s *OAuthSignInService) Callback(ctx context.Context, providerName, code, r
 	if strings.TrimSpace(code) == "" || len(code) > maxOAuthCodeLength {
 		return OAuthSignInResult{}, ErrOAuthAuthenticationFailed
 	}
-	state, err := normalizeOAuthState(rawState)
+	stored, canonicalName, provider, now, err := s.consumeCallbackState(ctx, providerName, rawState)
 	if err != nil {
 		return OAuthSignInResult{}, err
+	}
+	if stored.Action != oauthActionSignIn || stored.UserID != 0 {
+		return OAuthSignInResult{}, ErrOAuthStateInvalid
+	}
+	profile, err := exchangeOAuthProfile(ctx, provider, code)
+	if err != nil {
+		return OAuthSignInResult{}, err
+	}
+	return s.signInWithProfile(ctx, canonicalName, profile, now)
+}
+
+// CompleteCallback consumes one callback state and completes whichever flow it
+// represents: an anonymous sign-in or an authenticated identity link. The HTTP
+// layer uses it because both flows share the registered redirect URI.
+func (s *OAuthSignInService) CompleteCallback(ctx context.Context, providerName, code, rawState string) (OAuthCallbackResult, error) {
+	if err := s.validate(ctx); err != nil {
+		return OAuthCallbackResult{}, err
+	}
+	if strings.TrimSpace(code) == "" || len(code) > maxOAuthCodeLength {
+		return OAuthCallbackResult{}, ErrOAuthAuthenticationFailed
+	}
+	stored, canonicalName, provider, now, err := s.consumeCallbackState(ctx, providerName, rawState)
+	if err != nil {
+		return OAuthCallbackResult{}, err
+	}
+	profile, err := exchangeOAuthProfile(ctx, provider, code)
+	if err != nil {
+		return OAuthCallbackResult{}, err
+	}
+	switch stored.Action {
+	case oauthActionSignIn:
+		if stored.UserID != 0 {
+			return OAuthCallbackResult{}, ErrOAuthStateInvalid
+		}
+		result, err := s.signInWithProfile(ctx, canonicalName, profile, now)
+		if err != nil {
+			return OAuthCallbackResult{}, err
+		}
+		return OAuthCallbackResult{SignIn: result}, nil
+	case oauthActionLink:
+		if stored.UserID <= 0 {
+			return OAuthCallbackResult{}, ErrOAuthStateInvalid
+		}
+		if err := s.linkProfile(ctx, stored.UserID, canonicalName, profile, now); err != nil {
+			return OAuthCallbackResult{}, err
+		}
+		return OAuthCallbackResult{Linked: true, UserID: stored.UserID}, nil
+	default:
+		return OAuthCallbackResult{}, ErrOAuthStateInvalid
+	}
+}
+
+// consumeCallbackState normalizes and atomically consumes one callback state,
+// validating provider identity, expiry, and the constant-time state match.
+func (s *OAuthSignInService) consumeCallbackState(ctx context.Context, providerName, rawState string) (OAuthState, string, OAuthProviderClient, int64, error) {
+	state, err := normalizeOAuthState(rawState)
+	if err != nil {
+		return OAuthState{}, "", nil, 0, err
 	}
 	provider, ok := s.providerClient(providerName)
 	if !ok {
-		return OAuthSignInResult{}, ErrOAuthProviderUnavailable
+		return OAuthState{}, "", nil, 0, ErrOAuthProviderUnavailable
 	}
 	now := s.now().Unix()
-	storedState, err := s.states.ConsumeOAuthState(ctx, state, now)
+	stored, err := s.states.ConsumeOAuthState(ctx, state, now)
 	if err != nil {
-		return OAuthSignInResult{}, ErrOAuthStateInvalid
+		return OAuthState{}, "", nil, 0, ErrOAuthStateInvalid
 	}
 	canonicalName := canonicalProviderName(provider.Name())
-	if storedState.Provider != canonicalName || storedState.Action != oauthActionSignIn || storedState.UserID != 0 || storedState.ExpiresAt <= now ||
-		storedState.State == "" || subtle.ConstantTimeCompare([]byte(storedState.State), []byte(state)) != 1 {
-		return OAuthSignInResult{}, ErrOAuthStateInvalid
+	if stored.Provider != canonicalName || stored.ExpiresAt <= now ||
+		stored.State == "" || subtle.ConstantTimeCompare([]byte(stored.State), []byte(state)) != 1 {
+		return OAuthState{}, "", nil, 0, ErrOAuthStateInvalid
 	}
+	return stored, canonicalName, provider, now, nil
+}
+
+func exchangeOAuthProfile(ctx context.Context, provider OAuthProviderClient, code string) (OAuthProfile, error) {
 	profile, err := provider.Exchange(ctx, code)
 	if err != nil {
-		return OAuthSignInResult{}, oauthFailure(err)
+		return OAuthProfile{}, oauthFailure(err)
 	}
 	if err := validateOAuthProfile(profile); err != nil {
-		return OAuthSignInResult{}, err
+		return OAuthProfile{}, err
 	}
+	return profile, nil
+}
 
+// signInWithProfile resolves an existing identity or creates an account. It
+// never merges accounts by reported email.
+func (s *OAuthSignInService) signInWithProfile(ctx context.Context, canonicalName string, profile OAuthProfile, now int64) (OAuthSignInResult, error) {
 	identity, err := s.identities.FindOAuthIdentity(ctx, canonicalName, profile.Subject)
 	if err == nil {
 		return s.signInExistingIdentity(ctx, identity)
@@ -253,30 +328,24 @@ func (s *OAuthSignInService) CallbackLink(ctx context.Context, actorUserID int64
 	if actorUserID <= 0 || strings.TrimSpace(code) == "" || len(code) > maxOAuthCodeLength {
 		return ErrOAuthAuthenticationFailed
 	}
-	state, err := normalizeOAuthState(rawState)
+	stored, canonicalName, provider, now, err := s.consumeCallbackState(ctx, providerName, rawState)
 	if err != nil {
 		return err
 	}
-	provider, ok := s.providerClient(providerName)
-	if !ok {
-		return ErrOAuthProviderUnavailable
-	}
-	now := s.now().Unix()
-	storedState, err := s.states.ConsumeOAuthState(ctx, state, now)
-	if err != nil {
+	if stored.Action != oauthActionLink || stored.UserID != actorUserID {
 		return ErrOAuthStateInvalid
 	}
-	canonicalName := canonicalProviderName(provider.Name())
-	if storedState.Provider != canonicalName || storedState.Action != oauthActionLink || storedState.UserID != actorUserID || storedState.ExpiresAt <= now || storedState.State == "" || subtle.ConstantTimeCompare([]byte(storedState.State), []byte(state)) != 1 {
-		return ErrOAuthStateInvalid
-	}
-	profile, err := provider.Exchange(ctx, code)
+	profile, err := exchangeOAuthProfile(ctx, provider, code)
 	if err != nil {
-		return oauthFailure(err)
-	}
-	if err := validateOAuthProfile(profile); err != nil {
 		return err
 	}
+	return s.linkProfile(ctx, actorUserID, canonicalName, profile, now)
+}
+
+// linkProfile attaches one provider identity to an account, refusing a subject
+// already linked elsewhere, and confirms the account email when the provider
+// asserts a verified match.
+func (s *OAuthSignInService) linkProfile(ctx context.Context, actorUserID int64, canonicalName string, profile OAuthProfile, now int64) error {
 	if _, err := s.identities.FindOAuthIdentity(ctx, canonicalName, profile.Subject); err == nil {
 		return ErrOAuthIdentityConflict
 	} else if !errors.Is(err, ErrOAuthIdentityNotFound) {

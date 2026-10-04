@@ -486,11 +486,12 @@ type LanguageOption struct {
 // IdentityView is one linked external identity for display. The permanent
 // provider subject is never part of this value.
 type IdentityView struct {
-	ID        int64
-	Provider  string
-	Label     string
-	Removable bool
-	RemoveURL string
+	ID            int64
+	Provider      string
+	ProviderLabel string
+	Label         string
+	Removable     bool
+	RemoveURL     string
 }
 
 // NavigationItem describes one internal navigation link.
@@ -518,10 +519,11 @@ type Alert struct {
 }
 
 // OAuthProviderView contains only safe provider display data and its local
-// authorization-start URL.
+// authorization-start URL. Label is a user-facing name for the provider.
 type OAuthProviderView struct {
-	Name string
-	URL  string
+	Name  string
+	Label string
+	URL   string
 }
 
 // FormData contains submitted values and server-side field errors.

@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/tewecske/goweb/internal/locale"
 )
 
 const (
@@ -44,6 +46,12 @@ const (
 	BootstrapAdminEmailEnv = "GOWEB_BOOTSTRAP_ADMIN_EMAIL"
 	// BootstrapAdminPasswordEnv names the optional non-production bootstrap administrator password.
 	BootstrapAdminPasswordEnv = "GOWEB_BOOTSTRAP_ADMIN_PASSWORD"
+	// GoogleClientIDEnv names the optional Google OAuth client identifier.
+	GoogleClientIDEnv = "GOWEB_GOOGLE_CLIENT_ID"
+	// GoogleClientSecretEnv names the optional Google OAuth client secret.
+	GoogleClientSecretEnv = "GOWEB_GOOGLE_CLIENT_SECRET"
+	// GoogleRedirectURLEnv overrides the derived Google OAuth redirect URL.
+	GoogleRedirectURLEnv = "GOWEB_GOOGLE_REDIRECT_URL"
 
 	// MinimumBootstrapAdminPasswordLength prevents weak bootstrap credentials.
 	MinimumBootstrapAdminPasswordLength = 8
@@ -87,6 +95,8 @@ var (
 	ErrInvalidMailRelay = errors.New("config: invalid mail relay")
 	// ErrInvalidTrustedProxy identifies an unsupported trusted proxy value.
 	ErrInvalidTrustedProxy = errors.New("config: invalid trusted proxy")
+	// ErrInvalidOAuth identifies unusable external identity provider settings.
+	ErrInvalidOAuth = errors.New("config: invalid oauth configuration")
 	// ErrUnsafeProductionConfig identifies deployment settings that are unsafe
 	// to start with in production.
 	ErrUnsafeProductionConfig = errors.New("config: unsafe production configuration")
@@ -159,6 +169,14 @@ type Config struct {
 	BootstrapAdminPassword    Secret
 	MailRelay                 Secret
 	TrustedProxy              string
+	GoogleClientID            string
+	GoogleClientSecret        Secret
+	GoogleRedirectURL         string
+}
+
+// GoogleOAuthConfigured reports whether Google sign-in has complete settings.
+func (c Config) GoogleOAuthConfigured() bool {
+	return strings.TrimSpace(c.GoogleClientID) != "" && c.GoogleClientSecret.IsSet() && strings.TrimSpace(c.GoogleRedirectURL) != ""
 }
 
 // BootstrapAdminConfigured reports whether both bootstrap administrator values
@@ -170,7 +188,7 @@ func (c Config) BootstrapAdminConfigured() bool {
 // String returns a safe diagnostic summary without secret values.
 func (c Config) String() string {
 	return fmt.Sprintf(
-		"environment=%s http_address=%s public_url=%s session_cookie_secure=%t email_confirmation_required=%t session_lifetime=%s guest_retention=%s login_attempt_retention=%s usage_retention=%s database_configured=%t session_secret_configured=%t bootstrap_admin_configured=%t mail_relay_configured=%t trusted_proxy_configured=%t",
+		"environment=%s http_address=%s public_url=%s session_cookie_secure=%t email_confirmation_required=%t session_lifetime=%s guest_retention=%s login_attempt_retention=%s usage_retention=%s database_configured=%t session_secret_configured=%t bootstrap_admin_configured=%t mail_relay_configured=%t trusted_proxy_configured=%t google_oauth_configured=%t",
 		c.Environment,
 		c.HTTPAddress,
 		c.PublicURL.String(),
@@ -185,6 +203,7 @@ func (c Config) String() string {
 		c.BootstrapAdminConfigured(),
 		c.MailRelay.IsSet(),
 		c.TrustedProxy != "",
+		c.GoogleOAuthConfigured(),
 	)
 }
 
@@ -263,6 +282,26 @@ func Load(getenv func(string) string) (Config, error) {
 	if trustedProxy != "" && !validProxyAddress(trustedProxy) {
 		return Config{}, fmt.Errorf("%w: %s must be an IP address or CIDR network", ErrInvalidTrustedProxy, TrustedProxyEnv)
 	}
+	googleClientID := strings.TrimSpace(getenv(GoogleClientIDEnv))
+	googleClientSecret := Secret{value: getenv(GoogleClientSecretEnv)}
+	googleRedirectURL := strings.TrimSpace(getenv(GoogleRedirectURLEnv))
+	if googleClientID != "" || googleClientSecret.IsSet() {
+		if googleClientID == "" || !googleClientSecret.IsSet() {
+			return Config{}, fmt.Errorf("%w: %s and %s must be set together", ErrInvalidOAuth, GoogleClientIDEnv, GoogleClientSecretEnv)
+		}
+		if googleRedirectURL == "" {
+			redirectPath, err := locale.Path(locale.Default, "/oauth/google/callback")
+			if err != nil {
+				return Config{}, fmt.Errorf("%w: cannot derive %s", ErrInvalidOAuth, GoogleRedirectURLEnv)
+			}
+			googleRedirectURL = strings.TrimRight(publicURL.String(), "/") + redirectPath
+		}
+	}
+	if googleRedirectURL != "" {
+		if err := validateOAuthRedirectURL(googleRedirectURL); err != nil {
+			return Config{}, err
+		}
+	}
 
 	loaded := Config{
 		Environment:               environment,
@@ -280,6 +319,9 @@ func Load(getenv func(string) string) (Config, error) {
 		BootstrapAdminPassword:    bootstrapPassword,
 		MailRelay:                 mailRelay,
 		TrustedProxy:              trustedProxy,
+		GoogleClientID:            googleClientID,
+		GoogleClientSecret:        googleClientSecret,
+		GoogleRedirectURL:         googleRedirectURL,
 	}
 	if err := validateProduction(loaded); err != nil {
 		return Config{}, err
@@ -308,6 +350,11 @@ func validateProduction(cfg Config) error {
 	}
 	if cfg.EmailConfirmationRequired && !cfg.MailRelay.IsSet() {
 		problems = append(problems, MailRelayEnv+" must be set when email confirmation is required")
+	}
+	if cfg.GoogleOAuthConfigured() {
+		if parsed, err := url.Parse(cfg.GoogleRedirectURL); err != nil || parsed.Scheme != "https" {
+			problems = append(problems, GoogleRedirectURLEnv+" must use https")
+		}
 	}
 	if len(problems) == 0 {
 		return nil
@@ -382,6 +429,17 @@ func parseRetention(name, raw string, fallback time.Duration) (time.Duration, er
 		return 0, fmt.Errorf("%w: %s must be a positive duration", ErrInvalidDuration, name)
 	}
 	return period, nil
+}
+
+func validateOAuthRedirectURL(raw string) error {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("%w: %s must be an absolute http or https URL without credentials or query data", ErrInvalidOAuth, GoogleRedirectURLEnv)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("%w: %s scheme must be http or https", ErrInvalidOAuth, GoogleRedirectURLEnv)
+	}
+	return nil
 }
 
 func validProxyAddress(raw string) bool {

@@ -193,6 +193,54 @@ func TestOAuthSignInUnlinkEnforcesLastCredential(t *testing.T) {
 	}
 }
 
+func TestOAuthCompleteCallbackDispatchesByStoredAction(t *testing.T) {
+	const state = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+	t.Run("link", func(t *testing.T) {
+		provider := &oauthProviderStub{name: "google", profile: OAuthProfile{Subject: "linked-subject", Email: "user@example.com", EmailVerified: true}}
+		states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", Action: oauthActionLink, UserID: 42, ExpiresAt: 200}}
+		identities := &oauthIdentityRepositoryStub{findErr: ErrOAuthIdentityNotFound}
+		users := &oauthUserRepositoryStub{byID: User{ID: 42, Email: stringPointer("user@example.com"), Version: 2}}
+		service := newOAuthServiceForTest(t, provider, states, identities, users)
+
+		result, err := service.CompleteCallback(context.Background(), "google", "code", state)
+		if err != nil {
+			t.Fatalf("CompleteCallback() error = %v, want nil", err)
+		}
+		if !result.Linked || result.UserID != 42 {
+			t.Fatalf("CompleteCallback() = %+v, want linked user 42", result)
+		}
+		if identities.created.Subject != "linked-subject" || users.updated.EmailVerifiedAt == nil {
+			t.Fatalf("link result identity/verified = %#v/%v", identities.created, users.updated.EmailVerifiedAt)
+		}
+	})
+
+	t.Run("sign in", func(t *testing.T) {
+		provider := &oauthProviderStub{name: "google", profile: OAuthProfile{Subject: "stable-subject", Email: "new@example.com"}}
+		states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", Action: oauthActionSignIn, ExpiresAt: 200}}
+		identities := &oauthIdentityRepositoryStub{found: OAuthIdentity{UserID: 42, Provider: "google", Subject: "stable-subject"}}
+		users := &oauthUserRepositoryStub{byID: User{ID: 42, Email: stringPointer("original@example.com")}}
+		service := newOAuthServiceForTest(t, provider, states, identities, users)
+
+		result, err := service.CompleteCallback(context.Background(), "google", "code", state)
+		if err != nil {
+			t.Fatalf("CompleteCallback() error = %v, want nil", err)
+		}
+		if result.Linked || result.SignIn.User.ID != 42 {
+			t.Fatalf("CompleteCallback() = %+v, want sign-in user 42", result)
+		}
+	})
+
+	t.Run("unknown action", func(t *testing.T) {
+		provider := &oauthProviderStub{name: "google", profile: OAuthProfile{Subject: "subject"}}
+		states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", Action: "callback", ExpiresAt: 200}}
+		service := newOAuthServiceForTest(t, provider, states, &oauthIdentityRepositoryStub{}, &oauthUserRepositoryStub{})
+		if _, err := service.CompleteCallback(context.Background(), "google", "code", state); !errors.Is(err, ErrOAuthStateInvalid) {
+			t.Fatalf("CompleteCallback(unknown action) error = %v, want ErrOAuthStateInvalid", err)
+		}
+	})
+}
+
 func newOAuthServiceForTest(t *testing.T, provider *oauthProviderStub, states *oauthStateRepositoryStub, identities *oauthIdentityRepositoryStub, users *oauthUserRepositoryStub) *OAuthSignInService {
 	t.Helper()
 	registry, err := NewProviderRegistry(provider)

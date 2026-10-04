@@ -74,6 +74,14 @@ func TestLoadRejectsUnsafeProductionConfiguration(t *testing.T) {
 				delete(values, MailRelayEnv)
 			},
 		},
+		{
+			name: "insecure google redirect",
+			mutate: func(values map[string]string) {
+				values[GoogleClientIDEnv] = "client-id"
+				values[GoogleClientSecretEnv] = "client-secret"
+				values[GoogleRedirectURLEnv] = "http://app.example.test/en/oauth/google/callback"
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -114,6 +122,13 @@ func TestLoadRejectsInvalidProductionProvidersAndProxy(t *testing.T) {
 				values[TrustedProxyEnv] = "not-a-network"
 			},
 			want: ErrInvalidTrustedProxy,
+		},
+		{
+			name: "partial google oauth",
+			mutate: func(values map[string]string) {
+				values[GoogleClientIDEnv] = "client-id"
+			},
+			want: ErrInvalidOAuth,
 		},
 	}
 	for _, test := range tests {

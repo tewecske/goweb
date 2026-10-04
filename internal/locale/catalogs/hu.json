@@ -152,6 +152,7 @@
     "settings.success.profile": {"text": "A profil frissítve."},
     "settings.success.password": {"text": "A jelszó frissítve."},
     "settings.success.identity_removed": {"text": "A külső azonosság eltávolítva."},
+    "settings.success.identity_linked": {"text": "A külső azonosság összekapcsolva."},
     "settings.error.generic": {"text": "A beállítások nem menthetők. Próbálja újra."},
     "settings.error.not_found": {"text": "Ez a fiók már nem érhető el."},
     "settings.error.conflict": {"text": "A fiók időközben megváltozott. Töltse újra az oldalt."},

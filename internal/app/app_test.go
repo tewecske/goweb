@@ -59,6 +59,41 @@ func TestNewBuildsCompleteGraphWithoutDatabaseIO(t *testing.T) {
 	}
 }
 
+func TestNewRegistersGoogleProviderOnlyWhenConfigured(t *testing.T) {
+	database := &sql.DB{}
+
+	appConfig, err := config.Load(func(name string) string {
+		switch name {
+		case config.GoogleClientIDEnv:
+			return "client-id"
+		case config.GoogleClientSecretEnv:
+			return "client-secret"
+		case config.PublicURLEnv:
+			return "https://example.test"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+	graph, err := New(database, appConfig)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	names := graph.Providers.Names()
+	if len(names) != 1 || names[0] != "google" {
+		t.Fatalf("provider names = %v, want [google]", names)
+	}
+
+	unconfigured, err := New(database, config.Config{PublicURL: url.URL{Scheme: "https", Host: "example.test"}, SessionLifetime: time.Hour})
+	if err != nil {
+		t.Fatalf("New(unconfigured) error = %v", err)
+	}
+	if len(unconfigured.Providers.Names()) != 0 {
+		t.Fatalf("provider names = %v, want none", unconfigured.Providers.Names())
+	}
+}
+
 func TestEnsureBootstrapAdminSkipsWhenUnconfigured(t *testing.T) {
 	if err := EnsureBootstrapAdmin(nil, nil, config.Config{}); err != nil {
 		t.Fatalf("EnsureBootstrapAdmin() error = %v, want nil", err)
