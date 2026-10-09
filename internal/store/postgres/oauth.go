@@ -172,7 +172,10 @@ func (r *OAuthIdentityRepository) ListOAuthIdentities(ctx context.Context, userI
 	return identities, nil
 }
 
-// DeleteOAuthIdentity removes an identity only when it belongs to userID.
+// DeleteOAuthIdentity removes an identity only when it belongs to userID and
+// the account keeps a way to sign in: a password or another identity. The
+// check and delete run in one transaction holding the account row lock, so
+// concurrent unlinks cannot both pass the check and remove every method.
 func (r *OAuthIdentityRepository) DeleteOAuthIdentity(ctx context.Context, userID, identityID int64) error {
 	db, err := r.database(ctx)
 	if err != nil {
@@ -181,7 +184,23 @@ func (r *OAuthIdentityRepository) DeleteOAuthIdentity(ctx context.Context, userI
 	if userID <= 0 || identityID <= 0 {
 		return service.ErrOAuthIdentityNotFound
 	}
-	result, err := db.ExecContext(ctx, "DELETE FROM oauth_identities WHERE id = $1 AND user_id = $2", identityID, userID)
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return mapOAuthIdentityError(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var hasPassword bool
+	if err := tx.QueryRowContext(ctx, "SELECT password_hash IS NOT NULL FROM users WHERE id = $1 FOR UPDATE", userID).Scan(&hasPassword); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return service.ErrOAuthIdentityNotFound
+		}
+		return mapOAuthIdentityError(err)
+	}
+	var identities int
+	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM oauth_identities WHERE user_id = $1", userID).Scan(&identities); err != nil {
+		return mapOAuthIdentityError(err)
+	}
+	result, err := tx.ExecContext(ctx, "DELETE FROM oauth_identities WHERE id = $1 AND user_id = $2", identityID, userID)
 	if err != nil {
 		return mapOAuthIdentityError(err)
 	}
@@ -192,7 +211,10 @@ func (r *OAuthIdentityRepository) DeleteOAuthIdentity(ctx context.Context, userI
 	if rows == 0 {
 		return service.ErrOAuthIdentityNotFound
 	}
-	return nil
+	if !hasPassword && identities <= 1 {
+		return service.ErrOAuthLastSignInMethod
+	}
+	return mapOAuthIdentityError(tx.Commit())
 }
 
 func (r *OAuthStateRepository) database(ctx context.Context) (*sql.DB, error) {

@@ -5,6 +5,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -109,6 +110,10 @@ func TestOAuthIdentityRepositoryFindListDeleteAndConflict(t *testing.T) {
 	}
 	firstUserID := insertTokenUser(t, harness.DB, "oauth-first@example.test")
 	secondUserID := insertTokenUser(t, harness.DB, "oauth-second@example.test")
+	// A password keeps a sign-in method after the only identity is removed.
+	if _, err := harness.DB.ExecContext(context.Background(), "UPDATE users SET password_hash = 'hash' WHERE id = $1", firstUserID); err != nil {
+		t.Fatal(err)
+	}
 	first := service.OAuthIdentity{UserID: firstUserID, Provider: "Google", Subject: "stable-subject", CreatedAt: 100}
 	if err := identityRepository.CreateOAuthIdentity(context.Background(), first); err != nil {
 		t.Fatalf("CreateOAuthIdentity() error = %v", err)
@@ -142,6 +147,60 @@ func TestOAuthIdentityRepositoryFindListDeleteAndConflict(t *testing.T) {
 	}
 	if err := identityRepository.DeleteOAuthIdentity(context.Background(), firstUserID, identities[0].ID); !errors.Is(err, service.ErrOAuthIdentityNotFound) {
 		t.Fatalf("repeated delete error = %v, want %v", err, service.ErrOAuthIdentityNotFound)
+	}
+}
+
+func TestOAuthIdentityConcurrentUnlinksKeepOneSignInMethod(t *testing.T) {
+	harness := newUserRepositoryHarness(t)
+	identityRepository, err := NewOAuthIdentityRepository(harness.DB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userID := insertTokenUser(t, harness.DB, "oauth-only@example.test")
+	// Many concurrent unlinks make the final two overlap, which is where an
+	// unlocked check-then-delete removes the last method.
+	const linked = 20
+	for i := range linked {
+		if err := identityRepository.CreateOAuthIdentity(context.Background(), service.OAuthIdentity{UserID: userID, Provider: "google", Subject: fmt.Sprintf("subject-%d", i), CreatedAt: 100}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	identities, err := identityRepository.ListOAuthIdentities(context.Background(), userID)
+	if err != nil || len(identities) != linked {
+		t.Fatalf("identities = %d (%v), want %d", len(identities), err, linked)
+	}
+
+	start := make(chan struct{})
+	errs := make([]error, len(identities))
+	var wait sync.WaitGroup
+	for i, identity := range identities {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			<-start
+			errs[i] = identityRepository.DeleteOAuthIdentity(context.Background(), userID, identity.ID)
+		}()
+	}
+	close(start)
+	wait.Wait()
+
+	successes, refused := 0, 0
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			successes++
+		case errors.Is(err, service.ErrOAuthLastSignInMethod):
+			refused++
+		default:
+			t.Fatalf("unlink error = %v", err)
+		}
+	}
+	remaining, err := identityRepository.ListOAuthIdentities(context.Background(), userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if successes != linked-1 || refused != 1 || len(remaining) != 1 {
+		t.Fatalf("concurrent unlinks = %d succeeded, %d refused, %d remaining; want %d/1/1", successes, refused, len(remaining), linked-1)
 	}
 }
 
