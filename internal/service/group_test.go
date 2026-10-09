@@ -136,22 +136,23 @@ func TestGroupServiceListIncludesEveryGroupForSiteAdministrator(t *testing.T) {
 }
 
 func TestGroupServiceDetailVisibility(t *testing.T) {
-	members := []GroupMember{{UserID: 7, Role: GroupRoleAdmin}, {UserID: 8, Role: GroupRoleMember}}
 	tests := []struct {
-		name       string
-		role       string
-		member     bool
-		wantErr    error
-		wantInvite bool
-		wantRoster bool
+		name            string
+		role            string
+		member          bool
+		wantErr         error
+		wantInvite      bool
+		wantRoster      bool
+		wantOtherEmails bool
 	}{
-		{name: "administrator sees invite code and roster", role: GroupRoleAdmin, member: true, wantInvite: true, wantRoster: true},
-		{name: "member sees roster without invite code", role: GroupRoleMember, member: true, wantRoster: true},
+		{name: "administrator sees invite code, roster, and emails", role: GroupRoleAdmin, member: true, wantInvite: true, wantRoster: true, wantOtherEmails: true},
+		{name: "member sees roster without invite code or others' emails", role: GroupRoleMember, member: true, wantRoster: true},
 		{name: "non-member gets not found", member: false, wantErr: ErrGroupNotFound},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			members := []GroupMember{{UserID: 7, Role: GroupRoleAdmin, Email: stringPointer("viewer@example.test")}, {UserID: 8, Role: GroupRoleMember, Email: stringPointer("other@example.test")}}
 			memberships := &groupMembershipRepositoryStub{member: test.member, role: test.role, members: members}
 			service, err := NewGroupService(&groupRepositoryStub{group: Group{ID: 5, InviteCode: "ABCDEFGHJKLM"}}, memberships, &groupUserRepositoryStub{user: User{ID: 7}})
 			if err != nil {
@@ -172,6 +173,14 @@ func TestGroupServiceDetailVisibility(t *testing.T) {
 			}
 			if (len(detail.Members) > 0) != test.wantRoster {
 				t.Errorf("roster visibility = %v, want %v", len(detail.Members) > 0, test.wantRoster)
+			}
+			if len(detail.Members) == 2 {
+				if detail.Members[0].Email == nil {
+					t.Error("viewer's own email hidden from them")
+				}
+				if (detail.Members[1].Email != nil) != test.wantOtherEmails {
+					t.Errorf("other member email visible = %v, want %v", detail.Members[1].Email != nil, test.wantOtherEmails)
+				}
 			}
 		})
 	}

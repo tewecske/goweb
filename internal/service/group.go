@@ -263,6 +263,15 @@ func (s *GroupService) Detail(ctx context.Context, userID, groupID int64) (Group
 	if err != nil {
 		return GroupDetail{}, fmt.Errorf("list group members: %w", err)
 	}
+	// Anyone with the shareable invite code can join, so ordinary members see
+	// only names; email addresses stay with group administrators.
+	if !detail.IsAdmin {
+		for i := range members {
+			if members[i].UserID != userID {
+				members[i].Email = nil
+			}
+		}
+	}
 	detail.Members = members
 	return detail, nil
 }
