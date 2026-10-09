@@ -77,9 +77,10 @@ func (c *GoogleClient) Name() string {
 	return GoogleProviderName
 }
 
-// AuthorizationURL builds the Google consent redirect for one callback state.
-func (c *GoogleClient) AuthorizationURL(_ context.Context, state string) (string, error) {
-	if c == nil || !validRedirectURL(c.redirectURL) || strings.TrimSpace(state) == "" {
+// AuthorizationURL builds the Google consent redirect for one callback state
+// and PKCE S256 code challenge.
+func (c *GoogleClient) AuthorizationURL(_ context.Context, state, codeChallenge string) (string, error) {
+	if c == nil || !validRedirectURL(c.redirectURL) || strings.TrimSpace(state) == "" || strings.TrimSpace(codeChallenge) == "" {
 		return "", ErrInvalidGoogleConfig
 	}
 	endpoint, err := url.Parse(c.authorizationEndpoint)
@@ -92,27 +93,30 @@ func (c *GoogleClient) AuthorizationURL(_ context.Context, state string) (string
 	query.Set("response_type", "code")
 	query.Set("scope", googleScopes)
 	query.Set("state", state)
+	query.Set("code_challenge", codeChallenge)
+	query.Set("code_challenge_method", "S256")
 	query.Set("prompt", "select_account")
 	query.Set("include_granted_scopes", "true")
 	endpoint.RawQuery = query.Encode()
 	return endpoint.String(), nil
 }
 
-// Exchange redeems an authorization code for the Google profile asserted by the
-// provider. It resolves the stable subject, never a reported email.
-func (c *GoogleClient) Exchange(ctx context.Context, code string) (service.OAuthProfile, error) {
+// Exchange redeems an authorization code and its PKCE code verifier for the
+// Google profile asserted by the provider. It resolves the stable subject,
+// never a reported email.
+func (c *GoogleClient) Exchange(ctx context.Context, code, codeVerifier string) (service.OAuthProfile, error) {
 	if c == nil || c.httpClient == nil {
 		return service.OAuthProfile{}, ErrInvalidGoogleConfig
 	}
-	accessToken, err := c.exchangeCode(ctx, code)
+	accessToken, err := c.exchangeCode(ctx, code, codeVerifier)
 	if err != nil {
 		return service.OAuthProfile{}, err
 	}
 	return c.fetchProfile(ctx, accessToken)
 }
 
-func (c *GoogleClient) exchangeCode(ctx context.Context, code string) (string, error) {
-	if strings.TrimSpace(code) == "" {
+func (c *GoogleClient) exchangeCode(ctx context.Context, code, codeVerifier string) (string, error) {
+	if strings.TrimSpace(code) == "" || strings.TrimSpace(codeVerifier) == "" {
 		return "", ErrInvalidGoogleConfig
 	}
 	form := url.Values{
@@ -121,6 +125,7 @@ func (c *GoogleClient) exchangeCode(ctx context.Context, code string) (string, e
 		"client_secret": {c.clientSecret},
 		"redirect_uri":  {c.redirectURL},
 		"grant_type":    {"authorization_code"},
+		"code_verifier": {codeVerifier},
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.tokenEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {

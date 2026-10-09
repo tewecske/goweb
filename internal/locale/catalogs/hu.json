@@ -160,6 +160,7 @@
     "settings.error.invalid_username": {"text": "Ez a felhasználónév nem használható."},
     "settings.error.invalid_display_name": {"text": "A megjelenített név túl hosszú."},
     "settings.error.current_required": {"text": "Adja meg jelenlegi jelszavát."},
+    "settings.error.recent_sign_in": {"text": "Biztonsági okokból jelentkezzen ki, majd jelentkezzen be újra, és 10 percen belül állítsa be a jelszavát."},
     "settings.error.current_mismatch": {"text": "A jelenlegi jelszó helytelen."},
     "settings.error.weak_password": {"text": "Válasszon 8 és 128 karakter közötti jelszót."},
     "settings.error.invalid_locale": {"text": "Válassza az elérhető nyelvek egyikét."},

@@ -83,7 +83,7 @@ func (s *LockoutService) Status(ctx context.Context, target User) (LockoutStatus
 	}
 
 	for _, origin := range s.recentOrigins(ctx, target) {
-		snapshot, err := s.limiter.Snapshot(signInOriginAction, origin)
+		snapshot, err := s.limiter.Snapshot(signInOriginAction, originRateLimitKey(origin))
 		if err != nil {
 			return LockoutStatus{}, err
 		}
@@ -115,7 +115,7 @@ func (s *LockoutService) Clear(ctx context.Context, actor AdminActionContext, ta
 		}
 	}
 	for _, origin := range s.recentOrigins(ctx, target) {
-		if err := s.limiter.Clear(signInOriginAction, origin); err != nil {
+		if err := s.limiter.Clear(signInOriginAction, originRateLimitKey(origin)); err != nil {
 			return err
 		}
 	}

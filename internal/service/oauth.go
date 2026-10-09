@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -45,8 +47,10 @@ var (
 // OAuth sign-in service. Registry membership controls whether it is reachable.
 type OAuthProviderClient interface {
 	OAuthProvider
-	AuthorizationURL(context.Context, string) (string, error)
-	Exchange(context.Context, string) (OAuthProfile, error)
+	// AuthorizationURL receives the callback state and the PKCE S256 code
+	// challenge; Exchange receives the matching code verifier.
+	AuthorizationURL(ctx context.Context, state, codeChallenge string) (string, error)
+	Exchange(ctx context.Context, code, codeVerifier string) (OAuthProfile, error)
 }
 
 // OAuthProfile contains provider-asserted identity metadata. Subject is the
@@ -59,13 +63,15 @@ type OAuthProfile struct {
 }
 
 // OAuthState is one short-lived, one-time callback state record.
+// CodeVerifier is the PKCE secret that redeems this flow's authorization code.
 type OAuthState struct {
-	State     string
-	Provider  string
-	Action    string
-	UserID    int64
-	CreatedAt int64
-	ExpiresAt int64
+	State        string
+	Provider     string
+	Action       string
+	UserID       int64
+	CodeVerifier string
+	CreatedAt    int64
+	ExpiresAt    int64
 }
 
 // OAuthStateRepository persists and atomically consumes callback state.
@@ -148,19 +154,23 @@ func (s *OAuthSignInService) Start(ctx context.Context, providerName string) (st
 	if err != nil {
 		return "", "", err
 	}
+	verifier, challenge, err := newPKCEVerifier()
+	if err != nil {
+		return "", "", err
+	}
 	createdAt := s.now().Unix()
 	expiresAt := createdAt + int64(s.stateLife/time.Second)
 	if expiresAt <= createdAt {
 		return "", "", ErrOAuthStateInvalid
 	}
-	authorizationURL, err := provider.AuthorizationURL(ctx, state)
+	authorizationURL, err := provider.AuthorizationURL(ctx, state, challenge)
 	if err != nil {
 		return "", "", oauthFailure(err)
 	}
 	if !safeOAuthURL(authorizationURL) {
 		return "", "", ErrOAuthAuthenticationFailed
 	}
-	if err := s.states.CreateOAuthState(ctx, OAuthState{State: state, Provider: canonicalProviderName(provider.Name()), Action: oauthActionSignIn, CreatedAt: createdAt, ExpiresAt: expiresAt}); err != nil {
+	if err := s.states.CreateOAuthState(ctx, OAuthState{State: state, Provider: canonicalProviderName(provider.Name()), Action: oauthActionSignIn, CodeVerifier: verifier, CreatedAt: createdAt, ExpiresAt: expiresAt}); err != nil {
 		return "", "", oauthFailure(err)
 	}
 	return authorizationURL, state, nil
@@ -190,7 +200,7 @@ func (s *OAuthSignInService) Callback(ctx context.Context, providerName, code, r
 	if stored.Action != oauthActionSignIn || stored.UserID != 0 {
 		return OAuthSignInResult{}, ErrOAuthStateInvalid
 	}
-	profile, err := exchangeOAuthProfile(ctx, provider, code)
+	profile, err := exchangeOAuthProfile(ctx, provider, code, stored.CodeVerifier)
 	if err != nil {
 		return OAuthSignInResult{}, err
 	}
@@ -225,7 +235,7 @@ func (s *OAuthSignInService) CompleteCallback(ctx context.Context, actorUserID i
 	default:
 		return OAuthCallbackResult{}, ErrOAuthStateInvalid
 	}
-	profile, err := exchangeOAuthProfile(ctx, provider, code)
+	profile, err := exchangeOAuthProfile(ctx, provider, code, stored.CodeVerifier)
 	if err != nil {
 		return OAuthCallbackResult{}, err
 	}
@@ -266,8 +276,11 @@ func (s *OAuthSignInService) consumeCallbackState(ctx context.Context, providerN
 	return stored, canonicalName, provider, now, nil
 }
 
-func exchangeOAuthProfile(ctx context.Context, provider OAuthProviderClient, code string) (OAuthProfile, error) {
-	profile, err := provider.Exchange(ctx, code)
+func exchangeOAuthProfile(ctx context.Context, provider OAuthProviderClient, code, codeVerifier string) (OAuthProfile, error) {
+	if codeVerifier == "" {
+		return OAuthProfile{}, ErrOAuthStateInvalid
+	}
+	profile, err := provider.Exchange(ctx, code, codeVerifier)
 	if err != nil {
 		return OAuthProfile{}, oauthFailure(err)
 	}
@@ -310,16 +323,20 @@ func (s *OAuthSignInService) StartLink(ctx context.Context, userID int64, provid
 	if err != nil {
 		return "", "", err
 	}
+	verifier, challenge, err := newPKCEVerifier()
+	if err != nil {
+		return "", "", err
+	}
 	createdAt := s.now().Unix()
 	expiresAt := createdAt + int64(s.stateLife/time.Second)
 	if expiresAt <= createdAt {
 		return "", "", ErrOAuthStateInvalid
 	}
-	authorizationURL, err := provider.AuthorizationURL(ctx, state)
+	authorizationURL, err := provider.AuthorizationURL(ctx, state, challenge)
 	if err != nil || !safeOAuthURL(authorizationURL) {
 		return "", "", ErrOAuthAuthenticationFailed
 	}
-	if err := s.states.CreateOAuthState(ctx, OAuthState{State: state, Provider: canonicalProviderName(provider.Name()), Action: oauthActionLink, UserID: userID, CreatedAt: createdAt, ExpiresAt: expiresAt}); err != nil {
+	if err := s.states.CreateOAuthState(ctx, OAuthState{State: state, Provider: canonicalProviderName(provider.Name()), Action: oauthActionLink, UserID: userID, CodeVerifier: verifier, CreatedAt: createdAt, ExpiresAt: expiresAt}); err != nil {
 		return "", "", oauthFailure(err)
 	}
 	return authorizationURL, state, nil
@@ -341,7 +358,7 @@ func (s *OAuthSignInService) CallbackLink(ctx context.Context, actorUserID int64
 	if stored.Action != oauthActionLink || stored.UserID != actorUserID {
 		return ErrOAuthStateInvalid
 	}
-	profile, err := exchangeOAuthProfile(ctx, provider, code)
+	profile, err := exchangeOAuthProfile(ctx, provider, code, stored.CodeVerifier)
 	if err != nil {
 		return err
 	}
@@ -544,6 +561,17 @@ func newOAuthState() (string, error) {
 		return "", fmt.Errorf("generate oauth state: %w", err)
 	}
 	return hex.EncodeToString(value), nil
+}
+
+// newPKCEVerifier returns an RFC 7636 code verifier and its S256 challenge.
+func newPKCEVerifier() (string, string, error) {
+	value := make([]byte, oauthStateBytes)
+	if _, err := rand.Read(value); err != nil {
+		return "", "", fmt.Errorf("generate oauth code verifier: %w", err)
+	}
+	verifier := base64.RawURLEncoding.EncodeToString(value)
+	digest := sha256.Sum256([]byte(verifier))
+	return verifier, base64.RawURLEncoding.EncodeToString(digest[:]), nil
 }
 
 func safeOAuthURL(raw string) bool {

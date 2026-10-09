@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 // noopAdminUserRepository satisfies the administrator list port; the
@@ -57,12 +58,13 @@ func TestOptimisticLockOutcomesAcrossEditableResources(t *testing.T) {
 					user:      User{ID: 7, Version: 2},
 					updateErr: writeErr,
 				}
-				sessions, _ := newPasswordSettingsSessions(t)
+				sessions, sessionStore := newPasswordSettingsSessions(t)
+				sessionStore.session = Session{ID: "current-session", UserID: 7, CreatedAt: time.Now().Unix(), ExpiresAt: time.Now().Add(time.Hour).Unix()}
 				service, err := NewPasswordSettingsService(users, settingsHasherStub{}, passwordVerifierStub{verify: neverVerify}, sessions)
 				if err != nil {
 					t.Fatalf("NewPasswordSettingsService() error = %v", err)
 				}
-				_, err = service.Update(context.Background(), 7, PasswordSettingsInput{NewPassword: "correct horse battery"})
+				_, err = service.Update(context.Background(), 7, PasswordSettingsInput{SessionID: "current-session", NewPassword: "correct horse battery"})
 				return err
 			},
 		},

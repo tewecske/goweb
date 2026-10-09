@@ -160,6 +160,7 @@
     "settings.error.invalid_username": {"text": "That username cannot be used."},
     "settings.error.invalid_display_name": {"text": "That display name is too long."},
     "settings.error.current_required": {"text": "Enter your current password."},
+    "settings.error.recent_sign_in": {"text": "For your security, sign out and sign in again, then set your password within 10 minutes."},
     "settings.error.current_mismatch": {"text": "Your current password is not correct."},
     "settings.error.weak_password": {"text": "Choose a password between 8 and 128 characters."},
     "settings.error.invalid_locale": {"text": "Choose one of the available languages."},

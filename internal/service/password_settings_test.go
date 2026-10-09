@@ -9,18 +9,37 @@ import (
 
 func TestPasswordSettingsServiceUpdate(t *testing.T) {
 	tests := []struct {
-		name       string
-		existing   User
-		input      PasswordSettingsInput
-		verify     func(string, string) (bool, error)
-		wantErr    error
-		wantWrites int
+		name     string
+		existing User
+		input    PasswordSettingsInput
+		verify   func(string, string) (bool, error)
+		// sessionAge and sessionUserID describe the requesting session.
+		sessionAge    time.Duration
+		sessionUserID int64
+		wantErr       error
+		wantWrites    int
 	}{
 		{
 			name:       "sets first password for external-only account",
 			existing:   User{ID: 7, PasswordHash: nil, Version: 1},
 			input:      PasswordSettingsInput{NewPassword: "correct horse battery"},
+			sessionAge: time.Minute,
 			wantWrites: 1,
+		},
+		{
+			name:       "first password requires a recent sign-in",
+			existing:   User{ID: 7, PasswordHash: nil, Version: 1},
+			input:      PasswordSettingsInput{NewPassword: "correct horse battery"},
+			sessionAge: RecentSignInWindow + time.Minute,
+			wantErr:    ErrRecentSignInRequired,
+		},
+		{
+			name:          "first password rejects another account's session",
+			existing:      User{ID: 7, PasswordHash: nil, Version: 1},
+			input:         PasswordSettingsInput{NewPassword: "correct horse battery"},
+			sessionAge:    time.Minute,
+			sessionUserID: 8,
+			wantErr:       ErrRecentSignInRequired,
 		},
 		{
 			name:       "changes password with valid current password",
@@ -65,6 +84,13 @@ func TestPasswordSettingsServiceUpdate(t *testing.T) {
 			}
 			users := &settingsUserRepositoryStub{user: test.existing}
 			sessions, sessionStore := newPasswordSettingsSessions(t)
+			sessionUserID := test.sessionUserID
+			if sessionUserID == 0 {
+				sessionUserID = test.existing.ID
+			}
+			now := time.Now()
+			sessionStore.session = Session{ID: "current-session", UserID: sessionUserID, CreatedAt: now.Add(-test.sessionAge).Unix(), ExpiresAt: now.Add(time.Hour).Unix()}
+			test.input.SessionID = "current-session"
 			service, err := NewPasswordSettingsService(users, &settingsHasherStub{}, passwordVerifierStub{verify: verifier}, sessions)
 			if err != nil {
 				t.Fatalf("NewPasswordSettingsService() error = %v, want nil", err)

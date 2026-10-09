@@ -36,7 +36,7 @@ func TestGoogleClientAuthorizationURLContainsRequiredParameters(t *testing.T) {
 	client := mustGoogleClient(t)
 	const state = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-	raw, err := client.AuthorizationURL(context.Background(), state)
+	raw, err := client.AuthorizationURL(context.Background(), state, "pkce-challenge")
 	if err != nil {
 		t.Fatalf("AuthorizationURL() error = %v", err)
 	}
@@ -62,6 +62,9 @@ func TestGoogleClientAuthorizationURLContainsRequiredParameters(t *testing.T) {
 	}
 	if query.Get("prompt") != "select_account" {
 		t.Errorf("prompt = %q, want select_account", query.Get("prompt"))
+	}
+	if query.Get("code_challenge") != "pkce-challenge" || query.Get("code_challenge_method") != "S256" {
+		t.Errorf("code_challenge/method = %q/%q, want pkce-challenge/S256", query.Get("code_challenge"), query.Get("code_challenge_method"))
 	}
 }
 
@@ -92,7 +95,7 @@ func TestGoogleClientExchangeReturnsProfile(t *testing.T) {
 	client.userInfoEndpoint = server.URL + "/userinfo"
 	client.httpClient = server.Client()
 
-	profile, err := client.Exchange(context.Background(), "authorization-code")
+	profile, err := client.Exchange(context.Background(), "authorization-code", "pkce-verifier")
 	if err != nil {
 		t.Fatalf("Exchange() error = %v", err)
 	}
@@ -108,6 +111,9 @@ func TestGoogleClientExchangeReturnsProfile(t *testing.T) {
 	}
 	if values.Get("client_secret") != "client-secret" || values.Get("redirect_uri") != "https://app.example.test/en/oauth/google/callback" {
 		t.Errorf("token request omitted client secret or redirect")
+	}
+	if values.Get("code_verifier") != "pkce-verifier" {
+		t.Errorf("token request code_verifier = %q, want pkce-verifier", values.Get("code_verifier"))
 	}
 }
 
@@ -145,7 +151,7 @@ func TestGoogleClientExchangeRejectsProviderFailures(t *testing.T) {
 			client.userInfoEndpoint = server.URL + "/userinfo"
 			client.httpClient = server.Client()
 
-			profile, err := client.Exchange(context.Background(), "authorization-code")
+			profile, err := client.Exchange(context.Background(), "authorization-code", "pkce-verifier")
 			if !errors.Is(err, errTokenExchange) && !errors.Is(err, errUserInfo) {
 				t.Fatalf("Exchange() error = %v, want provider failure", err)
 			}
@@ -158,7 +164,7 @@ func TestGoogleClientExchangeRejectsProviderFailures(t *testing.T) {
 
 func TestGoogleClientAuthorizationURLRejectsEmptyState(t *testing.T) {
 	client := mustGoogleClient(t)
-	if _, err := client.AuthorizationURL(context.Background(), " "); !errors.Is(err, ErrInvalidGoogleConfig) {
+	if _, err := client.AuthorizationURL(context.Background(), " ", "pkce-challenge"); !errors.Is(err, ErrInvalidGoogleConfig) {
 		t.Fatalf("AuthorizationURL(empty state) error = %v, want ErrInvalidGoogleConfig", err)
 	}
 }

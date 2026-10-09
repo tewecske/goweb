@@ -36,6 +36,33 @@ func TestRateLimitedGuestServiceUsesSeparateBudgets(t *testing.T) {
 	}
 }
 
+func TestRateLimitedGuestServiceGroupsIPv6OriginsByPrefix(t *testing.T) {
+	limiter, err := NewRateLimiter(RateLimitConfig{Limit: 1, Window: time.Hour, MaxKeys: 10})
+	if err != nil {
+		t.Fatalf("NewRateLimiter() error = %v, want nil", err)
+	}
+	service, err := NewRateLimitedGuestService(&guestCreatorStub{}, &guestRedeemerStub{}, limiter)
+	if err != nil {
+		t.Fatalf("NewRateLimitedGuestService() error = %v, want nil", err)
+	}
+	for _, step := range []struct {
+		origin  string
+		limited bool
+	}{
+		{origin: "2001:db8:1:2::1"},
+		{origin: "2001:db8:1:2:ffff::9", limited: true}, // same /64
+		{origin: "2001:db8:1:3::1"},                     // next /64
+		{origin: "198.51.100.7"},
+		{origin: "::ffff:198.51.100.7", limited: true}, // same IPv4 client
+		{origin: "198.51.100.8"},
+	} {
+		_, err := service.Create(context.Background(), step.origin, "dark")
+		if limited := errors.Is(err, ErrRateLimited); limited != step.limited || (err != nil && !limited) {
+			t.Fatalf("Create(%s) error = %v, want limited %v", step.origin, err, step.limited)
+		}
+	}
+}
+
 func TestGuestCleanupServiceDeletesOnlyThroughEmptyGuestPort(t *testing.T) {
 	guests := &guestCleanupRepositoryStub{deleted: 3}
 	service, err := NewGuestCleanupService(guests, 24*time.Hour)

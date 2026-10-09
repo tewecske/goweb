@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"sort"
 	"strings"
 	"sync"
@@ -352,6 +353,25 @@ func (l *RateLimiter) evictOldestUnblocked() bool {
 	return true
 }
 
+// originRateLimitKey groups IPv6 clients by /64 prefix, which one subscriber
+// usually controls in full, so rotating addresses inside it does not yield
+// fresh budgets. IPv4 and unparseable origins are used unchanged.
+func originRateLimitKey(origin string) string {
+	addr, err := netip.ParseAddr(origin)
+	if err != nil || addr.Zone() != "" {
+		return origin
+	}
+	addr = addr.Unmap()
+	if addr.Is4() {
+		return addr.String()
+	}
+	prefix, err := addr.Prefix(64)
+	if err != nil {
+		return origin
+	}
+	return prefix.String()
+}
+
 func validateRateLimitKey(value string) error {
 	if strings.TrimSpace(value) == "" || len(value) > maxRateLimitKeyLength || strings.ContainsAny(value, "\x00\r\n") {
 		return ErrInvalidRateLimitKey
@@ -390,7 +410,7 @@ func (s *RateLimitedSignInService) SignIn(ctx context.Context, input SignInInput
 	if s == nil || s.signIn == nil || s.limiter == nil {
 		return SignInResult{}, ErrInvalidRateLimitConfig
 	}
-	originDecision, err := s.limiter.Allow(signInOriginAction, origin)
+	originDecision, err := s.limiter.Allow(signInOriginAction, originRateLimitKey(origin))
 	if err != nil {
 		return SignInResult{}, err
 	}
@@ -419,7 +439,7 @@ func (s *RateLimitedSignInService) SignIn(ctx context.Context, input SignInInput
 		s.recordAttempt(ctx, input, origin, loginOutcomeForError(err), 0)
 		return SignInResult{}, err
 	}
-	if err := s.limiter.Clear(signInOriginAction, origin); err != nil {
+	if err := s.limiter.Clear(signInOriginAction, originRateLimitKey(origin)); err != nil {
 		return SignInResult{}, fmt.Errorf("clear signin origin limit: %w", err)
 	}
 	if err := s.limiter.Clear(signInIdentifierAction, identifier); err != nil {

@@ -100,6 +100,7 @@ func TestSettingsPasswordUpdate(t *testing.T) {
 		{name: "success", updater: settingsPasswordUpdater{}, body: "current_password=old&new_password=new-password", expectedStatus: http.StatusOK, wantContains: "Password updated."},
 		{name: "wrong current", updater: settingsPasswordUpdater{err: service.ErrCurrentPasswordMismatch}, body: "current_password=wrong&new_password=new-password", expectedStatus: http.StatusUnprocessableEntity, wantContains: "not correct"},
 		{name: "missing current", updater: settingsPasswordUpdater{err: service.ErrCurrentPasswordRequired}, body: "new_password=new-password", expectedStatus: http.StatusUnprocessableEntity, wantContains: "Enter your current password"},
+		{name: "stale session for first password", updater: settingsPasswordUpdater{err: service.ErrRecentSignInRequired}, body: "new_password=new-password", expectedStatus: http.StatusUnprocessableEntity, wantContains: "sign in again"},
 		{name: "weak", updater: settingsPasswordUpdater{err: service.ErrPasswordTooShort}, body: "current_password=old&new_password=short", expectedStatus: http.StatusUnprocessableEntity, wantContains: "between 8 and 128"},
 	}
 

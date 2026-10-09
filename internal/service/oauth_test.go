@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"net/url"
 	"strconv"
@@ -13,7 +15,7 @@ import (
 func TestOAuthSignInCallbackCreatesAccountForNewProviderIdentity(t *testing.T) {
 	const state = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	provider := &oauthProviderStub{name: "google", authorizationURL: "https://accounts.example.test/authorize", profile: OAuthProfile{Subject: "subject-1", Email: "New@Example.COM", EmailVerified: true, DisplayName: "New User"}}
-	states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", Action: oauthActionSignIn, ExpiresAt: 200}}
+	states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", CodeVerifier: "stored-verifier", Action: oauthActionSignIn, ExpiresAt: 200}}
 	identities := &oauthIdentityRepositoryStub{findErr: ErrOAuthIdentityNotFound}
 	users := &oauthUserRepositoryStub{}
 	service := newOAuthServiceForTest(t, provider, states, identities, users)
@@ -39,7 +41,7 @@ func TestOAuthSignInCallbackCreatesAccountForNewProviderIdentity(t *testing.T) {
 func TestOAuthSignInCallbackUsesStableIdentitySubject(t *testing.T) {
 	const state = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	provider := &oauthProviderStub{name: "google", profile: OAuthProfile{Subject: "stable-subject", Email: "different@example.com"}}
-	states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", Action: oauthActionSignIn, ExpiresAt: 200}}
+	states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", CodeVerifier: "stored-verifier", Action: oauthActionSignIn, ExpiresAt: 200}}
 	identities := &oauthIdentityRepositoryStub{found: OAuthIdentity{UserID: 42, Provider: "google", Subject: "stable-subject"}}
 	users := &oauthUserRepositoryStub{byID: User{ID: 42, Email: stringPointer("original@example.com")}}
 	service := newOAuthServiceForTest(t, provider, states, identities, users)
@@ -56,7 +58,7 @@ func TestOAuthSignInCallbackUsesStableIdentitySubject(t *testing.T) {
 func TestOAuthSignInCallbackRefusesEmailMerge(t *testing.T) {
 	const state = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	provider := &oauthProviderStub{name: "google", profile: OAuthProfile{Subject: "new-subject", Email: "existing@example.com"}}
-	states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", Action: oauthActionSignIn, ExpiresAt: 200}}
+	states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", CodeVerifier: "stored-verifier", Action: oauthActionSignIn, ExpiresAt: 200}}
 	identities := &oauthIdentityRepositoryStub{findErr: ErrOAuthIdentityNotFound}
 	users := &oauthUserRepositoryStub{byEmail: User{ID: 42, Email: stringPointer("existing@example.com")}}
 	service := newOAuthServiceForTest(t, provider, states, identities, users)
@@ -102,9 +104,9 @@ func TestOAuthSignInCallbackRejectsProviderMismatchAndFailures(t *testing.T) {
 		consumeErr error
 		expected   error
 	}{
-		{name: "provider mismatch", provider: &oauthProviderStub{name: "google"}, stored: OAuthState{State: state, Provider: "github", Action: oauthActionSignIn, ExpiresAt: 200}, expected: ErrOAuthStateInvalid},
+		{name: "provider mismatch", provider: &oauthProviderStub{name: "google"}, stored: OAuthState{State: state, Provider: "github", CodeVerifier: "stored-verifier", Action: oauthActionSignIn, ExpiresAt: 200}, expected: ErrOAuthStateInvalid},
 		{name: "state store", provider: &oauthProviderStub{name: "google"}, consumeErr: errors.New("state store unavailable"), expected: ErrOAuthStateInvalid},
-		{name: "provider exchange", provider: &oauthProviderStub{name: "google", exchangeErr: errors.New("provider unavailable")}, stored: OAuthState{State: state, Provider: "google", Action: oauthActionSignIn, ExpiresAt: 200}, expected: ErrOAuthAuthenticationFailed},
+		{name: "provider exchange", provider: &oauthProviderStub{name: "google", exchangeErr: errors.New("provider unavailable")}, stored: OAuthState{State: state, Provider: "google", CodeVerifier: "stored-verifier", Action: oauthActionSignIn, ExpiresAt: 200}, expected: ErrOAuthAuthenticationFailed},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -119,7 +121,7 @@ func TestOAuthSignInCallbackRejectsProviderMismatchAndFailures(t *testing.T) {
 func TestOAuthSignInLinkBindsStateAndConfirmsMatchingEmail(t *testing.T) {
 	const state = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	provider := &oauthProviderStub{name: "google", authorizationURL: "https://accounts.example.test/authorize", profile: OAuthProfile{Subject: "linked-subject", Email: "user@example.com", EmailVerified: true}}
-	states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", Action: oauthActionLink, UserID: 42, ExpiresAt: 200}}
+	states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", CodeVerifier: "stored-verifier", Action: oauthActionLink, UserID: 42, ExpiresAt: 200}}
 	identities := &oauthIdentityRepositoryStub{findErr: ErrOAuthIdentityNotFound}
 	users := &oauthUserRepositoryStub{byID: User{ID: 42, Email: stringPointer("user@example.com"), Version: 2}}
 	service := newOAuthServiceForTest(t, provider, states, identities, users)
@@ -149,8 +151,8 @@ func TestOAuthSignInLinkRejectsDuplicateAndWrongActor(t *testing.T) {
 		identity *oauthIdentityRepositoryStub
 		expected error
 	}{
-		{name: "wrong actor", actorID: 99, stored: OAuthState{State: state, Provider: "google", Action: oauthActionLink, UserID: 42, ExpiresAt: 200}, identity: &oauthIdentityRepositoryStub{findErr: ErrOAuthIdentityNotFound}, expected: ErrOAuthStateInvalid},
-		{name: "duplicate identity", actorID: 42, stored: OAuthState{State: state, Provider: "google", Action: oauthActionLink, UserID: 42, ExpiresAt: 200}, identity: &oauthIdentityRepositoryStub{found: OAuthIdentity{ID: 7, UserID: 42, Provider: "google", Subject: "linked-subject"}}, expected: ErrOAuthIdentityConflict},
+		{name: "wrong actor", actorID: 99, stored: OAuthState{State: state, Provider: "google", CodeVerifier: "stored-verifier", Action: oauthActionLink, UserID: 42, ExpiresAt: 200}, identity: &oauthIdentityRepositoryStub{findErr: ErrOAuthIdentityNotFound}, expected: ErrOAuthStateInvalid},
+		{name: "duplicate identity", actorID: 42, stored: OAuthState{State: state, Provider: "google", CodeVerifier: "stored-verifier", Action: oauthActionLink, UserID: 42, ExpiresAt: 200}, identity: &oauthIdentityRepositoryStub{found: OAuthIdentity{ID: 7, UserID: 42, Provider: "google", Subject: "linked-subject"}}, expected: ErrOAuthIdentityConflict},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -199,7 +201,7 @@ func TestOAuthCompleteCallbackDispatchesByStoredAction(t *testing.T) {
 
 	t.Run("link", func(t *testing.T) {
 		provider := &oauthProviderStub{name: "google", profile: OAuthProfile{Subject: "linked-subject", Email: "user@example.com", EmailVerified: true}}
-		states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", Action: oauthActionLink, UserID: 42, ExpiresAt: 200}}
+		states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", CodeVerifier: "stored-verifier", Action: oauthActionLink, UserID: 42, ExpiresAt: 200}}
 		identities := &oauthIdentityRepositoryStub{findErr: ErrOAuthIdentityNotFound}
 		users := &oauthUserRepositoryStub{byID: User{ID: 42, Email: stringPointer("user@example.com"), Version: 2}}
 		service := newOAuthServiceForTest(t, provider, states, identities, users)
@@ -218,7 +220,7 @@ func TestOAuthCompleteCallbackDispatchesByStoredAction(t *testing.T) {
 
 	t.Run("sign in", func(t *testing.T) {
 		provider := &oauthProviderStub{name: "google", profile: OAuthProfile{Subject: "stable-subject", Email: "new@example.com"}}
-		states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", Action: oauthActionSignIn, ExpiresAt: 200}}
+		states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", CodeVerifier: "stored-verifier", Action: oauthActionSignIn, ExpiresAt: 200}}
 		identities := &oauthIdentityRepositoryStub{found: OAuthIdentity{UserID: 42, Provider: "google", Subject: "stable-subject"}}
 		users := &oauthUserRepositoryStub{byID: User{ID: 42, Email: stringPointer("original@example.com")}}
 		service := newOAuthServiceForTest(t, provider, states, identities, users)
@@ -234,7 +236,7 @@ func TestOAuthCompleteCallbackDispatchesByStoredAction(t *testing.T) {
 
 	t.Run("unknown action", func(t *testing.T) {
 		provider := &oauthProviderStub{name: "google", profile: OAuthProfile{Subject: "subject"}}
-		states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", Action: "callback", ExpiresAt: 200}}
+		states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", CodeVerifier: "stored-verifier", Action: "callback", ExpiresAt: 200}}
 		service := newOAuthServiceForTest(t, provider, states, &oauthIdentityRepositoryStub{}, &oauthUserRepositoryStub{})
 		if _, err := service.CompleteCallback(context.Background(), 0, "google", "code", state); !errors.Is(err, ErrOAuthStateInvalid) {
 			t.Fatalf("CompleteCallback(unknown action) error = %v, want ErrOAuthStateInvalid", err)
@@ -244,7 +246,7 @@ func TestOAuthCompleteCallbackDispatchesByStoredAction(t *testing.T) {
 	for _, actorUserID := range []int64{0, 99} {
 		t.Run("link completed by another browser account "+strconv.FormatInt(actorUserID, 10), func(t *testing.T) {
 			provider := &oauthProviderStub{name: "google", profile: OAuthProfile{Subject: "victim-subject", Email: "victim@example.com", EmailVerified: true}}
-			states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", Action: oauthActionLink, UserID: 42, ExpiresAt: 200}}
+			states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", CodeVerifier: "stored-verifier", Action: oauthActionLink, UserID: 42, ExpiresAt: 200}}
 			identities := &oauthIdentityRepositoryStub{findErr: ErrOAuthIdentityNotFound}
 			service := newOAuthServiceForTest(t, provider, states, identities, &oauthUserRepositoryStub{byID: User{ID: 42}})
 			if _, err := service.CompleteCallback(context.Background(), actorUserID, "google", "code", state); !errors.Is(err, ErrOAuthStateInvalid) {
@@ -254,6 +256,39 @@ func TestOAuthCompleteCallbackDispatchesByStoredAction(t *testing.T) {
 				t.Fatalf("foreign link exchanged code %q / created %d identities, want neither", provider.receivedCode, identities.createCalls)
 			}
 		})
+	}
+}
+
+func TestOAuthPKCEBindsAuthorizationCodeToStoredVerifier(t *testing.T) {
+	const state = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	provider := &oauthProviderStub{name: "google", authorizationURL: "https://accounts.example.test/authorize", profile: OAuthProfile{Subject: "subject-1"}}
+	states := &oauthStateRepositoryStub{}
+	service := newOAuthServiceForTest(t, provider, states, &oauthIdentityRepositoryStub{found: OAuthIdentity{UserID: 42, Provider: "google", Subject: "subject-1"}}, &oauthUserRepositoryStub{byID: User{ID: 42}})
+
+	if _, _, err := service.Start(context.Background(), "google"); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	verifier := states.created.CodeVerifier
+	digest := sha256.Sum256([]byte(verifier))
+	if len(verifier) < 43 || provider.challenge != base64.RawURLEncoding.EncodeToString(digest[:]) {
+		t.Fatalf("stored verifier %q / sent challenge %q, want RFC 7636 S256 pair", verifier, provider.challenge)
+	}
+
+	states.consumed = OAuthState{State: state, Provider: "google", Action: oauthActionSignIn, CodeVerifier: verifier, ExpiresAt: 200}
+	if _, err := service.CompleteCallback(context.Background(), 0, "google", "code", state); err != nil {
+		t.Fatalf("CompleteCallback() error = %v", err)
+	}
+	if provider.receivedVerifier != verifier {
+		t.Fatalf("exchange verifier = %q, want stored %q", provider.receivedVerifier, verifier)
+	}
+
+	provider.receivedCode = ""
+	states.consumed = OAuthState{State: state, Provider: "google", Action: oauthActionSignIn, ExpiresAt: 200}
+	if _, err := service.CompleteCallback(context.Background(), 0, "google", "code", state); !errors.Is(err, ErrOAuthStateInvalid) {
+		t.Fatalf("CompleteCallback(no verifier) error = %v, want ErrOAuthStateInvalid", err)
+	}
+	if provider.receivedCode != "" {
+		t.Fatal("state without a PKCE verifier still exchanged the code")
 	}
 }
 
@@ -281,13 +316,16 @@ type oauthProviderStub struct {
 	profile          OAuthProfile
 	exchangeErr      error
 	receivedCode     string
+	challenge        string
+	receivedVerifier string
 }
 
 func (p *oauthProviderStub) Name() string {
 	return p.name
 }
 
-func (p *oauthProviderStub) AuthorizationURL(_ context.Context, state string) (string, error) {
+func (p *oauthProviderStub) AuthorizationURL(_ context.Context, state, codeChallenge string) (string, error) {
+	p.challenge = codeChallenge
 	parsed, err := url.Parse(p.authorizationURL)
 	if err != nil {
 		return "", err
@@ -298,8 +336,9 @@ func (p *oauthProviderStub) AuthorizationURL(_ context.Context, state string) (s
 	return parsed.String(), nil
 }
 
-func (p *oauthProviderStub) Exchange(_ context.Context, code string) (OAuthProfile, error) {
+func (p *oauthProviderStub) Exchange(_ context.Context, code, codeVerifier string) (OAuthProfile, error) {
 	p.receivedCode = code
+	p.receivedVerifier = codeVerifier
 	if p.exchangeErr != nil {
 		return OAuthProfile{}, p.exchangeErr
 	}

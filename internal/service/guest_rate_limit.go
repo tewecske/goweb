@@ -55,7 +55,7 @@ func (s *RateLimitedGuestService) Create(
 	if s == nil || s.creator == nil || s.limiter == nil {
 		return GuestSessionResult{}, ErrInvalidRateLimitConfig
 	}
-	if decision, err := s.limiter.Allow(guestCreationAction, origin); err != nil {
+	if decision, err := s.limiter.Allow(guestCreationAction, originRateLimitKey(origin)); err != nil {
 		return GuestSessionResult{}, err
 	} else if !decision.Allowed {
 		return GuestSessionResult{}, RateLimitError{RetryAfter: decision.RetryAfter}
@@ -73,7 +73,7 @@ func (s *RateLimitedGuestService) Redeem(
 	if s == nil || s.redeemer == nil || s.limiter == nil {
 		return GuestSessionResult{}, ErrInvalidRateLimitConfig
 	}
-	if decision, err := s.limiter.Allow(guestRedemptionAction, origin); err != nil {
+	if decision, err := s.limiter.Allow(guestRedemptionAction, originRateLimitKey(origin)); err != nil {
 		return GuestSessionResult{}, err
 	} else if !decision.Allowed {
 		return GuestSessionResult{}, RateLimitError{RetryAfter: decision.RetryAfter}

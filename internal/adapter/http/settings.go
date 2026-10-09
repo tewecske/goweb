@@ -164,9 +164,11 @@ func (h *settingsHandler) updatePassword(writer http.ResponseWriter, request *ht
 		h.renderSettings(writer, request, language, user, FormData{}, []Alert{{Level: "error", Message: settingsTranslate(h.settings, language, "settings.error.generic")}}, http.StatusInternalServerError)
 		return
 	}
+	sessionID, _ := h.dependencies.SessionCookie.Read(request)
 	result, err := h.dependencies.PasswordSettings.Update(request.Context(), user.ID, service.PasswordSettingsInput{
 		CurrentPassword: request.PostFormValue("current_password"),
 		NewPassword:     request.PostFormValue("new_password"),
+		SessionID:       sessionID,
 	})
 	if err != nil {
 		form := FormData{Submitted: true}
@@ -179,6 +181,8 @@ func (h *settingsHandler) updatePassword(writer http.ResponseWriter, request *ht
 		case errors.Is(err, service.ErrCurrentPasswordMismatch):
 			form.Errors = []FieldError{{Field: "current_password", Message: settingsTranslate(h.settings, language, "settings.error.current_mismatch")}}
 			message = "settings.error.current_mismatch"
+		case errors.Is(err, service.ErrRecentSignInRequired):
+			message = "settings.error.recent_sign_in"
 		case errors.Is(err, service.ErrPasswordTooShort) || errors.Is(err, service.ErrPasswordTooLong) || errors.Is(err, service.ErrInvalidPassword):
 			form.Errors = []FieldError{{Field: "new_password", Message: settingsTranslate(h.settings, language, "settings.error.weak_password")}}
 			message = "settings.error.weak_password"

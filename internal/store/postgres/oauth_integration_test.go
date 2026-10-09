@@ -18,7 +18,7 @@ func TestOAuthStateRepositoryRoundTripsNullableBindingAndConsumesOnce(t *testing
 		t.Fatal(err)
 	}
 	userID := insertTokenUser(t, harness.DB, "oauth-state@example.test")
-	anonymous := service.OAuthState{State: "anonymous-oauth-state", Provider: "Google", Action: "sign-in", CreatedAt: 100, ExpiresAt: 200}
+	anonymous := service.OAuthState{State: "anonymous-oauth-state", Provider: "Google", Action: "sign-in", CodeVerifier: "pkce-verifier", CreatedAt: 100, ExpiresAt: 200}
 	linked := service.OAuthState{State: "linked-oauth-state", Provider: "google", Action: "link", UserID: userID, CreatedAt: 100, ExpiresAt: 200}
 	if err := stateRepository.CreateOAuthState(context.Background(), anonymous); err != nil {
 		t.Fatalf("CreateOAuthState(anonymous) error = %v", err)
@@ -31,8 +31,8 @@ func TestOAuthStateRepositoryRoundTripsNullableBindingAndConsumesOnce(t *testing
 	if err != nil {
 		t.Fatalf("ConsumeOAuthState(anonymous) error = %v", err)
 	}
-	if consumed.UserID != 0 || consumed.Provider != "google" || consumed.Action != "sign-in" {
-		t.Fatalf("anonymous state binding = user %d/provider %q/action %q", consumed.UserID, consumed.Provider, consumed.Action)
+	if consumed.UserID != 0 || consumed.Provider != "google" || consumed.Action != "sign-in" || consumed.CodeVerifier != "pkce-verifier" {
+		t.Fatalf("anonymous state binding = user %d/provider %q/action %q/verifier %q", consumed.UserID, consumed.Provider, consumed.Action, consumed.CodeVerifier)
 	}
 	if _, err := stateRepository.ConsumeOAuthState(context.Background(), anonymous.State, 151); !errors.Is(err, service.ErrOAuthStateInvalid) {
 		t.Fatalf("reused state error = %v, want %v", err, service.ErrOAuthStateInvalid)

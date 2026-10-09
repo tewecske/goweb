@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 )
 
 var (
@@ -11,13 +12,25 @@ var (
 	ErrCurrentPasswordRequired = errors.New("service: current password required")
 	// ErrCurrentPasswordMismatch identifies an incorrect current password.
 	ErrCurrentPasswordMismatch = errors.New("service: current password mismatch")
+	// ErrRecentSignInRequired identifies a first password set from a session
+	// that was not signed in recently.
+	ErrRecentSignInRequired = errors.New("service: recent sign-in required")
 )
 
+// RecentSignInWindow is how recently an account without a password must have
+// signed in before it may set its first password. Such accounts have no
+// current password to confirm, so a fresh sign-in stands in for it and a
+// stolen older session cannot add a permanent credential.
+const RecentSignInWindow = 10 * time.Minute
+
 // PasswordSettingsInput contains a password change request from the owner.
-// CurrentPassword is required only when the account already has a password.
+// CurrentPassword is required only when the account already has a password;
+// otherwise SessionID must identify a session signed in within
+// RecentSignInWindow.
 type PasswordSettingsInput struct {
 	CurrentPassword string
 	NewPassword     string
+	SessionID       string
 }
 
 // PasswordSettingsResult is the account after a password change and, when the
@@ -73,7 +86,7 @@ func (s *PasswordSettingsService) Update(ctx context.Context, userID int64, inpu
 	if user.ID != userID {
 		return PasswordSettingsResult{}, ErrUserNotFound
 	}
-	if err := s.verifyCurrent(ctx, user, input.CurrentPassword); err != nil {
+	if err := s.verifyCurrent(ctx, user, input); err != nil {
 		return PasswordSettingsResult{}, err
 	}
 	unchanged, err := s.matchesCurrent(user, input.NewPassword)
@@ -108,17 +121,21 @@ func (s *PasswordSettingsService) Update(ctx context.Context, userID int64, inpu
 	return PasswordSettingsResult{User: publicUser(updated), Session: session}, nil
 }
 
-func (s *PasswordSettingsService) verifyCurrent(ctx context.Context, user User, currentPassword string) error {
+func (s *PasswordSettingsService) verifyCurrent(ctx context.Context, user User, input PasswordSettingsInput) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if user.PasswordHash == nil {
+		session, err := s.sessions.Lookup(ctx, input.SessionID)
+		if err != nil || session.UserID != user.ID || time.Since(time.Unix(session.CreatedAt, 0)) > RecentSignInWindow {
+			return ErrRecentSignInRequired
+		}
 		return nil
 	}
-	if currentPassword == "" {
+	if input.CurrentPassword == "" {
 		return ErrCurrentPasswordRequired
 	}
-	valid, err := s.verifier.Verify(currentPassword, *user.PasswordHash)
+	valid, err := s.verifier.Verify(input.CurrentPassword, *user.PasswordHash)
 	if err != nil || !valid {
 		return ErrCurrentPasswordMismatch
 	}

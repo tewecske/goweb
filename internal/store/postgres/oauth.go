@@ -36,14 +36,21 @@ func (r *OAuthStateRepository) CreateOAuthState(ctx context.Context, state servi
 	if state.UserID < 0 || state.State == "" || state.Provider == "" || state.Action == "" {
 		return ErrInvalidData
 	}
+	if len(state.CodeVerifier) > 128 {
+		return ErrInvalidData
+	}
 	var userID any
 	if state.UserID > 0 {
 		userID = state.UserID
 	}
+	var codeVerifier any
+	if state.CodeVerifier != "" {
+		codeVerifier = state.CodeVerifier
+	}
 	_, err = db.ExecContext(ctx, `
-		INSERT INTO oauth_states (state, provider, action, user_id, created_at, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
-	`, state.State, state.Provider, state.Action, userID, state.CreatedAt, state.ExpiresAt)
+		INSERT INTO oauth_states (state, provider, action, user_id, code_verifier, created_at, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`, state.State, state.Provider, state.Action, userID, codeVerifier, state.CreatedAt, state.ExpiresAt)
 	return mapOAuthStateError(err)
 }
 
@@ -57,7 +64,7 @@ func (r *OAuthStateRepository) ConsumeOAuthState(ctx context.Context, state stri
 		UPDATE oauth_states
 		SET consumed_at = $2
 		WHERE state = $1 AND consumed_at IS NULL AND expires_at > $2
-		RETURNING state, provider, action, user_id, created_at, expires_at
+		RETURNING state, provider, action, user_id, code_verifier, created_at, expires_at
 	`, state, now))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -209,12 +216,14 @@ func (r *OAuthIdentityRepository) database(ctx context.Context) (*sql.DB, error)
 
 func scanOAuthState(row rowScanner) (service.OAuthState, error) {
 	var (
-		state  service.OAuthState
-		userID sql.NullInt64
+		state        service.OAuthState
+		userID       sql.NullInt64
+		codeVerifier sql.NullString
 	)
-	if err := row.Scan(&state.State, &state.Provider, &state.Action, &userID, &state.CreatedAt, &state.ExpiresAt); err != nil {
+	if err := row.Scan(&state.State, &state.Provider, &state.Action, &userID, &codeVerifier, &state.CreatedAt, &state.ExpiresAt); err != nil {
 		return service.OAuthState{}, err
 	}
+	state.CodeVerifier = codeVerifier.String
 	if state.State == "" || len(state.State) > 64 || state.Provider == "" || len(state.Provider) > 32 || state.Action == "" || state.ExpiresAt <= state.CreatedAt {
 		return service.OAuthState{}, ErrInvalidData
 	}
