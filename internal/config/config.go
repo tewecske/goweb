@@ -230,7 +230,10 @@ func Load(getenv func(string) string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	cookieSecure, err := parseBool(SessionCookieSecureEnv, getenv(SessionCookieSecureEnv), environment == EnvironmentProduction)
+	// An HTTPS public URL means browsers reach the app over TLS, so cookies
+	// default to Secure there in every environment; plain-HTTP local
+	// development keeps working.
+	cookieSecure, err := parseBool(SessionCookieSecureEnv, getenv(SessionCookieSecureEnv), environment == EnvironmentProduction || publicURL.Scheme == "https")
 	if err != nil {
 		return Config{}, err
 	}

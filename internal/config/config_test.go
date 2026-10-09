@@ -99,6 +99,23 @@ func TestLoadProductionCookieDefault(t *testing.T) {
 	}
 }
 
+func TestLoadSecureCookieDefaultFollowsPublicURLScheme(t *testing.T) {
+	for publicURL, want := range map[string]bool{"https://staging.example.test": true, "http://localhost:8080": false} {
+		config, err := Load(func(name string) string {
+			if name == PublicURLEnv {
+				return publicURL
+			}
+			return ""
+		})
+		if err != nil {
+			t.Fatalf("Load(%s) error = %v", publicURL, err)
+		}
+		if config.SessionCookieSecure != want {
+			t.Errorf("development SessionCookieSecure with %s = %t, want %t", publicURL, config.SessionCookieSecure, want)
+		}
+	}
+}
+
 func TestLoadRejectsInvalidValues(t *testing.T) {
 	tests := []struct {
 		name      string

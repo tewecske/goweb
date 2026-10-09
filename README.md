@@ -29,7 +29,7 @@ Configuration comes from environment variables. Defaults keep local development 
 | `GOWEB_ENV` | `development` |
 | `GOWEB_HTTP_ADDR` | `:8080` |
 | `GOWEB_PUBLIC_URL` | `http://localhost:8080` |
-| `GOWEB_SESSION_COOKIE_SECURE` | `false`, or `true` in production |
+| `GOWEB_SESSION_COOKIE_SECURE` | `true` in production or when `GOWEB_PUBLIC_URL` uses HTTPS, otherwise `false` |
 | `GOWEB_EMAIL_CONFIRMATION_REQUIRED` | `false` |
 | `GOWEB_SESSION_LIFETIME` | `24h` |
 | `GOWEB_GUEST_RETENTION` | `720h` (30 days) |
