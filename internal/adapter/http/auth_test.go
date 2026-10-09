@@ -26,9 +26,11 @@ func (s *httpSignUpStub) SignUp(context.Context, service.SignUpInput) (service.S
 type httpSignInStub struct {
 	result service.SignInResult
 	err    error
+	origin string
 }
 
-func (s *httpSignInStub) SignIn(context.Context, service.SignInInput, string) (service.SignInResult, error) {
+func (s *httpSignInStub) SignIn(_ context.Context, _ service.SignInInput, origin string) (service.SignInResult, error) {
+	s.origin = origin
 	return s.result, s.err
 }
 
@@ -70,16 +72,17 @@ type httpResetUseStub struct{ err error }
 func (s httpResetUseStub) Redeem(context.Context, string, string) error { return s.err }
 
 type httpOAuthStub struct {
-	startURL string
-	result   service.OAuthCallbackResult
-	err      error
+	startURL   string
+	startState string
+	result     service.OAuthCallbackResult
+	err        error
 }
 
-func (s httpOAuthStub) Start(context.Context, string) (string, error) {
-	return s.startURL, s.err
+func (s httpOAuthStub) Start(context.Context, string) (string, string, error) {
+	return s.startURL, s.startState, s.err
 }
 
-func (s httpOAuthStub) CompleteCallback(context.Context, string, string, string) (service.OAuthCallbackResult, error) {
+func (s httpOAuthStub) CompleteCallback(context.Context, int64, string, string, string) (service.OAuthCallbackResult, error) {
 	return s.result, s.err
 }
 
@@ -203,7 +206,8 @@ func TestSignUpCreatesOpaqueSessionAndNeverRendersPassword(t *testing.T) {
 
 func TestSignInFailureIsUniformAndPreservesOnlyIdentifier(t *testing.T) {
 	dependencies := newHTTPTestDependencies(t)
-	dependencies.SignIn = &httpSignInStub{err: service.ErrInvalidCredentials}
+	signIn := &httpSignInStub{err: service.ErrInvalidCredentials}
+	dependencies.SignIn = signIn
 	handler := NewRouterWithServices(dependencies)
 	csrf := csrfCookie(t, handler)
 	password := "wrong-password"
@@ -213,6 +217,11 @@ func TestSignInFailureIsUniformAndPreservesOnlyIdentifier(t *testing.T) {
 
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnauthorized)
+	}
+	// The source port changes per connection; keying on it would reset the
+	// per-origin budget on every new connection.
+	if signIn.origin != "192.0.2.1" {
+		t.Fatalf("sign-in origin = %q, want client IP without port", signIn.origin)
 	}
 	body := response.Body.String()
 	if !strings.Contains(body, "user@example.test") {
@@ -434,6 +443,7 @@ func TestOAuthCallbackFailureRedirectsWithoutProviderSecrets(t *testing.T) {
 	dependencies.OAuth = httpOAuthStub{err: service.ErrOAuthAuthenticationFailed}
 	handler := NewRouterWithServices(dependencies)
 	request := httptest.NewRequest(http.MethodGet, "/en/oauth/github/callback?code=provider-code&state=opaque-state", nil)
+	request.AddCookie(&http.Cookie{Name: oauthStateCookieName, Value: "opaque-state"})
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 
@@ -451,7 +461,7 @@ func TestOAuthCallbackSuccessCreatesSessionCookie(t *testing.T) {
 	dependencies.OAuth = httpOAuthStub{result: service.OAuthCallbackResult{SignIn: service.OAuthSignInResult{Session: service.Session{ID: "oauth-session"}}}}
 	handler := NewRouterWithServices(dependencies)
 	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/en/oauth/github/callback?code=provider-code&state=opaque-state", nil))
+	handler.ServeHTTP(response, oauthCallbackRequest("/en/oauth/github/callback?code=provider-code&state=opaque-state", "opaque-state"))
 
 	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/en/home" {
 		t.Fatalf("OAuth success response = %d %q", response.Code, response.Header().Get("Location"))
@@ -473,7 +483,7 @@ func TestOAuthLinkCallbackReturnsToSettingsWithoutSession(t *testing.T) {
 	dependencies.OAuth = httpOAuthStub{result: service.OAuthCallbackResult{Linked: true, UserID: 7}}
 	handler := NewRouterWithServices(dependencies)
 	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/en/oauth/google/callback?code=provider-code&state=opaque-state", nil))
+	handler.ServeHTTP(response, oauthCallbackRequest("/en/oauth/google/callback?code=provider-code&state=opaque-state", "opaque-state"))
 
 	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/en/account/settings?identity=linked" {
 		t.Fatalf("OAuth link response = %d %q", response.Code, response.Header().Get("Location"))
@@ -483,6 +493,51 @@ func TestOAuthLinkCallbackReturnsToSettingsWithoutSession(t *testing.T) {
 			t.Fatal("OAuth link callback set a new session cookie")
 		}
 	}
+}
+
+func TestOAuthCallbackRequiresStateCookieFromStart(t *testing.T) {
+	dependencies := newHTTPTestDependencies(t)
+	dependencies.OAuthProviders = httpOAuthProvidersStub{names: []string{"github"}}
+	dependencies.OAuth = httpOAuthStub{
+		startURL:   "https://provider.example.test/authorize?state=browser-state",
+		startState: "browser-state",
+		result:     service.OAuthCallbackResult{SignIn: service.OAuthSignInResult{Session: service.Session{ID: "oauth-session"}}},
+	}
+	handler := NewRouterWithServices(dependencies)
+
+	start := httptest.NewRecorder()
+	handler.ServeHTTP(start, httptest.NewRequest(http.MethodGet, "/en/oauth/github", nil))
+	var bound *http.Cookie
+	for _, cookie := range start.Result().Cookies() {
+		if cookie.Name == oauthStateCookieName {
+			bound = cookie
+		}
+	}
+	if start.Code != http.StatusFound || bound == nil || bound.Value != "browser-state" || !bound.HttpOnly || bound.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("OAuth start = %d with state cookie %+v, want redirect binding browser-state", start.Code, bound)
+	}
+
+	const callback = "/en/oauth/github/callback?code=provider-code&state=browser-state"
+	for name, cookieValue := range map[string]string{"missing cookie": "", "other browser state": "attacker-state"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, oauthCallbackRequest(callback, cookieValue))
+		if location := response.Header().Get("Location"); location != "/en/sign-in?oauth=error" {
+			t.Fatalf("%s: callback redirect = %q, want OAuth failure", name, location)
+		}
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, oauthCallbackRequest(callback, bound.Value))
+	if location := response.Header().Get("Location"); location != "/en/home" {
+		t.Fatalf("bound callback redirect = %q, want /en/home", location)
+	}
+}
+
+func oauthCallbackRequest(target, stateCookie string) *http.Request {
+	request := httptest.NewRequest(http.MethodGet, target, nil)
+	if stateCookie != "" {
+		request.AddCookie(&http.Cookie{Name: oauthStateCookieName, Value: stateCookie})
+	}
+	return request
 }
 
 func TestGuestWriteCreatesAccountOnlyOnPost(t *testing.T) {

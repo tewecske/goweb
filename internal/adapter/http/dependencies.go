@@ -75,6 +75,10 @@ type Dependencies struct {
 
 	Tracer         middleware.SpanTracer
 	SecurityLogger middleware.SecurityRequestLogger
+
+	// TrustedProxy is the reverse proxy address or network whose
+	// X-Forwarded-For header identifies the client for rate limits and audit.
+	TrustedProxy string
 }
 
 // AdminAccountLister lists accounts for the administrator area.
@@ -221,8 +225,8 @@ type PasswordResetterUse interface {
 }
 
 type OAuthAuthenticator interface {
-	Start(context.Context, string) (string, error)
-	CompleteCallback(context.Context, string, string, string) (service.OAuthCallbackResult, error)
+	Start(context.Context, string) (string, string, error)
+	CompleteCallback(context.Context, int64, string, string, string) (service.OAuthCallbackResult, error)
 }
 
 type OAuthProviderLister interface {

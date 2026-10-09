@@ -20,6 +20,13 @@ type PasswordSettingsInput struct {
 	NewPassword     string
 }
 
+// PasswordSettingsResult is the account after a password change and, when the
+// password changed, the replacement session for the requesting browser.
+type PasswordSettingsResult struct {
+	User    User
+	Session Session
+}
+
 // PasswordSettingsService manages an account's own password. It supports the
 // first password for externally authenticated accounts and current-password
 // protected changes for existing passwords.
@@ -27,68 +34,78 @@ type PasswordSettingsService struct {
 	users    UserRepository
 	hasher   PasswordHashProvider
 	verifier PasswordVerifier
+	sessions *SessionService
 }
 
 // NewPasswordSettingsService constructs password settings with explicit account,
-// hashing, and verification dependencies.
-func NewPasswordSettingsService(users UserRepository, hasher PasswordHashProvider, verifier PasswordVerifier) (*PasswordSettingsService, error) {
+// hashing, verification, and session dependencies.
+func NewPasswordSettingsService(users UserRepository, hasher PasswordHashProvider, verifier PasswordVerifier, sessions *SessionService) (*PasswordSettingsService, error) {
 	if users == nil {
 		return nil, ErrNilUserRepository
 	}
-	if hasher == nil || verifier == nil {
+	if hasher == nil || verifier == nil || sessions == nil {
 		return nil, ErrInvalidSettings
 	}
-	return &PasswordSettingsService{users: users, hasher: hasher, verifier: verifier}, nil
+	return &PasswordSettingsService{users: users, hasher: hasher, verifier: verifier, sessions: sessions}, nil
 }
 
 // Update validates the request, verifies the current password when one exists,
 // and persists the new password using the account's optimistic-lock revision.
-func (s *PasswordSettingsService) Update(ctx context.Context, userID int64, input PasswordSettingsInput) (User, error) {
-	if s == nil || s.users == nil || s.hasher == nil || s.verifier == nil {
-		return User{}, ErrInvalidSettings
+// A changed password ends every existing session for the account, including
+// any held by someone who stole one, and returns a new session for the caller.
+func (s *PasswordSettingsService) Update(ctx context.Context, userID int64, input PasswordSettingsInput) (PasswordSettingsResult, error) {
+	if s == nil || s.users == nil || s.hasher == nil || s.verifier == nil || s.sessions == nil {
+		return PasswordSettingsResult{}, ErrInvalidSettings
 	}
 	if ctx == nil {
-		return User{}, errors.New("service: nil password settings context")
+		return PasswordSettingsResult{}, errors.New("service: nil password settings context")
 	}
 	if userID <= 0 {
-		return User{}, ErrInvalidUserID
+		return PasswordSettingsResult{}, ErrInvalidUserID
 	}
 	if err := ValidatePassword(input.NewPassword); err != nil {
-		return User{}, fmt.Errorf("validate settings password: %w", err)
+		return PasswordSettingsResult{}, fmt.Errorf("validate settings password: %w", err)
 	}
 	user, err := s.users.FindUserByID(ctx, userID)
 	if err != nil {
-		return User{}, fmt.Errorf("find password settings user: %w", err)
+		return PasswordSettingsResult{}, fmt.Errorf("find password settings user: %w", err)
 	}
 	if user.ID != userID {
-		return User{}, ErrUserNotFound
+		return PasswordSettingsResult{}, ErrUserNotFound
 	}
 	if err := s.verifyCurrent(ctx, user, input.CurrentPassword); err != nil {
-		return User{}, err
+		return PasswordSettingsResult{}, err
 	}
 	unchanged, err := s.matchesCurrent(user, input.NewPassword)
 	if err != nil {
-		return User{}, err
+		return PasswordSettingsResult{}, err
 	}
 	if unchanged {
-		return publicUser(user), nil
+		return PasswordSettingsResult{User: publicUser(user)}, nil
 	}
 	passwordHash, err := s.hasher.Hash(input.NewPassword)
 	if err != nil {
-		return User{}, fmt.Errorf("hash settings password: %w", err)
+		return PasswordSettingsResult{}, fmt.Errorf("hash settings password: %w", err)
 	}
 	user.PasswordHash = &passwordHash
 	updated, err := s.users.UpdateUser(ctx, user, user.Version)
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
-			return User{}, ErrRecordNotFound
+			return PasswordSettingsResult{}, ErrRecordNotFound
 		}
 		if errors.Is(err, ErrOptimisticLockConflict) {
-			return User{}, ErrOptimisticLockConflict
+			return PasswordSettingsResult{}, ErrOptimisticLockConflict
 		}
-		return User{}, fmt.Errorf("update settings password: %w", err)
+		return PasswordSettingsResult{}, fmt.Errorf("update settings password: %w", err)
 	}
-	return publicUser(updated), nil
+	if err := s.sessions.RevokeUser(ctx, userID); err != nil {
+		return PasswordSettingsResult{}, fmt.Errorf("revoke sessions after password change: %w", err)
+	}
+	session, err := s.sessions.Create(ctx, userID)
+	if err != nil {
+		return PasswordSettingsResult{}, fmt.Errorf("create session after password change: %w", err)
+	}
+	return PasswordSettingsResult{User: publicUser(updated), Session: session}, nil
 }
 
 func (s *PasswordSettingsService) verifyCurrent(ctx context.Context, user User, currentPassword string) error {

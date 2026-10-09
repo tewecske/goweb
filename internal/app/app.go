@@ -257,7 +257,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct profile settings service: %w", err)
 	}
-	passwordSettings, err := service.NewPasswordSettingsService(users, passwordHasher, passwordHasher)
+	passwordSettings, err := service.NewPasswordSettingsService(users, passwordHasher, passwordHasher, sessionService)
 	if err != nil {
 		return nil, fmt.Errorf("construct password settings service: %w", err)
 	}

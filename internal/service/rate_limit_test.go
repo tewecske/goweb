@@ -58,6 +58,38 @@ func TestRateLimiterBoundsKeysAndConfig(t *testing.T) {
 	}
 }
 
+func TestRateLimiterAtCapacityEvictsOldestUnblockedKey(t *testing.T) {
+	limiter, err := NewRateLimiter(RateLimitConfig{Limit: 2, Window: time.Minute, MaxKeys: 3})
+	if err != nil {
+		t.Fatalf("NewRateLimiter() error = %v, want nil", err)
+	}
+	now := time.Unix(100, 0)
+	limiter.now = func() time.Time { return now }
+	allow := func(key string) (RateLimitDecision, error) {
+		now = now.Add(time.Second)
+		return limiter.Allow("signin", key)
+	}
+
+	// "blocked" is the oldest key, but it is at its limit and must survive.
+	for _, key := range []string{"blocked", "blocked", "older", "newer"} {
+		if _, err := allow(key); err != nil {
+			t.Fatalf("Allow(%s) error = %v, want nil", key, err)
+		}
+	}
+	if decision, err := allow("flood"); err != nil || !decision.Allowed {
+		t.Fatalf("Allow(new key at capacity) = %#v, %v; want allowed", decision, err)
+	}
+	if decision, err := allow("blocked"); err != nil || decision.Allowed {
+		t.Fatalf("Allow(blocked) = %#v, %v; want still blocked", decision, err)
+	}
+	if decision, err := allow("newer"); err != nil || !decision.Allowed || decision.Remaining != 0 {
+		t.Fatalf("Allow(newer) = %#v, %v; want its existing budget kept", decision, err)
+	}
+	if decision, err := allow("older"); err != nil || !decision.Allowed || decision.Remaining != 1 {
+		t.Fatalf("Allow(older) = %#v, %v; want a fresh budget after eviction", decision, err)
+	}
+}
+
 func TestRateLimitedSignInClearsIdentifierAndOriginOnSuccess(t *testing.T) {
 	verifiedAt := int64(100)
 	users := &signinUserRepositoryStub{user: User{ID: 42, PasswordHash: stringPointer("stored-hash"), EmailVerifiedAt: &verifiedAt}}

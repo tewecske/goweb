@@ -111,7 +111,7 @@ func (l *RateLimiter) Allow(action, key string) (RateLimitDecision, error) {
 	l.pruneExpired(now)
 	bucket, exists := l.buckets[compositeKey]
 	if !exists {
-		if len(l.buckets) >= l.config.MaxKeys {
+		if len(l.buckets) >= l.config.MaxKeys && !l.evictOldestUnblocked() {
 			return RateLimitDecision{}, ErrRateLimitCapacity
 		}
 		bucket = rateLimitBucket{action: action, key: key, started: now}
@@ -332,6 +332,24 @@ func (l *RateLimiter) pruneExpired(now time.Time) {
 			delete(l.buckets, key)
 		}
 	}
+}
+
+// evictOldestUnblocked frees room for a new key when the limiter is full, so
+// flooding it with fresh keys cannot lock every other caller out. Keys at their
+// limit are kept: evicting them would reset an active block.
+func (l *RateLimiter) evictOldestUnblocked() bool {
+	oldestKey := ""
+	var oldest time.Time
+	for key, bucket := range l.buckets {
+		if bucket.count < l.config.Limit && (oldestKey == "" || bucket.started.Before(oldest)) {
+			oldestKey, oldest = key, bucket.started
+		}
+	}
+	if oldestKey == "" {
+		return false
+	}
+	delete(l.buckets, oldestKey)
+	return true
 }
 
 func validateRateLimitKey(value string) error {

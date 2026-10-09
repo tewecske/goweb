@@ -57,7 +57,8 @@ func TestOptimisticLockOutcomesAcrossEditableResources(t *testing.T) {
 					user:      User{ID: 7, Version: 2},
 					updateErr: writeErr,
 				}
-				service, err := NewPasswordSettingsService(users, settingsHasherStub{}, passwordVerifierStub{verify: neverVerify})
+				sessions, _ := newPasswordSettingsSessions(t)
+				service, err := NewPasswordSettingsService(users, settingsHasherStub{}, passwordVerifierStub{verify: neverVerify}, sessions)
 				if err != nil {
 					t.Fatalf("NewPasswordSettingsService() error = %v", err)
 				}

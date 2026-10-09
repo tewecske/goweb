@@ -280,6 +280,9 @@ func (s *AdminAccountService) Update(ctx context.Context, actor AdminActionConte
 	}
 	var passwordHash *string
 	if input.Password != "" {
+		if s.sessions == nil {
+			return User{}, ErrInvalidAdminQuery
+		}
 		if err := ValidatePassword(input.Password); err != nil {
 			return User{}, err
 		}
@@ -313,6 +316,13 @@ func (s *AdminAccountService) Update(ctx context.Context, actor AdminActionConte
 		}
 	}
 	updated.PasswordHash = nil
+	// A password reset by an administrator must also end sessions held by
+	// whoever the reset is meant to lock out.
+	if passwordHash != nil {
+		if err := s.sessions.RevokeUser(ctx, targetID); err != nil {
+			return User{}, err
+		}
+	}
 	s.record(ctx, actor, AuditActionAccountUpdated, updated, email)
 	return updated, nil
 }

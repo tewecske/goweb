@@ -144,6 +144,7 @@ func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware
 	shared := []middleware.Middleware{
 		middleware.WithRequestID(nil),
 		middleware.WithRequestInfo(),
+		middleware.ClientIP(dependencies.TrustedProxy),
 		middleware.Recover(recoveryLogger),
 	}
 	if dependencies.Tracer != nil {

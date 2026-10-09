@@ -26,6 +26,11 @@ for the full variable table and the
 provisioning. Secret values are redacted from diagnostics and must come from the
 platform secret store, never from the repository.
 
+Behind a reverse proxy, set `GOWEB_TRUSTED_PROXY` to the proxy address or
+network and have the proxy append the client address to `X-Forwarded-For`.
+Otherwise every client shares the proxy's per-origin sign-in and guest rate
+limits, and audit records show the proxy address.
+
 ## Deployment order
 
 1. Confirm the release build passes CI and the production environment satisfies

@@ -29,7 +29,7 @@ Assets to protect:
 | Boundary | Crosses from → to | Controls |
 | --- | --- | --- |
 | Browser → HTTP adapter | Untrusted input | Server-side validation, `html/template` escaping, CSRF, authorization middleware, size-bounded lists |
-| Reverse proxy → HTTP adapter | Network metadata and trace context | `X-Request-ID` generated server-side; incoming W3C `traceparent` continued only from `GOWEB_TRUSTED_PROXY` |
+| Reverse proxy → HTTP adapter | Network metadata and trace context | `X-Request-ID` generated server-side; incoming W3C `traceparent` continued only from `GOWEB_TRUSTED_PROXY`; client IP taken from the right-most untrusted `X-Forwarded-For` hop only when the peer is `GOWEB_TRUSTED_PROXY`, otherwise the peer address without its port |
 | HTTP adapter → services | Principal and request data | Authentication and authorization checked in each handler/fragment; principal carries only ID and admin flag |
 | Services → PostgreSQL | Query parameters and secrets | Parameterized queries via `database/sql`, adapter maps errors without echoing bearer values |
 | Services → mail relay | Message content | Plain-text messages; tokens may appear in the message body but never in logs, traces, metrics, or diagnostics |
@@ -47,7 +47,7 @@ Assets to protect:
 | Password reset token | 32-byte token in `password_reset_tokens` | Single use | Consumed atomically; expired/consumed tokens rejected; never logged |
 | Guest transfer code | Single active code per guest, partial unique index | Until revoked or used | One active code per guest; revocable; redeemed atomically; never logged |
 | Group invite code | 12-character code, unique per group | Until rotated | Administrators can rotate; unique constraint; join is rate limited and idempotent |
-| OAuth state | 32-byte random state in `oauth_states` | Single use, expiring | Action allowlist, atomic consumption with a single winner, optionally bound to a user |
+| OAuth state | 32-byte random state in `oauth_states`, mirrored in the `goweb_oauth_state` browser cookie | Single use, expiring | Action allowlist, atomic consumption with a single winner; the callback must present the matching `HttpOnly` cookie from the browser that started the flow; a link completes only for the signed-in account that started it |
 | Password hash | Argon2id encoded hash in `users.password_hash` | Stored indefinitely for the account | Never returned or logged; stripped from public user values |
 | Provider subject | `oauth_identities` unique `(provider, subject)` | Stored with the linked account | Never rendered or logged; removed on unlink or account deletion |
 | Deployment secrets | `config.Secret` values from environment | Process lifetime | Redacted from formatting and JSON; production startup rejects unsafe configuration |
@@ -62,7 +62,11 @@ state, and revision-checked writes. None are trusted from the client.
 - **Guest limits**: separate `guest.create` and `guest.redeem` origin budgets.
 - **Invite limits**: `group.invite.join` budget on invite redemption.
 - **Bounded limiter state**: limiter key counts are capped to prevent unbounded
-  memory growth; keys are redacted in administrator diagnostics.
+  memory growth; at the cap the oldest key that is not blocked is evicted, so
+  flooding with fresh keys cannot lock out other callers or lift an active
+  block; keys are redacted in administrator diagnostics.
+- **Origin keys**: origin budgets use the client IP without the source port, so
+  new connections do not get fresh budgets.
 - **Lockout visibility**: administrators can read and clear live lockout state;
   clearing is confirmed, authorized, and audited.
 - **Suspicious-account signals**: accounts exceeding action-count or
@@ -71,7 +75,10 @@ state, and revision-checked writes. None are trusted from the client.
 - **Optimistic locking**: revision-checked writes reject stale edits as
   conflicts and vanished records as not-found.
 - **Session revocation**: a user or administrator can end sessions immediately;
-  the next request re-authenticates server-side.
+  the next request re-authenticates server-side. Changing a password in account
+  settings, redeeming a reset link, or an administrator password reset ends
+  every session for the account; a settings change issues a new session to the
+  requesting browser.
 - **CSRF and authorization**: repeated on fragments, not only full pages.
 - **Bounded work**: list page sizes, search lengths, and sort keys are validated
   and clamped server-side; query strings never reach logs, traces, or usage rows.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -73,18 +74,18 @@ func TestOAuthSignInStartAndCallbackRejectUnsafeStateOrProviders(t *testing.T) {
 	states := &oauthStateRepositoryStub{}
 	service := newOAuthServiceForTest(t, provider, states, &oauthIdentityRepositoryStub{}, &oauthUserRepositoryStub{})
 
-	authorizationURL, err := service.Start(context.Background(), "google")
+	authorizationURL, state, err := service.Start(context.Background(), "google")
 	if err != nil {
 		t.Fatalf("Start() error = %v, want nil", err)
 	}
 	parsed, err := url.Parse(authorizationURL)
-	if err != nil || parsed.Query().Get("state") == "" {
-		t.Fatalf("authorization URL = %q, want state query", authorizationURL)
+	if err != nil || parsed.Query().Get("state") == "" || parsed.Query().Get("state") != state || states.created.State != state {
+		t.Fatalf("authorization URL/state = %q/%q, want the stored state in the query", authorizationURL, state)
 	}
 	if strings.Contains(authorizationURL, "authorization-code") {
 		t.Error("authorization URL contains callback code")
 	}
-	if _, err := service.Start(context.Background(), "github"); !errors.Is(err, ErrOAuthProviderUnavailable) {
+	if _, _, err := service.Start(context.Background(), "github"); !errors.Is(err, ErrOAuthProviderUnavailable) {
 		t.Fatalf("Start(unconfigured) error = %v, want ErrOAuthProviderUnavailable", err)
 	}
 	if _, err := service.Callback(context.Background(), "google", "code", "bad-state"); !errors.Is(err, ErrOAuthStateInvalid) {
@@ -123,7 +124,7 @@ func TestOAuthSignInLinkBindsStateAndConfirmsMatchingEmail(t *testing.T) {
 	users := &oauthUserRepositoryStub{byID: User{ID: 42, Email: stringPointer("user@example.com"), Version: 2}}
 	service := newOAuthServiceForTest(t, provider, states, identities, users)
 
-	authorizationURL, err := service.StartLink(context.Background(), 42, "google")
+	authorizationURL, _, err := service.StartLink(context.Background(), 42, "google")
 	if err != nil {
 		t.Fatalf("StartLink() error = %v, want nil", err)
 	}
@@ -203,7 +204,7 @@ func TestOAuthCompleteCallbackDispatchesByStoredAction(t *testing.T) {
 		users := &oauthUserRepositoryStub{byID: User{ID: 42, Email: stringPointer("user@example.com"), Version: 2}}
 		service := newOAuthServiceForTest(t, provider, states, identities, users)
 
-		result, err := service.CompleteCallback(context.Background(), "google", "code", state)
+		result, err := service.CompleteCallback(context.Background(), 42, "google", "code", state)
 		if err != nil {
 			t.Fatalf("CompleteCallback() error = %v, want nil", err)
 		}
@@ -222,7 +223,7 @@ func TestOAuthCompleteCallbackDispatchesByStoredAction(t *testing.T) {
 		users := &oauthUserRepositoryStub{byID: User{ID: 42, Email: stringPointer("original@example.com")}}
 		service := newOAuthServiceForTest(t, provider, states, identities, users)
 
-		result, err := service.CompleteCallback(context.Background(), "google", "code", state)
+		result, err := service.CompleteCallback(context.Background(), 0, "google", "code", state)
 		if err != nil {
 			t.Fatalf("CompleteCallback() error = %v, want nil", err)
 		}
@@ -235,10 +236,25 @@ func TestOAuthCompleteCallbackDispatchesByStoredAction(t *testing.T) {
 		provider := &oauthProviderStub{name: "google", profile: OAuthProfile{Subject: "subject"}}
 		states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", Action: "callback", ExpiresAt: 200}}
 		service := newOAuthServiceForTest(t, provider, states, &oauthIdentityRepositoryStub{}, &oauthUserRepositoryStub{})
-		if _, err := service.CompleteCallback(context.Background(), "google", "code", state); !errors.Is(err, ErrOAuthStateInvalid) {
+		if _, err := service.CompleteCallback(context.Background(), 0, "google", "code", state); !errors.Is(err, ErrOAuthStateInvalid) {
 			t.Fatalf("CompleteCallback(unknown action) error = %v, want ErrOAuthStateInvalid", err)
 		}
 	})
+
+	for _, actorUserID := range []int64{0, 99} {
+		t.Run("link completed by another browser account "+strconv.FormatInt(actorUserID, 10), func(t *testing.T) {
+			provider := &oauthProviderStub{name: "google", profile: OAuthProfile{Subject: "victim-subject", Email: "victim@example.com", EmailVerified: true}}
+			states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", Action: oauthActionLink, UserID: 42, ExpiresAt: 200}}
+			identities := &oauthIdentityRepositoryStub{findErr: ErrOAuthIdentityNotFound}
+			service := newOAuthServiceForTest(t, provider, states, identities, &oauthUserRepositoryStub{byID: User{ID: 42}})
+			if _, err := service.CompleteCallback(context.Background(), actorUserID, "google", "code", state); !errors.Is(err, ErrOAuthStateInvalid) {
+				t.Fatalf("CompleteCallback(actor %d) error = %v, want ErrOAuthStateInvalid", actorUserID, err)
+			}
+			if provider.receivedCode != "" || identities.createCalls != 0 {
+				t.Fatalf("foreign link exchanged code %q / created %d identities, want neither", provider.receivedCode, identities.createCalls)
+			}
+		})
+	}
 }
 
 func newOAuthServiceForTest(t *testing.T, provider *oauthProviderStub, states *oauthStateRepositoryStub, identities *oauthIdentityRepositoryStub, users *oauthUserRepositoryStub) *OAuthSignInService {

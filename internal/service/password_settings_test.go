@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestPasswordSettingsServiceUpdate(t *testing.T) {
@@ -63,22 +64,30 @@ func TestPasswordSettingsServiceUpdate(t *testing.T) {
 				verifier = neverVerify
 			}
 			users := &settingsUserRepositoryStub{user: test.existing}
-			service, err := NewPasswordSettingsService(users, &settingsHasherStub{}, passwordVerifierStub{verify: verifier})
+			sessions, sessionStore := newPasswordSettingsSessions(t)
+			service, err := NewPasswordSettingsService(users, &settingsHasherStub{}, passwordVerifierStub{verify: verifier}, sessions)
 			if err != nil {
 				t.Fatalf("NewPasswordSettingsService() error = %v, want nil", err)
 			}
-			updated, err := service.Update(context.Background(), test.existing.ID, test.input)
+			result, err := service.Update(context.Background(), test.existing.ID, test.input)
 			if !errors.Is(err, test.wantErr) {
 				t.Fatalf("Update() error = %v, want errors.Is(_, %v)", err, test.wantErr)
 			}
 			if test.wantErr != nil {
+				if sessionStore.revokedUserID != 0 {
+					t.Fatalf("rejected change revoked sessions for user %d", sessionStore.revokedUserID)
+				}
 				return
 			}
 			if users.updateCalls != test.wantWrites {
 				t.Fatalf("UpdateUser() calls = %d, want %d", users.updateCalls, test.wantWrites)
 			}
-			if updated.PasswordHash != nil {
+			if result.User.PasswordHash != nil {
 				t.Errorf("returned user exposes password hash")
+			}
+			changed := test.wantWrites == 1
+			if changed != (sessionStore.revokedUserID == 7) || changed != (result.Session.ID != "" && result.Session.UserID == 7 && sessionStore.created.ID == result.Session.ID) {
+				t.Fatalf("password changed = %v: revoked user %d, new session %+v; want all sessions revoked and a replacement issued only on change", changed, sessionStore.revokedUserID, result.Session)
 			}
 		})
 	}
@@ -86,7 +95,8 @@ func TestPasswordSettingsServiceUpdate(t *testing.T) {
 
 func TestPasswordSettingsServiceRejectsInvalidInput(t *testing.T) {
 	users := &settingsUserRepositoryStub{user: User{ID: 7, Version: 1}}
-	service, err := NewPasswordSettingsService(users, &settingsHasherStub{}, passwordVerifierStub{verify: alwaysVerify})
+	sessions, _ := newPasswordSettingsSessions(t)
+	service, err := NewPasswordSettingsService(users, &settingsHasherStub{}, passwordVerifierStub{verify: alwaysVerify}, sessions)
 	if err != nil {
 		t.Fatalf("NewPasswordSettingsService() error = %v", err)
 	}
@@ -94,15 +104,25 @@ func TestPasswordSettingsServiceRejectsInvalidInput(t *testing.T) {
 	if _, err := service.Update(context.Background(), 0, PasswordSettingsInput{NewPassword: "correct horse battery"}); !errors.Is(err, ErrInvalidUserID) {
 		t.Fatalf("Update() error = %v, want ErrInvalidUserID", err)
 	}
-	if _, err := NewPasswordSettingsService(nil, &settingsHasherStub{}, passwordVerifierStub{verify: alwaysVerify}); !errors.Is(err, ErrNilUserRepository) {
+	if _, err := NewPasswordSettingsService(nil, &settingsHasherStub{}, passwordVerifierStub{verify: alwaysVerify}, sessions); !errors.Is(err, ErrNilUserRepository) {
 		t.Fatalf("NewPasswordSettingsService(nil) error = %v, want ErrNilUserRepository", err)
 	}
-	if _, err := NewPasswordSettingsService(users, nil, passwordVerifierStub{verify: alwaysVerify}); !errors.Is(err, ErrInvalidSettings) {
+	if _, err := NewPasswordSettingsService(users, nil, passwordVerifierStub{verify: alwaysVerify}, sessions); !errors.Is(err, ErrInvalidSettings) {
 		t.Fatalf("NewPasswordSettingsService(nil hasher) error = %v, want ErrInvalidSettings", err)
 	}
 	if _, err := service.Update(context.Background(), 7, weak); !errors.Is(err, ErrPasswordTooShort) {
 		t.Fatalf("Update(weak) error = %v, want ErrPasswordTooShort", err)
 	}
+}
+
+func newPasswordSettingsSessions(t *testing.T) (*SessionService, *sessionRepositoryStub) {
+	t.Helper()
+	store := &sessionRepositoryStub{}
+	sessions, err := NewSessionService(store, time.Hour)
+	if err != nil {
+		t.Fatalf("NewSessionService() error = %v", err)
+	}
+	return sessions, store
 }
 
 type settingsHasherStub struct{}

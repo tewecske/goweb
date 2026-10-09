@@ -118,6 +118,19 @@ func TestSettingsPasswordUpdate(t *testing.T) {
 			if !strings.Contains(response.Body.String(), test.wantContains) {
 				t.Errorf("body missing %q", test.wantContains)
 			}
+			var sessionCookie string
+			for _, cookie := range response.Result().Cookies() {
+				if cookie.Name == middleware.DefaultSessionCookieName {
+					sessionCookie = cookie.Value
+				}
+			}
+			wantCookie := ""
+			if test.expectedStatus == http.StatusOK {
+				wantCookie = "replacement-session"
+			}
+			if sessionCookie != wantCookie {
+				t.Errorf("session cookie = %q, want %q", sessionCookie, wantCookie)
+			}
 		})
 	}
 }
@@ -225,6 +238,9 @@ func TestSettingsIdentityLinkUsesRedirectHeaderForHTMX(t *testing.T) {
 	}
 	if redirect := response.Header().Get("HX-Redirect"); redirect != "https://accounts.google.com/o/oauth2/v2/auth" {
 		t.Fatalf("HX-Redirect = %q, want provider URL", redirect)
+	}
+	if cookies := response.Result().Cookies(); len(cookies) != 1 || cookies[0].Name != oauthStateCookieName || cookies[0].Value != "link-state" {
+		t.Fatalf("link cookies = %+v, want state bound to this browser", cookies)
 	}
 }
 
@@ -411,11 +427,11 @@ func (u settingsProfileUpdater) Update(context.Context, int64, service.ProfileSe
 
 type settingsPasswordUpdater struct{ err error }
 
-func (u settingsPasswordUpdater) Update(context.Context, int64, service.PasswordSettingsInput) (service.User, error) {
+func (u settingsPasswordUpdater) Update(context.Context, int64, service.PasswordSettingsInput) (service.PasswordSettingsResult, error) {
 	if u.err != nil {
-		return service.User{}, u.err
+		return service.PasswordSettingsResult{}, u.err
 	}
-	return service.User{ID: 7}, nil
+	return service.PasswordSettingsResult{User: service.User{ID: 7}, Session: service.Session{ID: "replacement-session", UserID: 7}}, nil
 }
 
 type settingsLocaleUpdater struct{ err error }
@@ -452,11 +468,11 @@ type settingsLinker struct {
 	err error
 }
 
-func (l settingsLinker) StartLink(context.Context, int64, string) (string, error) {
+func (l settingsLinker) StartLink(context.Context, int64, string) (string, string, error) {
 	if l.err != nil {
-		return "", l.err
+		return "", "", l.err
 	}
-	return l.url, nil
+	return l.url, "link-state", nil
 }
 
 var errSettingsUnexpected = errors.New("unexpected")

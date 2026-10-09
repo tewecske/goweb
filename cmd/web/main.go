@@ -131,6 +131,7 @@ func main() {
 			AdminSuspicious:      applicationGraph.SuspiciousService,
 			Tracer:               spanTracer,
 			SecurityLogger:       logger,
+			TrustedProxy:         appConfig.TrustedProxy,
 		})
 	}
 

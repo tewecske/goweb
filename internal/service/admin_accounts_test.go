@@ -235,7 +235,8 @@ func TestAdminAccountServiceCreateValidatesInput(t *testing.T) {
 func TestAdminAccountServiceUpdateReplacesFieldsAtomically(t *testing.T) {
 	users := &userRepositoryStub{created: User{ID: 9}}
 	auditor := &auditRecorderStub{}
-	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, auditor, nil)
+	sessions := &sessionRevokerStub{}
+	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, auditor, sessions)
 	if err != nil {
 		t.Fatalf("NewAdminAccountService() error = %v", err)
 	}
@@ -262,6 +263,9 @@ func TestAdminAccountServiceUpdateReplacesFieldsAtomically(t *testing.T) {
 	}
 	if !users.lastUpdated.IsAdmin {
 		t.Fatal("updated account is not an administrator")
+	}
+	if sessions.userID != 9 {
+		t.Fatalf("revoked sessions for user %d, want password-reset target 9", sessions.userID)
 	}
 	if len(auditor.records) != 1 || auditor.records[0].Action != AuditActionAccountUpdated {
 		t.Fatalf("audit records = %+v, want one account-updated record", auditor.records)
@@ -310,7 +314,7 @@ func TestAdminAccountServiceUpdateClassifiesWriteFailures(t *testing.T) {
 }
 
 func TestAdminAccountServiceUpdateRejectsInvalidInput(t *testing.T) {
-	service, err := NewAdminAccountService(&userRepositoryStub{created: User{ID: 9}}, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil, nil)
+	service, err := NewAdminAccountService(&userRepositoryStub{created: User{ID: 9}}, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil, &sessionRevokerStub{})
 	if err != nil {
 		t.Fatalf("NewAdminAccountService() error = %v", err)
 	}

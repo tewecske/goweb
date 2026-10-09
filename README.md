@@ -36,7 +36,7 @@ Configuration comes from environment variables. Defaults keep local development 
 | `GOWEB_LOGIN_ATTEMPT_RETENTION` | `720h` (30 days) |
 | `GOWEB_USAGE_RETENTION` | `2160h` (90 days) |
 | `GOWEB_MAIL_RELAY` | unset; optional credential-free relay used by the system overview |
-| `GOWEB_TRUSTED_PROXY` | unset; optional trusted proxy IP or CIDR network |
+| `GOWEB_TRUSTED_PROXY` | unset; optional trusted proxy IP or CIDR network. Set it behind a reverse proxy so rate limits, sign-in history, and audit records use the client IP from `X-Forwarded-For` instead of the proxy address |
 | `GOWEB_BOOTSTRAP_ADMIN_EMAIL` | unset; non-production bootstrap administrator email |
 | `GOWEB_BOOTSTRAP_ADMIN_PASSWORD` | unset; non-production bootstrap administrator password |
 | `GOWEB_GOOGLE_CLIENT_ID` | unset; enables Google sign-in when set with the client secret |

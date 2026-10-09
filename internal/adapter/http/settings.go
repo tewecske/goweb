@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/tewecske/goweb/internal/adapter/http/middleware"
 	"github.com/tewecske/goweb/internal/locale"
@@ -19,7 +20,7 @@ type ProfileSettingsUpdater interface {
 
 // PasswordSettingsUpdater persists an account password.
 type PasswordSettingsUpdater interface {
-	Update(context.Context, int64, service.PasswordSettingsInput) (service.User, error)
+	Update(context.Context, int64, service.PasswordSettingsInput) (service.PasswordSettingsResult, error)
 }
 
 // LocaleSettingsUpdater persists an account language preference.
@@ -39,7 +40,7 @@ type IdentityUnlinker interface {
 
 // IdentityLinkStarter begins an external-identity attachment flow.
 type IdentityLinkStarter interface {
-	StartLink(context.Context, int64, string) (string, error)
+	StartLink(context.Context, int64, string) (string, string, error)
 }
 
 // AccountThemeUpdater persists an account visual theme.
@@ -163,7 +164,7 @@ func (h *settingsHandler) updatePassword(writer http.ResponseWriter, request *ht
 		h.renderSettings(writer, request, language, user, FormData{}, []Alert{{Level: "error", Message: settingsTranslate(h.settings, language, "settings.error.generic")}}, http.StatusInternalServerError)
 		return
 	}
-	_, err := h.dependencies.PasswordSettings.Update(request.Context(), user.ID, service.PasswordSettingsInput{
+	result, err := h.dependencies.PasswordSettings.Update(request.Context(), user.ID, service.PasswordSettingsInput{
 		CurrentPassword: request.PostFormValue("current_password"),
 		NewPassword:     request.PostFormValue("new_password"),
 	})
@@ -189,6 +190,12 @@ func (h *settingsHandler) updatePassword(writer http.ResponseWriter, request *ht
 		}
 		h.renderSettings(writer, request, language, user, form, []Alert{{Level: "error", Message: settingsTranslate(h.settings, language, message)}}, status)
 		return
+	}
+	if result.Session.ID != "" {
+		if err := h.dependencies.SessionCookie.Set(writer, result.Session.ID, time.Now()); err != nil {
+			renderSimpleError(writer, request, http.StatusInternalServerError)
+			return
+		}
 	}
 	fresh, err := h.dependencies.Users.FindUserByID(request.Context(), user.ID)
 	if err != nil {
@@ -290,11 +297,12 @@ func (h *settingsHandler) linkIdentity(writer http.ResponseWriter, request *http
 		h.renderSettings(writer, request, language, user, FormData{}, []Alert{{Level: "error", Message: settingsTranslate(h.settings, language, "settings.error.generic")}}, http.StatusUnprocessableEntity)
 		return
 	}
-	url, err := h.dependencies.IdentityLink.StartLink(request.Context(), user.ID, provider)
+	url, state, err := h.dependencies.IdentityLink.StartLink(request.Context(), user.ID, provider)
 	if err != nil {
 		h.renderSettings(writer, request, language, user, FormData{}, []Alert{{Level: "error", Message: settingsTranslate(h.settings, language, "settings.error.identity_link")}}, http.StatusUnprocessableEntity)
 		return
 	}
+	setOAuthStateCookie(writer, h.dependencies, state)
 	// HTMX would follow the redirect with XHR and fail cross-origin, so ask the
 	// browser to navigate to the provider authorization URL instead.
 	if IsHTMX(request) {

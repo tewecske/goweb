@@ -89,6 +89,11 @@ func (c *SessionCookie) Read(request *http.Request) (string, bool) {
 	return cookie.Value, true
 }
 
+// Secure reports whether cookies for this deployment require HTTPS.
+func (c *SessionCookie) Secure() bool {
+	return c != nil && c.secure
+}
+
 // Clear expires the browser session cookie immediately.
 func (c *SessionCookie) Clear(writer http.ResponseWriter, now time.Time) error {
 	if c == nil || writer == nil || now.IsZero() {

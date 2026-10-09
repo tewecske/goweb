@@ -133,36 +133,37 @@ func NewOAuthSignInService(
 	}, nil
 }
 
-// Start creates one callback state and returns a provider authorization URL.
+// Start creates one callback state and returns a provider authorization URL
+// and the state, which the caller binds to the initiating browser.
 // Unconfigured providers cannot be reached through this method.
-func (s *OAuthSignInService) Start(ctx context.Context, providerName string) (string, error) {
+func (s *OAuthSignInService) Start(ctx context.Context, providerName string) (string, string, error) {
 	if err := s.validate(ctx); err != nil {
-		return "", err
+		return "", "", err
 	}
 	provider, ok := s.providerClient(providerName)
 	if !ok {
-		return "", ErrOAuthProviderUnavailable
+		return "", "", ErrOAuthProviderUnavailable
 	}
 	state, err := newOAuthState()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	createdAt := s.now().Unix()
 	expiresAt := createdAt + int64(s.stateLife/time.Second)
 	if expiresAt <= createdAt {
-		return "", ErrOAuthStateInvalid
+		return "", "", ErrOAuthStateInvalid
 	}
 	authorizationURL, err := provider.AuthorizationURL(ctx, state)
 	if err != nil {
-		return "", oauthFailure(err)
+		return "", "", oauthFailure(err)
 	}
 	if !safeOAuthURL(authorizationURL) {
-		return "", ErrOAuthAuthenticationFailed
+		return "", "", ErrOAuthAuthenticationFailed
 	}
 	if err := s.states.CreateOAuthState(ctx, OAuthState{State: state, Provider: canonicalProviderName(provider.Name()), Action: oauthActionSignIn, CreatedAt: createdAt, ExpiresAt: expiresAt}); err != nil {
-		return "", oauthFailure(err)
+		return "", "", oauthFailure(err)
 	}
-	return authorizationURL, nil
+	return authorizationURL, state, nil
 }
 
 // OAuthCallbackResult is the outcome of one provider callback. Linked selects
@@ -199,7 +200,9 @@ func (s *OAuthSignInService) Callback(ctx context.Context, providerName, code, r
 // CompleteCallback consumes one callback state and completes whichever flow it
 // represents: an anonymous sign-in or an authenticated identity link. The HTTP
 // layer uses it because both flows share the registered redirect URI.
-func (s *OAuthSignInService) CompleteCallback(ctx context.Context, providerName, code, rawState string) (OAuthCallbackResult, error) {
+// actorUserID is the account signed in to the browser presenting the callback,
+// or zero; a link completes only for the account that started it.
+func (s *OAuthSignInService) CompleteCallback(ctx context.Context, actorUserID int64, providerName, code, rawState string) (OAuthCallbackResult, error) {
 	if err := s.validate(ctx); err != nil {
 		return OAuthCallbackResult{}, err
 	}
@@ -210,31 +213,33 @@ func (s *OAuthSignInService) CompleteCallback(ctx context.Context, providerName,
 	if err != nil {
 		return OAuthCallbackResult{}, err
 	}
-	profile, err := exchangeOAuthProfile(ctx, provider, code)
-	if err != nil {
-		return OAuthCallbackResult{}, err
-	}
 	switch stored.Action {
 	case oauthActionSignIn:
 		if stored.UserID != 0 {
 			return OAuthCallbackResult{}, ErrOAuthStateInvalid
 		}
-		result, err := s.signInWithProfile(ctx, canonicalName, profile, now)
-		if err != nil {
-			return OAuthCallbackResult{}, err
-		}
-		return OAuthCallbackResult{SignIn: result}, nil
 	case oauthActionLink:
-		if stored.UserID <= 0 {
+		if stored.UserID <= 0 || stored.UserID != actorUserID {
 			return OAuthCallbackResult{}, ErrOAuthStateInvalid
 		}
+	default:
+		return OAuthCallbackResult{}, ErrOAuthStateInvalid
+	}
+	profile, err := exchangeOAuthProfile(ctx, provider, code)
+	if err != nil {
+		return OAuthCallbackResult{}, err
+	}
+	if stored.Action == oauthActionLink {
 		if err := s.linkProfile(ctx, stored.UserID, canonicalName, profile, now); err != nil {
 			return OAuthCallbackResult{}, err
 		}
 		return OAuthCallbackResult{Linked: true, UserID: stored.UserID}, nil
-	default:
-		return OAuthCallbackResult{}, ErrOAuthStateInvalid
 	}
+	result, err := s.signInWithProfile(ctx, canonicalName, profile, now)
+	if err != nil {
+		return OAuthCallbackResult{}, err
+	}
+	return OAuthCallbackResult{SignIn: result}, nil
 }
 
 // consumeCallbackState normalizes and atomically consumes one callback state,
@@ -285,38 +290,39 @@ func (s *OAuthSignInService) signInWithProfile(ctx context.Context, canonicalNam
 	return s.createOAuthAccount(ctx, canonicalName, profile, now)
 }
 
-// StartLink creates a provider callback state bound to an authenticated user.
-func (s *OAuthSignInService) StartLink(ctx context.Context, userID int64, providerName string) (string, error) {
+// StartLink creates a provider callback state bound to an authenticated user
+// and returns the authorization URL and the state for browser binding.
+func (s *OAuthSignInService) StartLink(ctx context.Context, userID int64, providerName string) (string, string, error) {
 	if err := s.validate(ctx); err != nil {
-		return "", err
+		return "", "", err
 	}
 	if userID <= 0 {
-		return "", ErrOAuthAuthenticationFailed
+		return "", "", ErrOAuthAuthenticationFailed
 	}
 	if _, err := s.users.FindUserByID(ctx, userID); err != nil {
-		return "", ErrOAuthAuthenticationFailed
+		return "", "", ErrOAuthAuthenticationFailed
 	}
 	provider, ok := s.providerClient(providerName)
 	if !ok {
-		return "", ErrOAuthProviderUnavailable
+		return "", "", ErrOAuthProviderUnavailable
 	}
 	state, err := newOAuthState()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	createdAt := s.now().Unix()
 	expiresAt := createdAt + int64(s.stateLife/time.Second)
 	if expiresAt <= createdAt {
-		return "", ErrOAuthStateInvalid
+		return "", "", ErrOAuthStateInvalid
 	}
 	authorizationURL, err := provider.AuthorizationURL(ctx, state)
 	if err != nil || !safeOAuthURL(authorizationURL) {
-		return "", ErrOAuthAuthenticationFailed
+		return "", "", ErrOAuthAuthenticationFailed
 	}
 	if err := s.states.CreateOAuthState(ctx, OAuthState{State: state, Provider: canonicalProviderName(provider.Name()), Action: oauthActionLink, UserID: userID, CreatedAt: createdAt, ExpiresAt: expiresAt}); err != nil {
-		return "", oauthFailure(err)
+		return "", "", oauthFailure(err)
 	}
-	return authorizationURL, nil
+	return authorizationURL, state, nil
 }
 
 // CallbackLink consumes a link state and attaches the returned provider

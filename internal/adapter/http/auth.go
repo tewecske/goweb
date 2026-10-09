@@ -354,8 +354,14 @@ func csrfToken(request *http.Request) string {
 	return token
 }
 
+// requestOrigin is the client address used for rate limits, sign-in history,
+// and audit records. It never includes the source port, which changes per
+// connection and would give every connection a fresh rate-limit budget.
 func requestOrigin(request *http.Request) string {
-	origin := strings.TrimSpace(request.RemoteAddr)
+	origin, ok := middleware.ClientIPFromContext(request.Context())
+	if !ok {
+		origin = middleware.PeerIP(request.RemoteAddr)
+	}
 	if origin == "" {
 		return "unknown"
 	}
