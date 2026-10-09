@@ -96,7 +96,17 @@ func (r *UserRepository) UpdateUser(ctx context.Context, user service.User, expe
 	if err != nil {
 		return service.User{}, err
 	}
-	updated, scanErr := scanUser(db.QueryRowContext(ctx, `
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return service.User{}, mapUserError(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if !user.IsAdmin || user.IsGuest {
+		if err := keepAnotherAdministrator(ctx, tx, user.ID); err != nil {
+			return service.User{}, err
+		}
+	}
+	updated, scanErr := scanUser(tx.QueryRowContext(ctx, `
 		UPDATE users
 		SET email = $1, password_hash = $2, username = $3, display_name = $4,
 			is_guest = $5, is_admin = $6, theme = $7, locale = $8,
@@ -108,11 +118,15 @@ func (r *UserRepository) UpdateUser(ctx context.Context, user service.User, expe
 		user.IsAdmin, user.Theme, user.Locale, user.EmailVerifiedAt,
 		user.ID, expectedVersion))
 	if scanErr == nil {
+		if err := tx.Commit(); err != nil {
+			return service.User{}, mapUserError(err)
+		}
 		return updated, nil
 	}
 	if !errors.Is(scanErr, sql.ErrNoRows) {
 		return service.User{}, mapUserError(scanErr)
 	}
+	_ = tx.Rollback()
 	return service.User{}, r.classifyMissingWrite(ctx, db, user.ID)
 }
 
@@ -122,7 +136,15 @@ func (r *UserRepository) DeleteUser(ctx context.Context, id, expectedVersion int
 	if err != nil {
 		return err
 	}
-	result, err := db.ExecContext(ctx, "DELETE FROM users WHERE id = $1 AND version = $2", id, expectedVersion)
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return mapUserError(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := keepAnotherAdministrator(ctx, tx, id); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, "DELETE FROM users WHERE id = $1 AND version = $2", id, expectedVersion)
 	if err != nil {
 		return mapUserError(err)
 	}
@@ -131,9 +153,45 @@ func (r *UserRepository) DeleteUser(ctx context.Context, id, expectedVersion int
 		return mapUserError(err)
 	}
 	if rows == 1 {
+		return mapUserError(tx.Commit())
+	}
+	_ = tx.Rollback()
+	return r.classifyMissingWrite(ctx, db, id)
+}
+
+// keepAnotherAdministrator runs before a write that removes administrator
+// rights from id (demotion or deletion). When id is currently an
+// administrator it serializes such writes with a transaction-scoped advisory
+// lock and refuses the write if no other administrator would remain, so two
+// administrators demoting each other at once cannot leave none. Writes to
+// accounts that are not administrators take no lock.
+func keepAnotherAdministrator(ctx context.Context, tx *sql.Tx, id int64) error {
+	var isAdmin bool
+	err := tx.QueryRowContext(ctx, "SELECT is_admin AND NOT is_guest FROM users WHERE id = $1", id).Scan(&isAdmin)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && !isAdmin) {
 		return nil
 	}
-	return r.classifyMissingWrite(ctx, db, id)
+	if err != nil {
+		return mapUserError(err)
+	}
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended('goweb:administrators', 0))"); err != nil {
+		return mapUserError(err)
+	}
+	// Re-read under the lock: a concurrent writer may have changed either the
+	// target or the other administrators.
+	var others int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM users WHERE is_admin AND NOT is_guest AND id <> $1
+	`, id).Scan(&others); err != nil {
+		return mapUserError(err)
+	}
+	if err := tx.QueryRowContext(ctx, "SELECT is_admin AND NOT is_guest FROM users WHERE id = $1", id).Scan(&isAdmin); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return mapUserError(err)
+	}
+	if isAdmin && others == 0 {
+		return service.ErrLastAdministrator
+	}
+	return nil
 }
 
 const userSelect = `

@@ -219,6 +219,7 @@
     "admin.account.delete_confirm": {"text": "Véglegesen törli ezt a fiókot?"},
     "admin.account.confirm_delete": {"text": "Tudomásul veszem, hogy ez véglegesen törli a fiókot."},
     "admin.account.error.self_action": {"text": "Nem távolíthatja el a saját adminisztrátori jogát, és nem törölheti a saját fiókját."},
+    "admin.account.error.last_admin": {"text": "Legalább egy adminisztrátornak maradnia kell. Előbb adjon adminisztrátori jogot egy másik fióknak."},
     "admin.account.error.confirm_required": {"text": "A folytatás előtt erősítse meg a törlést."},
     "admin.account.detail_title": {"text": "Fiók | Adminisztráció"},
     "admin.account.detail_description": {"text": "Biztonságos diagnosztika ehhez a fiókhoz. Hitelesítő adatok és tokenek soha nem jelennek meg."},

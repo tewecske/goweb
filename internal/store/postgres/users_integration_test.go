@@ -6,6 +6,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -224,4 +226,74 @@ func newUserRepositoryHarness(t *testing.T) *testpostgres.Harness {
 
 func stringPointer(value string) *string {
 	return &value
+}
+
+func TestUserRepositoryAlwaysKeepsOneAdministrator(t *testing.T) {
+	harness := newUserRepositoryHarness(t)
+	repository, err := NewUserRepository(harness.DB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	newAdmin := func(email string) service.User {
+		created, err := repository.CreateUser(ctx, service.User{Email: stringPointer(email), IsAdmin: true, Theme: "light", Locale: "en", CreatedAt: 100})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return created
+	}
+
+	// Two administrators demote each other at the same moment: exactly one
+	// demotion may win.
+	for round := range 5 {
+		admins := []service.User{newAdmin(fmt.Sprintf("a%d@example.test", round)), newAdmin(fmt.Sprintf("b%d@example.test", round))}
+		if _, err := harness.DB.ExecContext(ctx, "UPDATE users SET is_admin = false WHERE id <> ALL($1)", []int64{admins[0].ID, admins[1].ID}); err != nil {
+			t.Fatal(err)
+		}
+		start := make(chan struct{})
+		errs := make([]error, 2)
+		var wait sync.WaitGroup
+		for i, admin := range admins {
+			wait.Add(1)
+			go func() {
+				defer wait.Done()
+				<-start
+				demoted := admin
+				demoted.IsAdmin = false
+				_, errs[i] = repository.UpdateUser(ctx, demoted, admin.Version)
+			}()
+		}
+		close(start)
+		wait.Wait()
+		var remaining int
+		if err := harness.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE is_admin").Scan(&remaining); err != nil {
+			t.Fatal(err)
+		}
+		refused := 0
+		for _, err := range errs {
+			if errors.Is(err, service.ErrLastAdministrator) {
+				refused++
+			} else if err != nil {
+				t.Fatalf("round %d demotion error = %v", round, err)
+			}
+		}
+		if remaining != 1 || refused != 1 {
+			t.Fatalf("round %d: %d administrators remain, %d demotions refused; want 1/1", round, remaining, refused)
+		}
+	}
+
+	var last service.User
+	if err := harness.DB.QueryRowContext(ctx, "SELECT id, version FROM users WHERE is_admin").Scan(&last.ID, &last.Version); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.DeleteUser(ctx, last.ID, last.Version); !errors.Is(err, service.ErrLastAdministrator) {
+		t.Fatalf("deleting the last administrator error = %v, want ErrLastAdministrator", err)
+	}
+	ordinary, err := repository.CreateUser(ctx, service.User{Email: stringPointer("ordinary@example.test"), Theme: "light", Locale: "en", CreatedAt: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.DeleteUser(ctx, ordinary.ID, ordinary.Version); err != nil {
+		t.Fatalf("deleting a non-administrator error = %v", err)
+	}
 }

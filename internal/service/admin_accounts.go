@@ -46,6 +46,9 @@ var (
 	ErrNilAdminUserRepository = errors.New("service: nil admin user repository")
 	// ErrAdminSelfAction identifies an administrator action against their own account that is refused.
 	ErrAdminSelfAction = errors.New("service: administrator self-protection")
+	// ErrLastAdministrator refuses a demotion or deletion that would leave no
+	// administrator.
+	ErrLastAdministrator = errors.New("service: last administrator")
 )
 
 // AdminUserQuery is the bounded, server-validated account-list query. Page,

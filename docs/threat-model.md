@@ -83,6 +83,10 @@ state, and revision-checked writes. None are trusted from the client.
   automatic enforcement.
 - **Optimistic locking**: revision-checked writes reject stale edits as
   conflicts and vanished records as not-found.
+- **Account invariants under concurrency**: demoting or deleting an
+  administrator is serialized and refused when no other administrator would
+  remain; unlinking an identity locks the account and refuses to remove its
+  last sign-in method.
 - **Session revocation**: a user or administrator can end sessions immediately;
   the next request re-authenticates server-side. Changing a password in account
   settings, redeeming a reset link, or an administrator password reset ends

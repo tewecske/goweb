@@ -711,10 +711,10 @@ func (h *adminHandler) deleteAccount(writer http.ResponseWriter, request *http.R
 	switch {
 	case err == nil:
 		h.redirectLocalized(writer, request, language, "/admin/users")
-	case errors.Is(err, service.ErrAdminSelfAction):
+	case errors.Is(err, service.ErrAdminSelfAction), errors.Is(err, service.ErrLastAdministrator):
 		h.renderUsers(writer, request, language, user, adminUsersRequest{
 			state: parseAdminListState(request), form: FormData{}, mode: adminModeList,
-			alerts: []Alert{{Level: "error", Message: h.t(language, "admin.account.error.self_action")}},
+			alerts: []Alert{{Level: "error", Message: h.t(language, adminAccountErrorMessage(err))}},
 			status: http.StatusUnprocessableEntity,
 		})
 	case errors.Is(err, service.ErrRecordNotFound):
@@ -871,6 +871,8 @@ func adminAccountErrorMessage(err error) string {
 		return "admin.account.error.not_found"
 	case errors.Is(err, service.ErrAdminSelfAction):
 		return "admin.account.error.self_action"
+	case errors.Is(err, service.ErrLastAdministrator):
+		return "admin.account.error.last_admin"
 	default:
 		return "admin.account.error.generic"
 	}

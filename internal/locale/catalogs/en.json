@@ -219,6 +219,7 @@
     "admin.account.delete_confirm": {"text": "Delete this account permanently?"},
     "admin.account.confirm_delete": {"text": "I understand this permanently deletes the account."},
     "admin.account.error.self_action": {"text": "You cannot remove your own administrator access or delete your own account."},
+    "admin.account.error.last_admin": {"text": "At least one administrator must remain. Grant administrator access to another account first."},
     "admin.account.error.confirm_required": {"text": "Confirm the deletion before continuing."},
     "admin.account.detail_title": {"text": "Account | Administration"},
     "admin.account.detail_description": {"text": "Safe diagnostics for this account. Credentials and tokens are never shown."},
