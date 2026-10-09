@@ -73,13 +73,18 @@ func TestGroupDetailVisibility(t *testing.T) {
 		wantStatus int
 		wantCode   string
 		rejectCode string
+		// wantInBody must appear in the rendered page.
+		wantInBody string
 	}{
 		{
 			name: "administrator sees invite code and controls",
 			detail: service.GroupDetail{Group: service.Group{ID: 3, Name: "Team", Version: 1}, IsMember: true, IsAdmin: true, ViewerRole: service.GroupRoleAdmin,
-				InviteCode: "ABCDEFGHJKLM", Members: []service.GroupMember{{UserID: 7, Role: service.GroupRoleAdmin, Version: 0}}},
+				InviteCode: "ABCDEFGHJKLM", Members: []service.GroupMember{{UserID: 7, Role: service.GroupRoleAdmin, Version: 0}, {UserID: 8, Role: service.GroupRoleMember, Version: 4}}},
 			wantStatus: http.StatusOK,
 			wantCode:   "ABCDEFGHJKLM",
+			// Roster forms carry each membership's own revision for the
+			// stale-write check.
+			wantInBody: `<input type="hidden" name="version" value="4">`,
 		},
 		{
 			name: "member cannot see invite code",
@@ -110,6 +115,9 @@ func TestGroupDetailVisibility(t *testing.T) {
 			}
 			if test.rejectCode != "" && strings.Contains(response.Body.String(), test.rejectCode) {
 				t.Errorf("body unexpectedly exposes invite code")
+			}
+			if test.wantInBody != "" && !strings.Contains(response.Body.String(), test.wantInBody) {
+				t.Errorf("body missing %s", test.wantInBody)
 			}
 		})
 	}
@@ -224,6 +232,36 @@ func TestGroupsChangeRoleForbidden(t *testing.T) {
 	handler.changeRole(response, request)
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+}
+
+func TestGroupsRosterWritesRequireARevision(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		path string
+		body string
+	}{
+		{name: "role without version", path: "/en/groups/3/members/8/role", body: "role=admin"},
+		{name: "role with malformed version", path: "/en/groups/3/members/8/role", body: "role=admin&version=latest"},
+		{name: "remove without version", path: "/en/groups/3/members/8/remove", body: ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dependencies := settingsStubDependencies(t)
+			// The stub would succeed, so only the missing revision can refuse.
+			dependencies.Groups = &groupsUseCaseStub{detail: service.GroupDetail{Group: service.Group{ID: 3, Name: "Team"}, IsMember: true, IsAdmin: true}}
+			handler, _ := newGroupsTestHandler(t, dependencies)
+			response := httptest.NewRecorder()
+			request := authenticatedRequest(http.MethodPost, test.path, 7, test.body)
+			request.SetPathValue("memberID", "8")
+			if strings.HasSuffix(test.path, "/role") {
+				handler.changeRole(response, request)
+			} else {
+				handler.removeMember(response, request)
+			}
+			if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "changed elsewhere") {
+				t.Fatalf("status = %d, want 422 with the reload message", response.Code)
+			}
+		})
 	}
 }
 

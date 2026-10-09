@@ -285,7 +285,11 @@ func (h *groupHandler) changeRole(writer http.ResponseWriter, request *http.Requ
 		h.renderError(writer, request, http.StatusInternalServerError)
 		return
 	}
-	_, err = h.dependencies.Groups.ChangeRole(request.Context(), user.ID, groupID, targetUserID, mustParseVersion(request.PostFormValue("version")), request.PostFormValue("role"))
+	version, ok := h.requireVersion(writer, request, language, user, groupID)
+	if !ok {
+		return
+	}
+	_, err = h.dependencies.Groups.ChangeRole(request.Context(), user.ID, groupID, targetUserID, version, request.PostFormValue("role"))
 	if err != nil {
 		h.renderGroupWriteError(writer, request, language, user, groupID, err, FormData{})
 		return
@@ -318,7 +322,11 @@ func (h *groupHandler) removeMember(writer http.ResponseWriter, request *http.Re
 		h.renderError(writer, request, http.StatusInternalServerError)
 		return
 	}
-	err = h.dependencies.Groups.RemoveMember(request.Context(), user.ID, groupID, targetUserID, mustParseVersion(request.PostFormValue("version")))
+	version, ok := h.requireVersion(writer, request, language, user, groupID)
+	if !ok {
+		return
+	}
+	err = h.dependencies.Groups.RemoveMember(request.Context(), user.ID, groupID, targetUserID, version)
 	if err != nil {
 		h.renderGroupWriteError(writer, request, language, user, groupID, err, FormData{})
 		return
@@ -515,6 +523,7 @@ func (h *groupHandler) groupDetailView(language locale.Code, user service.User, 
 		memberView := GroupMemberView{
 			UserID:     member.UserID,
 			Role:       member.Role,
+			Version:    member.Version,
 			Label:      label,
 			IsAdmin:    member.Role == service.GroupRoleAdmin,
 			IsSelf:     member.UserID == user.ID,
@@ -597,9 +606,16 @@ func parseVersion(raw string) (int64, error) {
 	return version, nil
 }
 
-func mustParseVersion(raw string) int64 {
-	version, _ := parseVersion(raw)
-	return version
+// requireVersion reads the membership revision a roster form was rendered
+// with. A missing or malformed revision is rejected rather than read as 0,
+// which would match a never-edited membership and skip the stale-write check.
+func (h *groupHandler) requireVersion(writer http.ResponseWriter, request *http.Request, language locale.Code, user service.User, groupID int64) (int64, bool) {
+	version, err := parseVersion(request.PostFormValue("version"))
+	if err != nil {
+		h.renderGroupDetailError(writer, request, language, user, groupID, FormData{}, "groups.error.conflict", http.StatusUnprocessableEntity)
+		return 0, false
+	}
+	return version, true
 }
 
 func groupMemberLabel(member service.GroupMember) string {
