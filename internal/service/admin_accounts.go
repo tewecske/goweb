@@ -13,7 +13,10 @@ const (
 	// DefaultAdminPageSize is used when a request omits a page size.
 	DefaultAdminPageSize = 20
 	// MaxAdminPageSize bounds every administrator list request.
-	MaxAdminPageSize     = 100
+	MaxAdminPageSize = 100
+	// MaxAdminPage bounds requested page numbers so the row offset cannot
+	// overflow into a negative SQL OFFSET.
+	MaxAdminPage         = 1_000_000
 	maxAdminSearchLength = 255
 )
 
@@ -83,9 +86,7 @@ func (q AdminUserQuery) Normalize() AdminUserQuery {
 	q.Confirmed = normalizeAdminTriState(q.Confirmed)
 	q.Sort = normalizeAdminSort(q.Sort)
 	q.Direction = normalizeAdminDirection(q.Direction, q.Sort)
-	if q.Page < 1 {
-		q.Page = 1
-	}
+	q.Page = min(max(q.Page, 1), MaxAdminPage)
 	if q.Size < 1 {
 		q.Size = DefaultAdminPageSize
 	}
@@ -100,7 +101,7 @@ func (q AdminUserQuery) Offset() int {
 	if q.Page < 1 {
 		return 0
 	}
-	return (q.Page - 1) * q.Size
+	return (min(q.Page, MaxAdminPage) - 1) * q.Size
 }
 
 // AdminUserRepository lists accounts for the administrator area. Implementations

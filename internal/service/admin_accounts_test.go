@@ -59,6 +59,22 @@ func TestAdminUserQueryNormalizeBoundsValues(t *testing.T) {
 	}
 }
 
+func TestAdminListQueriesBoundHugePageNumbers(t *testing.T) {
+	// (page-1)*size on this page overflows int64 and used to reach PostgreSQL
+	// as a negative OFFSET, failing the page with a 500.
+	const huge = 92233720368547758
+	users := AdminUserQuery{Page: huge, Size: MaxAdminPageSize}.Normalize()
+	audit := AuditQuery{Page: huge, Size: MaxAuditPageSize}.Normalize()
+	for name, got := range map[string][2]int{"accounts": {users.Page, users.Offset()}, "audit": {audit.Page, audit.Offset()}} {
+		if got[0] != MaxAdminPage || got[1] != (MaxAdminPage-1)*100 {
+			t.Errorf("%s page/offset = %d/%d, want %d/%d", name, got[0], got[1], MaxAdminPage, (MaxAdminPage-1)*100)
+		}
+	}
+	if offset := (AdminUserQuery{Page: huge, Size: MaxAdminPageSize}).Offset(); offset < 0 {
+		t.Errorf("unnormalized offset = %d, want non-negative", offset)
+	}
+}
+
 func TestAdminUserQueryNormalizeBoundsSearchLength(t *testing.T) {
 	long := make([]rune, maxAdminSearchLength+50)
 	for index := range long {

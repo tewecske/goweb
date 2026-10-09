@@ -105,9 +105,7 @@ func (q AuditQuery) Normalize() AuditQuery {
 	q.Action = normalizeAdminSearch(q.Action)
 	q.Actor = normalizeAdminSearch(q.Actor)
 	q.Target = normalizeAdminSearch(q.Target)
-	if q.Page < 1 {
-		q.Page = 1
-	}
+	q.Page = min(max(q.Page, 1), MaxAdminPage)
 	if q.Size < 1 {
 		q.Size = DefaultAuditPageSize
 	}
@@ -122,7 +120,7 @@ func (q AuditQuery) Offset() int {
 	if q.Page < 1 {
 		return 0
 	}
-	return (q.Page - 1) * q.Size
+	return (min(q.Page, MaxAdminPage) - 1) * q.Size
 }
 
 // AuditRecord is the safe, validated input for one administrator action. It
