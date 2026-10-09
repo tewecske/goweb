@@ -24,3 +24,6 @@
 *.swo
 *~
 .DS_Store
+
+# Amp orb portal registrations
+.amp/portals/*
