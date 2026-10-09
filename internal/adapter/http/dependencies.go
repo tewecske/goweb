@@ -246,7 +246,7 @@ type GuestRedeemer interface {
 }
 
 type GuestUpgrader interface {
-	Upgrade(context.Context, int64, service.GuestUpgradeInput) (service.User, error)
+	Upgrade(context.Context, int64, service.GuestUpgradeInput) (service.GuestUpgradeResult, error)
 }
 
 // Validate checks dependencies needed by session-aware routes.

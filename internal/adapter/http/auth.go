@@ -306,8 +306,19 @@ func oauthProviderLabel(name string) string {
 	}
 }
 
+// replaceSession ends the browser's previous session, if any, before setting
+// the new one, so a signed-in browser never keeps two live sessions and a
+// session planted before sign-in (fixation) or a guest session left behind
+// cannot be reused. A failed revocation does not block the new sign-in.
+func replaceSession(writer http.ResponseWriter, request *http.Request, dependencies Dependencies, sessionID string) error {
+	if previous, ok := dependencies.SessionCookie.Read(request); ok && previous != sessionID && dependencies.SessionAdmin != nil {
+		_ = dependencies.SessionAdmin.SignOut(request.Context(), previous)
+	}
+	return dependencies.SessionCookie.Set(writer, sessionID, time.Now())
+}
+
 func (h *authHandler) finishSignIn(writer http.ResponseWriter, request *http.Request, language locale.Code, sessionID, destination string) {
-	if err := h.dependencies.SessionCookie.Set(writer, sessionID, time.Now()); err != nil {
+	if err := replaceSession(writer, request, h.dependencies, sessionID); err != nil {
 		h.renderError(writer, request, http.StatusInternalServerError)
 		return
 	}

@@ -41,7 +41,7 @@ func (h *authHandler) guestWrite(writer http.ResponseWriter, request *http.Reque
 		h.renderGuestAlert(writer, request, "guest-write", language, http.StatusUnprocessableEntity, FormData{}, "guest.error.create")
 		return
 	}
-	if err := h.dependencies.SessionCookie.Set(writer, result.Session.ID, time.Now()); err != nil {
+	if err := replaceSession(writer, request, h.dependencies, result.Session.ID); err != nil {
 		h.renderError(writer, request, http.StatusInternalServerError)
 		return
 	}
@@ -88,7 +88,7 @@ func (h *authHandler) guestTransfer(writer http.ResponseWriter, request *http.Re
 			h.renderGuestWithStatus(writer, request, "guest-transfer", user, false, false, "", form, http.StatusUnprocessableEntity, Alert{Level: "error", Message: h.translate(language, "guest.error.invalid_code")})
 			return
 		}
-		if err := h.dependencies.SessionCookie.Set(writer, result.Session.ID, time.Now()); err != nil {
+		if err := replaceSession(writer, request, h.dependencies, result.Session.ID); err != nil {
 			h.renderError(writer, request, http.StatusInternalServerError)
 			return
 		}
@@ -116,7 +116,7 @@ func (h *authHandler) guestUpgrade(writer http.ResponseWriter, request *http.Req
 		h.renderGuestAlert(writer, request, "guest-upgrade", language, formFailureStatus(request, http.StatusUnauthorized), form, "guest.error.invalid")
 		return
 	}
-	updated, err := h.dependencies.GuestUpgrader.Upgrade(request.Context(), user.ID, service.GuestUpgradeInput{
+	result, err := h.dependencies.GuestUpgrader.Upgrade(request.Context(), user.ID, service.GuestUpgradeInput{
 		Email: request.PostFormValue("email"), Password: request.PostFormValue("password"),
 	})
 	if err != nil {
@@ -128,7 +128,13 @@ func (h *authHandler) guestUpgrade(writer http.ResponseWriter, request *http.Req
 		h.renderGuestWithStatus(writer, request, "guest-upgrade", user, true, false, "", form, http.StatusUnprocessableEntity, Alert{Level: "error", Message: h.translate(language, "guest.error.invalid")})
 		return
 	}
-	h.renderGuest(writer, request, "guest-upgrade", updated, false, true, "", FormData{})
+	// The upgrade ended every guest session; this browser continues on a
+	// fresh one.
+	if err := h.dependencies.SessionCookie.Set(writer, result.Session.ID, time.Now()); err != nil {
+		h.renderError(writer, request, http.StatusInternalServerError)
+		return
+	}
+	h.renderGuest(writer, request, "guest-upgrade", result.User, false, true, "", FormData{})
 }
 
 func (h *authHandler) currentUser(request *http.Request) (service.User, bool) {

@@ -174,7 +174,7 @@ func TestPostgresRepositoryContractsExerciseAuthenticationAndGuestServices(t *te
 	if secondDevice.User.ID != guestResult.User.ID || secondDevice.User.Theme != "dark" {
 		t.Fatal("guest redemption did not preserve account identity and theme")
 	}
-	upgrade, err := service.NewGuestUpgradeService(users, hasher, claims)
+	upgrade, err := service.NewGuestUpgradeService(users, hasher, claims, sessions)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,8 +182,16 @@ func TestPostgresRepositoryContractsExerciseAuthenticationAndGuestServices(t *te
 	if err != nil {
 		t.Fatalf("guest Upgrade() error = %v", err)
 	}
-	if upgraded.ID != guestResult.User.ID || upgraded.IsGuest || upgraded.PasswordHash != nil {
+	if upgraded.User.ID != guestResult.User.ID || upgraded.User.IsGuest || upgraded.User.PasswordHash != nil {
 		t.Fatal("guest upgrade changed account identity incorrectly")
+	}
+	for name, sessionID := range map[string]string{"original guest": guestResult.Session.ID, "transfer-code device": secondDevice.Session.ID} {
+		if _, err := sessions.Lookup(context.Background(), sessionID); !errors.Is(err, service.ErrSessionRevoked) {
+			t.Fatalf("%s session after upgrade error = %v, want revoked", name, err)
+		}
+	}
+	if _, err := sessions.Lookup(context.Background(), upgraded.Session.ID); err != nil {
+		t.Fatalf("post-upgrade session lookup error = %v", err)
 	}
 	if _, err := claims.FindGuestClaimCodeByCode(context.Background(), claim.Code); !errors.Is(err, service.ErrGuestClaimCodeNotFound) {
 		t.Fatalf("upgraded guest claim lookup error = %v, want not found", err)

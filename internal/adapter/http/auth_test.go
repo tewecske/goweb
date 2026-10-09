@@ -61,8 +61,9 @@ func (s httpSessionStub) Lookup(context.Context, string) (service.Session, error
 }
 
 type httpSignOutStub struct {
-	called bool
-	err    error
+	called    bool
+	sessionID string
+	err       error
 }
 
 type httpConfirmationStub struct{ err error }
@@ -132,12 +133,13 @@ type httpGuestUpgraderStub struct {
 	err  error
 }
 
-func (s httpGuestUpgraderStub) Upgrade(context.Context, int64, service.GuestUpgradeInput) (service.User, error) {
-	return s.user, s.err
+func (s httpGuestUpgraderStub) Upgrade(context.Context, int64, service.GuestUpgradeInput) (service.GuestUpgradeResult, error) {
+	return service.GuestUpgradeResult{User: s.user, Session: service.Session{ID: "upgraded-session", UserID: s.user.ID}}, s.err
 }
 
-func (s *httpSignOutStub) SignOut(context.Context, string) error {
+func (s *httpSignOutStub) SignOut(_ context.Context, sessionID string) error {
 	s.called = true
+	s.sessionID = sessionID
 	return s.err
 }
 
@@ -655,6 +657,34 @@ func TestGuestUpgradeRemovesBannerAndKeepsOwnedState(t *testing.T) {
 	}
 	if strings.Contains(body, "correct-horse-battery-staple") {
 		t.Fatal("guest upgrade response rendered password")
+	}
+	var sessionCookie string
+	for _, cookie := range response.Result().Cookies() {
+		if cookie.Name == middleware.DefaultSessionCookieName {
+			sessionCookie = cookie.Value
+		}
+	}
+	if sessionCookie != "upgraded-session" {
+		t.Fatalf("session cookie after upgrade = %q, want the fresh session", sessionCookie)
+	}
+}
+
+func TestSignInRevokesTheBrowsersPreviousSession(t *testing.T) {
+	dependencies := newHTTPTestDependencies(t)
+	signOut := &httpSignOutStub{}
+	dependencies.SessionAdmin = signOut
+	dependencies.SignIn = &httpSignInStub{result: service.SignInResult{Session: service.Session{ID: "new-session"}}}
+	handler := NewRouterWithServices(dependencies)
+	csrf := csrfCookie(t, handler)
+	response := csrfRequest(t, handler, http.MethodPost, "/en/sign-in", url.Values{
+		"_csrf": {csrf.Value}, "identifier": {"user@example.test"}, "password": {"correct-password"},
+	}, csrf, &http.Cookie{Name: middleware.DefaultSessionCookieName, Value: "previous-guest-session"})
+
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("sign-in status = %d, want redirect", response.Code)
+	}
+	if signOut.sessionID != "previous-guest-session" {
+		t.Fatalf("revoked session = %q, want the browser's previous session", signOut.sessionID)
 	}
 }
 

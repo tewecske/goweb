@@ -67,7 +67,7 @@ func (h *authHandler) oauthCallback(writer http.ResponseWriter, request *http.Re
 		h.renderError(writer, request, http.StatusInternalServerError)
 		return
 	}
-	if err := h.dependencies.SessionCookie.Set(writer, result.SignIn.Session.ID, time.Now()); err != nil {
+	if err := replaceSession(writer, request, h.dependencies, result.SignIn.Session.ID); err != nil {
 		h.renderError(writer, request, http.StatusInternalServerError)
 		return
 	}

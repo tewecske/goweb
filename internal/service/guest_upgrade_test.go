@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestGuestUpgradeServiceUpgradePreservesIdentity(t *testing.T) {
@@ -15,17 +16,28 @@ func TestGuestUpgradeServiceUpgradePreservesIdentity(t *testing.T) {
 		Version: 3,
 	}}
 	codes := &guestUpgradeCodeRevokerStub{}
-	service, err := NewGuestUpgradeService(users, guestUpgradeHasherStub{}, codes)
+	sessionStore := &sessionRepositoryStub{}
+	sessions, err := NewSessionService(sessionStore, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewGuestUpgradeService(users, guestUpgradeHasherStub{}, codes, sessions)
 	if err != nil {
 		t.Fatalf("NewGuestUpgradeService() error = %v, want nil", err)
 	}
 
-	updated, err := service.Upgrade(context.Background(), 42, GuestUpgradeInput{
+	result, err := service.Upgrade(context.Background(), 42, GuestUpgradeInput{
 		Email:    " User@Example.COM ",
 		Password: "correct horse battery staple",
 	})
 	if err != nil {
 		t.Fatalf("Upgrade() error = %v, want nil", err)
+	}
+	updated := result.User
+	// Sessions opened with a transfer code on other devices must not keep
+	// access to the account once it has a password.
+	if sessionStore.revokedUserID != 42 || result.Session.UserID != 42 || sessionStore.created.ID != result.Session.ID {
+		t.Fatalf("revoked sessions for %d, new session %+v; want guest sessions ended and a fresh one issued", sessionStore.revokedUserID, result.Session)
 	}
 	if updated.ID != 42 || updated.IsGuest || updated.Email == nil || *updated.Email != "user@example.com" {
 		t.Fatalf("updated user = %+v, want converted ID 42", updated)
@@ -65,7 +77,7 @@ func TestGuestUpgradeServiceRejectsInvalidChanges(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			users := &guestUpgradeUserRepositoryStub{user: test.user, emailUser: test.emailUser, findEmailErr: test.findEmailErr}
 			codes := &guestUpgradeCodeRevokerStub{}
-			service, err := NewGuestUpgradeService(users, guestUpgradeHasherStub{}, codes)
+			service, err := NewGuestUpgradeService(users, guestUpgradeHasherStub{}, codes, newGuestUpgradeSessions(t))
 			if err != nil {
 				t.Fatalf("NewGuestUpgradeService() error = %v, want nil", err)
 			}
@@ -84,7 +96,7 @@ func TestGuestUpgradeServicePropagatesFailures(t *testing.T) {
 	backendErr := errors.New("backend failed")
 	users := &guestUpgradeUserRepositoryStub{user: User{ID: 42, IsGuest: true}, updateErr: backendErr}
 	codes := &guestUpgradeCodeRevokerStub{}
-	service, err := NewGuestUpgradeService(users, guestUpgradeHasherStub{}, codes)
+	service, err := NewGuestUpgradeService(users, guestUpgradeHasherStub{}, codes, newGuestUpgradeSessions(t))
 	if err != nil {
 		t.Fatalf("NewGuestUpgradeService() error = %v, want nil", err)
 	}
@@ -95,7 +107,7 @@ func TestGuestUpgradeServicePropagatesFailures(t *testing.T) {
 
 	revokeErr := errors.New("revoke failed")
 	codes = &guestUpgradeCodeRevokerStub{err: revokeErr}
-	service, err = NewGuestUpgradeService(&guestUpgradeUserRepositoryStub{user: User{ID: 42, IsGuest: true}}, guestUpgradeHasherStub{}, codes)
+	service, err = NewGuestUpgradeService(&guestUpgradeUserRepositoryStub{user: User{ID: 42, IsGuest: true}}, guestUpgradeHasherStub{}, codes, newGuestUpgradeSessions(t))
 	if err != nil {
 		t.Fatalf("NewGuestUpgradeService() second error = %v, want nil", err)
 	}
@@ -106,7 +118,7 @@ func TestGuestUpgradeServicePropagatesFailures(t *testing.T) {
 
 	hashErr := errors.New("hash failed")
 	users = &guestUpgradeUserRepositoryStub{user: User{ID: 42, IsGuest: true}}
-	service, err = NewGuestUpgradeService(users, guestUpgradeHasherStub{err: hashErr}, &guestUpgradeCodeRevokerStub{})
+	service, err = NewGuestUpgradeService(users, guestUpgradeHasherStub{err: hashErr}, &guestUpgradeCodeRevokerStub{}, newGuestUpgradeSessions(t))
 	if err != nil {
 		t.Fatalf("NewGuestUpgradeService() third error = %v, want nil", err)
 	}
@@ -186,4 +198,13 @@ func (r *guestUpgradeCodeRevokerStub) RevokeGuestClaimCode(_ context.Context, us
 	r.userID = userID
 	r.revokedAt = revokedAt
 	return r.err
+}
+
+func newGuestUpgradeSessions(t *testing.T) *SessionService {
+	t.Helper()
+	sessions, err := NewSessionService(&sessionRepositoryStub{}, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sessions
 }

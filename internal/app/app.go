@@ -244,7 +244,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct guest redemption service: %w", err)
 	}
-	guestUpgrade, err := service.NewGuestUpgradeService(users, passwordHasher, guestClaimsRepository)
+	guestUpgrade, err := service.NewGuestUpgradeService(users, passwordHasher, guestClaimsRepository, sessionService)
 	if err != nil {
 		return nil, fmt.Errorf("construct guest upgrade service: %w", err)
 	}
