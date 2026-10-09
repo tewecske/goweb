@@ -55,6 +55,11 @@ func New(address string, handler http.Handler, options ...Option) (*Server, erro
 			Addr:              address,
 			Handler:           handler,
 			ReadHeaderTimeout: 5 * time.Second,
+			// Bound slow clients. WriteTimeout leaves room for requests that
+			// hash passwords or send mail through the relay.
+			ReadTimeout:  15 * time.Second,
+			WriteTimeout: 45 * time.Second,
+			IdleTimeout:  2 * time.Minute,
 		},
 		shutdownTimeout: defaultShutdownTimeout,
 	}

@@ -6,36 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{.CSRFToken}}">
     <link rel="stylesheet" href="/static/app.css">
+    <!-- Validation responses (422) swap so server-rendered field errors replace
+         the content region. Indicator styles live in app.css because the
+         Content-Security-Policy forbids injected inline styles. -->
+    <meta name="htmx-config" content='{"includeIndicatorStyles":false,"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"422","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
+    <script src="/static/app.js"></script>
     <script src="/static/htmx.min.js" defer></script>
-    <script>
-      // Treat validation responses as swappable fragments so field and form
-      // errors rendered by the server replace the current content region.
-      document.addEventListener("DOMContentLoaded", () => {
-        if (!window.htmx) return;
-        window.htmx.config.responseHandling = [
-          { code: "204", swap: false },
-          { code: "[23]..", swap: true },
-          { code: "422", swap: true },
-          { code: "[45]..", swap: false, error: true }
-        ];
-      });
-    </script>
     <title>{{.Title}}</title>
-    <script>
-      (() => {
-        try {
-          const serverTheme = document.documentElement.dataset.accountTheme;
-          const theme = serverTheme === "light" || serverTheme === "dark"
-            ? serverTheme
-            : localStorage.getItem("goweb-theme");
-          if (theme === "light" || theme === "dark") {
-            document.documentElement.dataset.theme = theme;
-          }
-        } catch (_) {
-          // Browser storage can be unavailable in privacy-restricted contexts.
-        }
-      })();
-    </script>
   </head>
   <body class="min-h-screen bg-base-100 text-base-content">
     <header class="navbar border-b border-base-300 px-4" aria-label="Site header">
@@ -130,47 +107,6 @@
         {{block "content" .}}{{end}}
       </section>
     </main>
-    <script>
-      (() => {
-        document.body.addEventListener("htmx:configRequest", (event) => {
-          const token = document.querySelector('meta[name="csrf-token"]')?.content || "";
-          event.detail.headers["X-CSRF-Token"] = token;
-        });
-        const toggle = document.getElementById("theme-toggle");
-        if (!toggle) return;
-        const key = "goweb-theme";
-        const themeURL = document.documentElement.dataset.themeUrl;
-        toggle.checked = document.documentElement.dataset.theme === "dark";
-        toggle.addEventListener("change", () => {
-          const theme = toggle.checked ? "dark" : "light";
-          const previousTheme = theme === "dark" ? "light" : "dark";
-          document.documentElement.dataset.theme = theme;
-          if (themeURL) {
-            const token = document.querySelector('meta[name="csrf-token"]')?.content || "";
-            fetch(themeURL, {
-              method: "POST",
-              credentials: "same-origin",
-              headers: {
-                "Content-Type": "application/x-www-form-urlencoded",
-                "X-CSRF-Token": token
-              },
-              body: new URLSearchParams({theme}).toString()
-            }).then((response) => {
-              if (!response.ok) throw new Error("theme update rejected");
-            }).catch(() => {
-              document.documentElement.dataset.theme = previousTheme;
-              toggle.checked = previousTheme === "dark";
-            });
-            return;
-          }
-          try {
-            localStorage.setItem(key, theme);
-          } catch (_) {
-            // Keep current-page theme when browser storage is unavailable.
-          }
-        });
-      })();
-    </script>
   </body>
 </html>
 {{end}}

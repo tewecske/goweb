@@ -28,7 +28,7 @@ Assets to protect:
 
 | Boundary | Crosses from → to | Controls |
 | --- | --- | --- |
-| Browser → HTTP adapter | Untrusted input | Server-side validation, `html/template` escaping, CSRF, authorization middleware, size-bounded lists |
+| Browser → HTTP adapter | Untrusted input | Server-side validation, `html/template` escaping, CSRF, cross-origin request rejection, authorization middleware, size-bounded lists, 256 KiB request bodies, server read/write/idle timeouts; Content-Security-Policy allows same-origin scripts and styles only and forbids framing |
 | Reverse proxy → HTTP adapter | Network metadata and trace context | `X-Request-ID` generated server-side; incoming W3C `traceparent` continued only from `GOWEB_TRUSTED_PROXY`; client IP taken from the right-most untrusted `X-Forwarded-For` hop only when the peer is `GOWEB_TRUSTED_PROXY`, otherwise the peer address without its port |
 | HTTP adapter → services | Principal and request data | Authentication and authorization checked in each handler/fragment; principal carries only ID and admin flag |
 | Services → PostgreSQL | Query parameters and secrets | Parameterized queries via `database/sql`, adapter maps errors without echoing bearer values |
@@ -42,7 +42,7 @@ Assets to protect:
 | Credential | Form and storage | Exposure window | Controls |
 | --- | --- | --- | --- |
 | Session cookie | `goweb_session`, opaque 32-byte random hex; server-side `sessions` row | Until expiry or revocation | `HttpOnly`, `SameSite`, `Secure` outside development; server validates expiry and revocation on every request |
-| CSRF token | `goweb_csrf` cookie plus `_csrf` field / `X-CSRF-Token` header | Per browser session | Double-submit, constant-time compare, `HttpOnly`, `SameSite=Strict`, required on every state-changing request |
+| CSRF token | `goweb_csrf` cookie plus `_csrf` field / `X-CSRF-Token` header | Per browser session | Double-submit, constant-time compare, `HttpOnly`, `SameSite=Strict`, `Secure` whenever session cookies are, malformed cookies replaced; required on every state-changing request after `http.CrossOriginProtection` rejects cross-origin and sibling-subdomain browser requests |
 | Email confirmation token | 32-byte token in `email_verification_tokens` | Single use, default 24h | Consumed atomically; expired/consumed tokens rejected; never logged |
 | Password reset token | 32-byte token in `password_reset_tokens` | Single use | Consumed atomically; expired/consumed tokens rejected; never logged |
 | Guest transfer code | Single active code per guest, partial unique index | Until revoked or used | One active code per guest; revocable; redeemed atomically; never logged |

@@ -73,7 +73,9 @@ func CSRF(options ...CSRFOption) Middleware {
 		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			token, err := requestToken(request)
 			if isSafeMethod(request.Method) {
-				if err != nil {
+				// Replace a missing or malformed (for example planted) cookie,
+				// which would otherwise break every form on the page.
+				if err != nil || !validCSRFToken(token) {
 					token, err = config.generator()
 					if err != nil || !validCSRFToken(token) {
 						http.Error(writer, "internal server error", http.StatusInternalServerError)

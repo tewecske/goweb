@@ -145,6 +145,7 @@ func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware
 		middleware.WithRequestID(nil),
 		middleware.WithRequestInfo(),
 		middleware.ClientIP(dependencies.TrustedProxy),
+		middleware.SecurityHeaders(),
 		middleware.Recover(recoveryLogger),
 	}
 	if dependencies.Tracer != nil {
@@ -156,7 +157,13 @@ func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware
 	if dependencies.Usage != nil {
 		shared = append(shared, middleware.Usage(dependencies.Usage, NormalizeUsageRoute))
 	}
-	shared = append(shared, middleware.CSRF())
+	// Forms are small; the cap bounds memory for form and multipart parsing.
+	shared = append(shared, middleware.LimitRequestBody(maxRequestBodyBytes))
+	// Reject cross-origin state-changing browser requests (Sec-Fetch-Site and
+	// Origin checks) before the CSRF token check. This also blocks sibling
+	// subdomains, which SameSite treats as same-site.
+	shared = append(shared, http.NewCrossOriginProtection().Handler)
+	shared = append(shared, middleware.CSRF(middleware.WithCSRFSecure(dependencies.SessionCookie.Secure())))
 	if requestLogger != nil {
 		shared = append(shared, middleware.Log(requestLogger))
 	}
@@ -179,6 +186,10 @@ func defaultLocale(writer http.ResponseWriter, request *http.Request) {
 }
 
 const localeCookieName = "goweb_locale"
+
+// maxRequestBodyBytes bounds every request body; the largest forms are a few
+// kilobytes.
+const maxRequestBodyBytes = 256 << 10
 
 func resolveRequestLanguage(request *http.Request, accountLanguage locale.Code) locale.Code {
 	var browserLanguage locale.Code

@@ -2,6 +2,7 @@ package httpadapter
 
 import (
 	"context"
+	"io"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -618,5 +619,72 @@ func TestGuestUpgradeRemovesBannerAndKeepsOwnedState(t *testing.T) {
 	}
 	if strings.Contains(body, "correct-horse-battery-staple") {
 		t.Fatal("guest upgrade response rendered password")
+	}
+}
+
+func TestRouterHardensBrowserRequests(t *testing.T) {
+	dependencies := newHTTPTestDependencies(t)
+	dependencies.SignIn = &httpSignInStub{err: service.ErrInvalidCredentials}
+	handler := NewRouterWithServices(dependencies)
+
+	page := httptest.NewRecorder()
+	handler.ServeHTTP(page, httptest.NewRequest(http.MethodGet, "/en/sign-in", nil))
+	csp := page.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "script-src 'self'") || strings.Contains(csp, "unsafe-inline") || !strings.Contains(csp, "frame-ancestors 'none'") {
+		t.Errorf("Content-Security-Policy = %q, want same-origin scripts only and no framing", csp)
+	}
+	for header, want := range map[string]string{"X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin", "Cache-Control": "no-store"} {
+		if got := page.Header().Get(header); got != want {
+			t.Errorf("page %s = %q, want %q", header, got, want)
+		}
+	}
+	script := httptest.NewRecorder()
+	handler.ServeHTTP(script, httptest.NewRequest(http.MethodGet, "/static/app.js", nil))
+	if script.Code != http.StatusOK || !strings.Contains(script.Body.String(), `localStorage.getItem(storageKey)`) || script.Header().Get("Cache-Control") == "no-store" {
+		t.Errorf("app.js = %d (cache %q), want cacheable page script", script.Code, script.Header().Get("Cache-Control"))
+	}
+
+	planted := httptest.NewRequest(http.MethodGet, "/en/sign-in", nil)
+	planted.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "attacker-planted"})
+	replaced := httptest.NewRecorder()
+	handler.ServeHTTP(replaced, planted)
+	if cookies := replaced.Result().Cookies(); len(cookies) != 1 || cookies[0].Name != middleware.CSRFCookieName || len(cookies[0].Value) != 64 {
+		t.Errorf("malformed CSRF cookie not replaced: %+v", cookies)
+	}
+
+	csrf := csrfCookie(t, handler)
+	signIn := func(mutate func(*http.Request)) int {
+		form := url.Values{"_csrf": {csrf.Value}, "identifier": {"user@example.test"}, "password": {"wrong-password"}}
+		request := httptest.NewRequest(http.MethodPost, "/en/sign-in", strings.NewReader(form.Encode()))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		request.AddCookie(csrf)
+		mutate(request)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response.Code
+	}
+	if code := signIn(func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "same-origin") }); code != http.StatusUnauthorized {
+		t.Errorf("same-origin sign-in = %d, want it to reach sign-in (401)", code)
+	}
+	for name, mutate := range map[string]func(*http.Request){
+		"cross-site":     func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "cross-site") },
+		"sibling origin": func(r *http.Request) { r.Header.Set("Origin", "https://evil.example.test") },
+		"oversized body": func(r *http.Request) {
+			r.Body = io.NopCloser(strings.NewReader(strings.Repeat("a=b&", maxRequestBodyBytes)))
+		},
+	} {
+		if code := signIn(mutate); code != http.StatusForbidden {
+			t.Errorf("%s sign-in = %d, want 403 before sign-in runs", name, code)
+		}
+	}
+
+	secureCookie, err := middleware.NewSessionCookie(middleware.SessionCookieConfig{Secure: true, Lifetime: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dependencies.SessionCookie = secureCookie
+	secureCSRF := csrfCookie(t, NewRouterWithServices(dependencies))
+	if !secureCSRF.Secure {
+		t.Error("CSRF cookie is not Secure when session cookies are, so it would travel over plain HTTP behind a TLS proxy")
 	}
 }

@@ -105,8 +105,7 @@ func TestNewHandlerRendersHomeLayout(t *testing.T) {
 		`aria-label="Primary navigation"`,
 		`id="alerts"`,
 		`id="theme-toggle"`,
-		`localStorage.getItem("goweb-theme")`,
-		`localStorage.setItem(key, theme)`,
+		`<script src="/static/app.js"></script>`,
 	} {
 		if !strings.Contains(body, fragment) {
 			t.Errorf("home body missing %q", fragment)
@@ -114,6 +113,9 @@ func TestNewHandlerRendersHomeLayout(t *testing.T) {
 	}
 	if !strings.Contains(body, `src="/static/htmx.min.js"`) {
 		t.Error("home body missing local HTMX runtime")
+	}
+	if strings.Contains(body, "<script>") || strings.Contains(body, "<style") || strings.Contains(body, " style=") {
+		t.Error("home body has inline script or style, which the Content-Security-Policy blocks")
 	}
 }
 

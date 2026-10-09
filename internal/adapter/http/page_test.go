@@ -146,8 +146,7 @@ func TestPageRendererRendersAccountThemeConfiguration(t *testing.T) {
 	for _, fragment := range []string{
 		`data-account-theme="dark"`,
 		`data-theme-url="/en/account/theme"`,
-		`fetch(themeURL`,
-		`document.documentElement.dataset.theme = previousTheme`,
+		`<script src="/static/app.js"></script>`,
 	} {
 		if !strings.Contains(response.Body.String(), fragment) {
 			t.Errorf("account theme response missing %q", fragment)

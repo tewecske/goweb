@@ -76,6 +76,7 @@ Tests must cover success and failure paths, remain isolated and repeatable, and 
 - Use DaisyUI 5 components for frontend UI instead of hand-rolled equivalents.
 - Before writing HTML or JSX, load the `daisyui` skill and follow its component, usage, configuration, and color guidance.
 - Keep templates semantic and accessible. Preserve stable accessible names and test hooks when adding controls.
+- The Content-Security-Policy forbids inline scripts, inline styles, and `style` attributes. Put scripts in `static/app.js` and styles in `static/src/app.css`.
 - Keep localized URLs explicit and catalog IDs stable; validate catalog completeness and placeholders in tests.
 - Anonymous theme preference may use browser storage; authenticated theme preference must persist through a server-side use case and revert UI state when rejected.
 
