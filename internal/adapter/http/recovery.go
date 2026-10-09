@@ -29,7 +29,7 @@ func (h *authHandler) resendConfirmation(writer http.ResponseWriter, request *ht
 	if err := h.dependencies.ConfirmationResender.Resend(request.Context(), request.PostFormValue("email")); err != nil {
 		status := http.StatusUnprocessableEntity
 		if errors.Is(err, service.ErrRateLimited) {
-			status = http.StatusTooManyRequests
+			status = formFailureStatus(request, http.StatusTooManyRequests)
 		}
 		h.renderRecoveryWithStatus(writer, request, "resend-confirmation", form, status, Alert{Level: "error", Message: h.translate(language, "auth.error.invalid")})
 		return
@@ -57,7 +57,7 @@ func (h *authHandler) forgotPassword(writer http.ResponseWriter, request *http.R
 	if err := h.dependencies.PasswordResetter.Request(request.Context(), request.PostFormValue("email")); err != nil {
 		status := http.StatusUnprocessableEntity
 		if errors.Is(err, service.ErrRateLimited) {
-			status = http.StatusTooManyRequests
+			status = formFailureStatus(request, http.StatusTooManyRequests)
 		}
 		h.renderRecoveryWithStatus(writer, request, "forgot-password", form, status, Alert{Level: "error", Message: h.translate(language, "auth.error.invalid")})
 		return

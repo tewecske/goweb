@@ -108,7 +108,7 @@ func (h *authHandler) handlePasswordPage(writer http.ResponseWriter, request *ht
 		if errors.Is(err, service.ErrEmailUnconfirmed) {
 			messageID = "auth.error.unconfirmed"
 		}
-		h.renderPasswordPageWithStatus(writer, request, language, kind, form, http.StatusUnauthorized, Alert{Level: "error", Message: h.translate(language, messageID)})
+		h.renderPasswordPageWithStatus(writer, request, language, kind, form, formFailureStatus(request, http.StatusUnauthorized), Alert{Level: "error", Message: h.translate(language, messageID)})
 		return
 	}
 	h.finishSignIn(writer, request, language, result.Session.ID, "/home")

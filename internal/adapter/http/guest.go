@@ -113,7 +113,7 @@ func (h *authHandler) guestUpgrade(writer http.ResponseWriter, request *http.Req
 	_ = request.ParseForm()
 	form := FormData{Submitted: true, Values: map[string]string{"email": request.PostFormValue("email")}}
 	if !authenticated || !user.IsGuest || h.dependencies.GuestUpgrader == nil {
-		h.renderGuestAlert(writer, request, "guest-upgrade", language, http.StatusUnauthorized, form, "guest.error.invalid")
+		h.renderGuestAlert(writer, request, "guest-upgrade", language, formFailureStatus(request, http.StatusUnauthorized), form, "guest.error.invalid")
 		return
 	}
 	updated, err := h.dependencies.GuestUpgrader.Upgrade(request.Context(), user.ID, service.GuestUpgradeInput{

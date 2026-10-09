@@ -277,11 +277,16 @@ func TestHTMXSignInUsesCSRFHeaderAndReturnsFragment(t *testing.T) {
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 
-	if response.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want service failure status %d", response.Code, http.StatusUnauthorized)
+	// htmx swaps only 422 among client errors (see layout responseHandling);
+	// a 401 fragment would be discarded and the user would see no error.
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want swappable %d", response.Code, http.StatusUnprocessableEntity)
 	}
 	if strings.Contains(response.Body.String(), "<!doctype html>") || !strings.Contains(response.Body.String(), `id="page-content"`) {
 		t.Fatal("HTMX authentication response was not an accessible fragment")
+	}
+	if !strings.Contains(response.Body.String(), "role=\"alert\"") && !strings.Contains(response.Body.String(), "alert-error") {
+		t.Fatal("HTMX authentication fragment has no error alert")
 	}
 }
 

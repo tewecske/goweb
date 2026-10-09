@@ -706,6 +706,17 @@ func IsHTMX(request *http.Request) bool {
 	return strings.EqualFold(strings.TrimSpace(request.Header.Get("HX-Request")), "true")
 }
 
+// formFailureStatus returns the status for a form fragment that reports a
+// failure to the user. The layout's htmx responseHandling swaps only 422
+// among client errors, so HTMX requests get 422 and the alert is shown; full
+// page posts keep the more specific status.
+func formFailureStatus(request *http.Request, status int) int {
+	if IsHTMX(request) {
+		return http.StatusUnprocessableEntity
+	}
+	return status
+}
+
 func (r *PageRenderer) render(writer http.ResponseWriter, name string, page PageData) error {
 	return r.renderStatus(writer, name, page, http.StatusOK)
 }
