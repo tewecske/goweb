@@ -225,6 +225,9 @@ func (s *AdminAccountService) Create(ctx context.Context, actor AdminActionConte
 	}
 	created.PasswordHash = nil
 	s.record(ctx, actor, AuditActionAccountCreated, created, email)
+	if created.IsAdmin {
+		s.record(ctx, actor, AuditActionAdminGranted, created, email)
+	}
 	return created, nil
 }
 
@@ -299,6 +302,7 @@ func (s *AdminAccountService) Update(ctx context.Context, actor AdminActionConte
 		}
 		return User{}, err
 	}
+	wasAdmin := current.IsAdmin
 	current.Email = &email
 	current.IsAdmin = input.IsAdmin
 	if passwordHash != nil {
@@ -324,6 +328,16 @@ func (s *AdminAccountService) Update(ctx context.Context, actor AdminActionConte
 		}
 	}
 	s.record(ctx, actor, AuditActionAccountUpdated, updated, email)
+	if updated.IsAdmin != wasAdmin {
+		action := AuditActionAdminRevoked
+		if updated.IsAdmin {
+			action = AuditActionAdminGranted
+		}
+		s.record(ctx, actor, action, updated, email)
+	}
+	if passwordHash != nil {
+		s.record(ctx, actor, AuditActionPasswordReset, updated, email)
+	}
 	return updated, nil
 }
 

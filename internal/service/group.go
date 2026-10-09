@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -123,6 +124,7 @@ type GroupService struct {
 	groups      GroupRepository
 	memberships GroupMembershipRepository
 	users       UserRepository
+	auditor     AuditRecorder
 }
 
 // NewGroupService constructs group use cases with explicit dependencies.
@@ -292,7 +294,8 @@ func (s *GroupService) Rename(ctx context.Context, userID, groupID, expectedVers
 	if err != nil {
 		return Group{}, err
 	}
-	if _, err := s.requireAdmin(ctx, userID, groupID); err != nil {
+	asSiteAdmin, err := s.requireAdmin(ctx, userID, groupID)
+	if err != nil {
 		return Group{}, err
 	}
 	group, err := s.groups.FindGroupByID(ctx, groupID)
@@ -308,6 +311,9 @@ func (s *GroupService) Rename(ctx context.Context, userID, groupID, expectedVers
 		}
 		return Group{}, fmt.Errorf("rename group: %w", err)
 	}
+	if asSiteAdmin {
+		s.recordSiteAdminAction(ctx, userID, groupID, AuditActionGroupRenamed, "name: "+updated.Name)
+	}
 	return updated, nil
 }
 
@@ -320,7 +326,8 @@ func (s *GroupService) RotateInvite(ctx context.Context, userID, groupID int64) 
 	if userID <= 0 || groupID <= 0 {
 		return "", ErrInvalidGroup
 	}
-	if _, err := s.requireAdmin(ctx, userID, groupID); err != nil {
+	asSiteAdmin, err := s.requireAdmin(ctx, userID, groupID)
+	if err != nil {
 		return "", err
 	}
 	group, err := s.groups.FindGroupByID(ctx, groupID)
@@ -336,6 +343,9 @@ func (s *GroupService) RotateInvite(ctx context.Context, userID, groupID int64) 
 		group.InviteCode = code
 		updated, err := s.groups.UpdateGroup(ctx, group, group.Version)
 		if err == nil {
+			if asSiteAdmin {
+				s.recordSiteAdminAction(ctx, userID, groupID, AuditActionGroupInvite, "")
+			}
 			return updated.InviteCode, nil
 		}
 		if errors.Is(err, ErrGroupInviteTaken) {
@@ -408,7 +418,8 @@ func (s *GroupService) ChangeRole(ctx context.Context, actorUserID, groupID, tar
 	if role != GroupRoleAdmin && role != GroupRoleMember {
 		return GroupMembership{}, ErrInvalidGroup
 	}
-	if _, err := s.requireAdmin(ctx, actorUserID, groupID); err != nil {
+	asSiteAdmin, err := s.requireAdmin(ctx, actorUserID, groupID)
+	if err != nil {
 		return GroupMembership{}, err
 	}
 	target, err := s.memberships.FindMembership(ctx, groupID, targetUserID)
@@ -432,6 +443,9 @@ func (s *GroupService) ChangeRole(ctx context.Context, actorUserID, groupID, tar
 	if err != nil {
 		return GroupMembership{}, fmt.Errorf("reread group role: %w", err)
 	}
+	if asSiteAdmin {
+		s.recordSiteAdminAction(ctx, actorUserID, groupID, AuditActionGroupRole, "member "+strconv.FormatInt(targetUserID, 10)+": "+role)
+	}
 	return updated, nil
 }
 
@@ -447,7 +461,8 @@ func (s *GroupService) RemoveMember(ctx context.Context, actorUserID, groupID, t
 	if actorUserID == targetUserID {
 		return ErrInvalidGroup
 	}
-	if _, err := s.requireAdmin(ctx, actorUserID, groupID); err != nil {
+	asSiteAdmin, err := s.requireAdmin(ctx, actorUserID, groupID)
+	if err != nil {
 		return err
 	}
 	if _, err := s.memberships.FindMembership(ctx, groupID, targetUserID); err != nil {
@@ -461,6 +476,9 @@ func (s *GroupService) RemoveMember(ctx context.Context, actorUserID, groupID, t
 			return err
 		}
 		return fmt.Errorf("remove group member: %w", err)
+	}
+	if asSiteAdmin {
+		s.recordSiteAdminAction(ctx, actorUserID, groupID, AuditActionGroupRemoved, "member "+strconv.FormatInt(targetUserID, 10))
 	}
 	return nil
 }
@@ -493,22 +511,47 @@ func (s *GroupService) Leave(ctx context.Context, userID, groupID int64) error {
 // requireAdmin authorizes a group management action. Group administrators and
 // site administrators both pass; the returned membership is zero for a site
 // administrator acting without a group membership.
-func (s *GroupService) requireAdmin(ctx context.Context, userID, groupID int64) (GroupMembership, error) {
+// requireAdmin authorizes a group-administrator action. It reports whether
+// the actor relies on site-administrator rights rather than group membership,
+// in which case the completed action must be audited.
+func (s *GroupService) requireAdmin(ctx context.Context, userID, groupID int64) (bool, error) {
 	membership, err := s.memberships.FindMembership(ctx, groupID, userID)
 	if err != nil && !errors.Is(err, ErrMembershipNotFound) {
-		return GroupMembership{}, fmt.Errorf("find group admin: %w", err)
+		return false, fmt.Errorf("find group admin: %w", err)
 	}
 	if err == nil && membership.Role == GroupRoleAdmin {
-		return membership, nil
+		return false, nil
 	}
 	administrator, err := s.actorIsGlobalAdmin(ctx, userID)
 	if err != nil {
-		return GroupMembership{}, err
+		return false, err
 	}
 	if !administrator {
-		return GroupMembership{}, ErrNotGroupAdmin
+		return false, ErrNotGroupAdmin
 	}
-	return GroupMembership{}, nil
+	return true, nil
+}
+
+// SetAuditor attaches the administrator audit trail. It is intended to be
+// called once during startup.
+func (s *GroupService) SetAuditor(auditor AuditRecorder) {
+	if s != nil {
+		s.auditor = auditor
+	}
+}
+
+// recordSiteAdminAction audits a group change made by a site administrator who
+// is not a group administrator. Audit failures reach the security log through
+// the audit service and never undo the completed change.
+func (s *GroupService) recordSiteAdminAction(ctx context.Context, actorUserID, groupID int64, action, detail string) {
+	if s.auditor == nil {
+		return
+	}
+	record := AuditRecord{ActorUserID: actorUserID, Action: action, TargetType: "group", TargetID: strconv.FormatInt(groupID, 10), Detail: detail}
+	if actor, err := s.users.FindUserByID(ctx, actorUserID); err == nil && actor.Email != nil {
+		record.ActorEmail = *actor.Email
+	}
+	_ = s.auditor.Record(ctx, record)
 }
 
 // actorIsGlobalAdmin reports whether the account is a non-guest site

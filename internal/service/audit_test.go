@@ -115,8 +115,34 @@ func TestAuditServiceRecordEmitsToSink(t *testing.T) {
 	if err := audit.Record(context.Background(), record); err != nil {
 		t.Fatalf("Record() error = %v", err)
 	}
-	if len(sink.records) != 1 || sink.records[0].Action != AuditActionAccountCreated {
-		t.Fatalf("sink records = %+v, want one account-created record", sink.records)
+	if len(sink.records) != 1 || sink.records[0].Action != AuditActionAccountCreated || sink.outcomes[0] != AuditOutcomeRecorded {
+		t.Fatalf("sink records = %+v %v, want one recorded account-created record", sink.records, sink.outcomes)
+	}
+}
+
+func TestAuditServiceReportsLostRecordsToSink(t *testing.T) {
+	storeErr := errors.New("audit store unavailable")
+	for name, test := range map[string]struct {
+		repository *auditRepositoryStub
+		record     AuditRecord
+	}{
+		"store failure":  {repository: &auditRepositoryStub{err: storeErr}, record: AuditRecord{ActorUserID: 1, Action: AuditActionPasswordReset, TargetType: "user", TargetID: "9"}},
+		"invalid record": {repository: &auditRepositoryStub{}, record: AuditRecord{ActorUserID: 1, Action: AuditActionPasswordReset, Detail: "bad\x00detail"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			sink := &auditSinkStub{}
+			audit, err := NewAuditService(test.repository)
+			if err != nil {
+				t.Fatal(err)
+			}
+			audit.SetSink(sink)
+			if err := audit.Record(context.Background(), test.record); err == nil {
+				t.Fatal("Record() error = nil, want the failure returned to the caller")
+			}
+			if len(sink.outcomes) != 1 || sink.outcomes[0] != AuditOutcomeFailed || sink.records[0].Action != AuditActionPasswordReset {
+				t.Fatalf("sink saw %v %+v, want one failed %s event", sink.outcomes, sink.records, AuditActionPasswordReset)
+			}
+		})
 	}
 }
 
@@ -136,16 +162,18 @@ func TestAuditServiceSinkFailureDoesNotUndoStoredRecord(t *testing.T) {
 }
 
 type auditSinkStub struct {
-	records []AuditRecord
+	records  []AuditRecord
+	outcomes []string
 }
 
-func (s *auditSinkStub) AuditRecorded(_ context.Context, record AuditRecord) {
+func (s *auditSinkStub) AuditRecorded(_ context.Context, record AuditRecord, outcome string) {
 	s.records = append(s.records, record)
+	s.outcomes = append(s.outcomes, outcome)
 }
 
 type erroringAuditSink struct{}
 
-func (erroringAuditSink) AuditRecorded(context.Context, AuditRecord) {}
+func (erroringAuditSink) AuditRecorded(context.Context, AuditRecord, string) {}
 
 func TestAuditQueryNormalizeBoundsValues(t *testing.T) {
 	got := (AuditQuery{Action: " created ", Actor: "a@example.test", Target: "9", Page: -2, Size: 1000}).Normalize()

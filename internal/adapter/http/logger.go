@@ -43,18 +43,26 @@ func (l *Logger) LogRequest(ctx context.Context, event middleware.RequestEvent) 
 
 // SecurityEvent contains stable security-event fields without credentials.
 type SecurityEvent struct {
-	RequestID string
-	Action    string
-	Outcome   string
+	RequestID   string
+	Action      string
+	Outcome     string
+	ActorUserID int64
+	TargetType  string
+	TargetID    string
 }
 
 // LogSecurity emits an identifiable security event without sensitive values.
+// Actor and target are internal numeric identifiers, never emails or
+// provider subjects.
 func (l *Logger) LogSecurity(ctx context.Context, event SecurityEvent) {
 	l.security.WarnContext(ctx, "security event",
 		"stream", "security",
 		"request_id", event.RequestID,
 		"action", event.Action,
 		"outcome", event.Outcome,
+		"actor_user_id", event.ActorUserID,
+		"target_type", event.TargetType,
+		"target_id", event.TargetID,
 	)
 }
 
@@ -71,8 +79,9 @@ func (l *Logger) LogSecurityRequest(ctx context.Context, event middleware.Securi
 	)
 }
 
-// AuditSecuritySink mirrors stored administrator actions to the security log
-// stream. It never includes target identifiers, credentials, or tokens.
+// AuditSecuritySink mirrors administrator actions to the security log stream
+// with actor and target identifiers. It never includes emails, details,
+// origins, credentials, or tokens.
 type AuditSecuritySink struct {
 	logger *Logger
 }
@@ -83,7 +92,7 @@ func NewAuditSecuritySink(logger *Logger) *AuditSecuritySink {
 }
 
 // AuditRecorded implements service.AuditSink.
-func (s *AuditSecuritySink) AuditRecorded(ctx context.Context, record service.AuditRecord) {
+func (s *AuditSecuritySink) AuditRecorded(ctx context.Context, record service.AuditRecord, outcome string) {
 	if s == nil || s.logger == nil {
 		return
 	}
@@ -91,7 +100,14 @@ func (s *AuditSecuritySink) AuditRecorded(ctx context.Context, record service.Au
 	if id, ok := middleware.RequestIDFromContext(ctx); ok {
 		requestID = id
 	}
-	s.logger.LogSecurity(ctx, SecurityEvent{RequestID: requestID, Action: record.Action, Outcome: "recorded"})
+	s.logger.LogSecurity(ctx, SecurityEvent{
+		RequestID:   requestID,
+		Action:      record.Action,
+		Outcome:     outcome,
+		ActorUserID: record.ActorUserID,
+		TargetType:  record.TargetType,
+		TargetID:    record.TargetID,
+	})
 }
 
 var _ service.AuditSink = (*AuditSecuritySink)(nil)

@@ -267,8 +267,14 @@ func TestAdminAccountServiceUpdateReplacesFieldsAtomically(t *testing.T) {
 	if sessions.userID != 9 {
 		t.Fatalf("revoked sessions for user %d, want password-reset target 9", sessions.userID)
 	}
-	if len(auditor.records) != 1 || auditor.records[0].Action != AuditActionAccountUpdated {
-		t.Fatalf("audit records = %+v, want one account-updated record", auditor.records)
+	var actions []string
+	for _, record := range auditor.records {
+		actions = append(actions, record.Action)
+	}
+	// Granting administrator rights and resetting a password must be findable
+	// on their own, not hidden inside an ordinary account edit.
+	if strings.Join(actions, ",") != AuditActionAccountUpdated+","+AuditActionAdminGranted+","+AuditActionPasswordReset {
+		t.Fatalf("audit actions = %v, want updated, admin granted, password reset", actions)
 	}
 }
 

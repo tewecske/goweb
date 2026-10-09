@@ -30,6 +30,21 @@ const (
 	AuditActionLockoutCleared   = "admin.lockout.cleared"
 	AuditActionMaintenanceRun   = "admin.maintenance.run"
 	AuditActionRateLimitCleared = "admin.ratelimit.cleared"
+	// Privilege and credential changes get their own codes so they are not
+	// hidden among ordinary account edits.
+	AuditActionAdminGranted  = "admin.account.admin_granted"
+	AuditActionAdminRevoked  = "admin.account.admin_revoked"
+	AuditActionPasswordReset = "admin.account.password_reset"
+	AuditActionGroupRenamed  = "admin.group.renamed"
+	AuditActionGroupInvite   = "admin.group.invite_rotated"
+	AuditActionGroupRole     = "admin.group.member_role_changed"
+	AuditActionGroupRemoved  = "admin.group.member_removed"
+)
+
+// Audit sink outcomes.
+const (
+	AuditOutcomeRecorded = "recorded"
+	AuditOutcomeFailed   = "failed"
 )
 
 var (
@@ -127,11 +142,12 @@ type AuditRecorder interface {
 	Record(context.Context, AuditRecord) error
 }
 
-// AuditSink receives a stored administrator action so it can be emitted to the
-// separately identifiable security log stream. Sinks must never block or fail
+// AuditSink receives every administrator action so it can be emitted to the
+// separately identifiable security log stream, with outcome AuditOutcomeFailed
+// when the durable record could not be written. Sinks must never block or fail
 // an already completed action.
 type AuditSink interface {
-	AuditRecorded(context.Context, AuditRecord)
+	AuditRecorded(ctx context.Context, record AuditRecord, outcome string)
 }
 
 // AuditService validates and stores administrator action records. A storage
@@ -170,16 +186,21 @@ func (s *AuditService) Record(ctx context.Context, record AuditRecord) error {
 		return errors.New("service: nil audit context")
 	}
 	entry, err := buildAuditEntry(record, s.now().Unix())
-	if err != nil {
-		return err
+	if err == nil {
+		if createErr := s.repository.CreateAuditEntry(ctx, entry); createErr != nil {
+			err = fmt.Errorf("create audit entry: %w", createErr)
+		}
 	}
-	if err := s.repository.CreateAuditEntry(ctx, entry); err != nil {
-		return fmt.Errorf("create audit entry: %w", err)
-	}
+	// Callers cannot undo a completed action, so a lost audit record must at
+	// least reach the security log stream.
 	if s.sink != nil {
-		s.sink.AuditRecorded(ctx, record)
+		outcome := AuditOutcomeRecorded
+		if err != nil {
+			outcome = AuditOutcomeFailed
+		}
+		s.sink.AuditRecorded(ctx, record, outcome)
 	}
-	return nil
+	return err
 }
 
 // List returns one bounded page of administrator action history, newest first.

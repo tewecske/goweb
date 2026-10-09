@@ -217,11 +217,14 @@ func TestGroupServiceDetailAllowsSiteAdministratorWithoutMembership(t *testing.T
 
 func TestGroupServiceAdminRightsForSiteAdministrator(t *testing.T) {
 	tests := []struct {
-		name    string
-		user    User
-		wantErr error
+		name      string
+		user      User
+		member    bool
+		wantErr   error
+		wantAudit bool
 	}{
-		{name: "site administrator without membership", user: User{ID: 7, IsAdmin: true}},
+		{name: "site administrator without membership is audited", user: User{ID: 7, IsAdmin: true}, wantAudit: true},
+		{name: "group administrator is not audited", user: User{ID: 7}, member: true},
 		{name: "ordinary non-member is refused", user: User{ID: 7}, wantErr: ErrNotGroupAdmin},
 		{name: "guest is never a site administrator", user: User{ID: 7, IsAdmin: true, IsGuest: true}, wantErr: ErrNotGroupAdmin},
 	}
@@ -229,12 +232,19 @@ func TestGroupServiceAdminRightsForSiteAdministrator(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			groups := &groupRepositoryStub{group: Group{ID: 5, Version: 1}}
-			service, err := NewGroupService(groups, &groupMembershipRepositoryStub{member: false}, &groupUserRepositoryStub{user: test.user})
+			service, err := NewGroupService(groups, &groupMembershipRepositoryStub{member: test.member, role: GroupRoleAdmin}, &groupUserRepositoryStub{user: test.user})
 			if err != nil {
 				t.Fatalf("NewGroupService() error = %v", err)
 			}
+			auditor := &auditRecorderStub{}
+			service.SetAuditor(auditor)
 			if _, err := service.Rename(context.Background(), 7, 5, 1, "Renamed"); !errors.Is(err, test.wantErr) {
 				t.Fatalf("Rename() error = %v, want %v", err, test.wantErr)
+			}
+			audited := len(auditor.records) == 1 && auditor.records[0].Action == AuditActionGroupRenamed &&
+				auditor.records[0].TargetType == "group" && auditor.records[0].TargetID == "5" && auditor.records[0].ActorUserID == 7
+			if audited != test.wantAudit || (!test.wantAudit && len(auditor.records) != 0) {
+				t.Fatalf("audit records = %+v, want audited %v", auditor.records, test.wantAudit)
 			}
 		})
 	}

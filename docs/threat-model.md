@@ -34,7 +34,7 @@ Assets to protect:
 | Services → PostgreSQL | Query parameters and secrets | Parameterized queries via `database/sql`, adapter maps errors without echoing bearer values |
 | Services → mail relay | Message content | Plain-text messages; tokens may appear in the message body but never in logs, traces, metrics, or diagnostics |
 | Services → external providers | OAuth redirect and state | Top-level browser navigation; single-use server-side state; provider failure returns to a readable sign-in/settings state |
-| Operators → administrator surface | Administrative authority | Shared admin authorization guard, per-action audit records mirrored to a separate security log stream |
+| Operators → administrator surface | Administrative authority | Shared admin authorization guard, per-action audit records mirrored to a separate security log stream with actor and target IDs; privilege grants, revocations, and password resets have their own action codes; site administrators' changes to groups they do not administer are audited; a record that cannot be stored is still reported to the security stream as failed |
 | Application → logs/traces/usage | Diagnostic output | Stable low-cardinality fields; no passwords, hashes, sessions, tokens, provider subjects, query strings, or credentials |
 
 ## Bearer credentials
