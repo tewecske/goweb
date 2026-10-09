@@ -31,12 +31,19 @@ func TestEmailConfirmationTokensConsumeOnceAndRejectInactive(t *testing.T) {
 	if consumed.UserID != userID || consumed.ConsumedAt != nil {
 		t.Fatalf("consumed token metadata = user %d/timestamp %v, want user %d/pre-consumption", consumed.UserID, consumed.ConsumedAt, userID)
 	}
+	if consumed.Token != token.Token {
+		t.Fatalf("consumed token = %q, want the caller's raw token back", consumed.Token)
+	}
 	var consumedAt sql.NullInt64
-	if err := harness.DB.QueryRowContext(context.Background(), "SELECT consumed_at FROM email_verification_tokens WHERE token = $1", token.Token).Scan(&consumedAt); err != nil {
+	if err := harness.DB.QueryRowContext(context.Background(), "SELECT consumed_at FROM email_verification_tokens WHERE token = $1", tokenDigest(token.Token)).Scan(&consumedAt); err != nil {
 		t.Fatal(err)
 	}
 	if !consumedAt.Valid || consumedAt.Int64 != 150 {
 		t.Fatalf("stored consumed timestamp = %v, want 150", consumedAt)
+	}
+	var rawRows int
+	if err := harness.DB.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM email_verification_tokens WHERE token = $1", token.Token).Scan(&rawRows); err != nil || rawRows != 0 {
+		t.Fatalf("rows storing the raw token = %d (%v), want 0", rawRows, err)
 	}
 	if _, err := repository.ConsumeEmailConfirmationToken(context.Background(), token.Token, 151); !errors.Is(err, service.ErrEmailConfirmationTokenNotFound) {
 		t.Fatalf("reused token error = %v, want %v", err, service.ErrEmailConfirmationTokenNotFound)
@@ -76,8 +83,11 @@ func TestPasswordResetTokensConsumeOnceAndRejectInactive(t *testing.T) {
 	if consumed.UserID != userID || consumed.ConsumedAt != nil {
 		t.Fatalf("consumed token metadata = user %d/timestamp %v, want user %d/pre-consumption", consumed.UserID, consumed.ConsumedAt, userID)
 	}
+	if consumed.Token != token.Token {
+		t.Fatalf("consumed token = %q, want the caller's raw token back", consumed.Token)
+	}
 	var consumedAt sql.NullInt64
-	if err := harness.DB.QueryRowContext(context.Background(), "SELECT consumed_at FROM password_reset_tokens WHERE token = $1", token.Token).Scan(&consumedAt); err != nil {
+	if err := harness.DB.QueryRowContext(context.Background(), "SELECT consumed_at FROM password_reset_tokens WHERE token = $1", tokenDigest(token.Token)).Scan(&consumedAt); err != nil {
 		t.Fatal(err)
 	}
 	if !consumedAt.Valid || consumedAt.Int64 != 150 {

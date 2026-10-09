@@ -33,7 +33,7 @@ func (r *EmailConfirmationTokenRepository) CreateEmailConfirmationToken(ctx cont
 	_, err = db.ExecContext(ctx, `
 		INSERT INTO email_verification_tokens (user_id, token, created_at, expires_at, consumed_at)
 		VALUES ($1, $2, $3, $4, $5)
-	`, token.UserID, token.Token, token.CreatedAt, token.ExpiresAt, token.ConsumedAt)
+	`, token.UserID, tokenDigest(token.Token), token.CreatedAt, token.ExpiresAt, token.ConsumedAt)
 	return mapTokenError(err, service.ErrEmailConfirmationTokenNotFound)
 }
 
@@ -48,15 +48,17 @@ func (r *EmailConfirmationTokenRepository) ConsumeEmailConfirmationToken(ctx con
 		SET consumed_at = $2
 		WHERE token = $1 AND consumed_at IS NULL AND expires_at > $2
 		RETURNING user_id, token, created_at, expires_at, NULL::BIGINT
-	`, token, now))
+	`, tokenDigest(token), now))
 	if err != nil {
 		return service.EmailConfirmationToken{}, mapTokenError(err, service.ErrEmailConfirmationTokenNotFound)
 	}
+	consumed.Token = token
 	return consumed, nil
 }
 
 // FindActiveEmailConfirmationToken returns the newest unconsumed, unexpired
-// confirmation link for an account without exposing it outside the flow.
+// confirmation link for an account. Its Token is the stored digest, never a
+// usable link.
 func (r *EmailConfirmationTokenRepository) FindActiveEmailConfirmationToken(ctx context.Context, userID, now int64) (service.EmailConfirmationToken, error) {
 	db, err := r.database(ctx)
 	if err != nil {
@@ -103,7 +105,7 @@ func (r *PasswordResetTokenRepository) CreatePasswordResetToken(ctx context.Cont
 	_, err = db.ExecContext(ctx, `
 		INSERT INTO password_reset_tokens (user_id, token, created_at, expires_at, consumed_at)
 		VALUES ($1, $2, $3, $4, $5)
-	`, token.UserID, token.Token, token.CreatedAt, token.ExpiresAt, token.ConsumedAt)
+	`, token.UserID, tokenDigest(token.Token), token.CreatedAt, token.ExpiresAt, token.ConsumedAt)
 	return mapTokenError(err, service.ErrPasswordResetTokenNotFound)
 }
 
@@ -118,10 +120,11 @@ func (r *PasswordResetTokenRepository) ConsumePasswordResetToken(ctx context.Con
 		SET consumed_at = $2
 		WHERE token = $1 AND consumed_at IS NULL AND expires_at > $2
 		RETURNING user_id, token, created_at, expires_at, NULL::BIGINT
-	`, token, now))
+	`, tokenDigest(token), now))
 	if err != nil {
 		return service.PasswordResetToken{}, mapTokenError(err, service.ErrPasswordResetTokenNotFound)
 	}
+	consumed.Token = token
 	return consumed, nil
 }
 
@@ -169,6 +172,13 @@ func scanPasswordResetToken(row rowScanner) (service.PasswordResetToken, error) 
 	}
 	token.ConsumedAt = nullableInt64(consumedAt)
 	return token, nil
+}
+
+// tokenDigest is how single-use bearer values (confirmation and reset tokens,
+// OAuth state) are stored, matching session IDs: a database or backup leak
+// yields no usable link.
+func tokenDigest(value string) string {
+	return sessionDigest(value)
 }
 
 func mapTokenError(err, notFound error) error {

@@ -43,11 +43,11 @@ Assets to protect:
 | --- | --- | --- | --- |
 | Session cookie | `goweb_session`, opaque 32-byte random hex; server-side `sessions` row | Until expiry or revocation | `HttpOnly`, `SameSite`, `Secure` outside development; server validates expiry and revocation on every request |
 | CSRF token | `goweb_csrf` cookie plus `_csrf` field / `X-CSRF-Token` header | Per browser session | Double-submit, constant-time compare, `HttpOnly`, `SameSite=Strict`, `Secure` whenever session cookies are, malformed cookies replaced; required on every state-changing request after `http.CrossOriginProtection` rejects cross-origin and sibling-subdomain browser requests |
-| Email confirmation token | 32-byte token in `email_verification_tokens` | Single use, default 24h | Consumed atomically; expired/consumed tokens rejected; never logged |
-| Password reset token | 32-byte token in `password_reset_tokens` | Single use | Consumed atomically; expired/consumed tokens rejected; never logged |
+| Email confirmation token | 32-byte token stored as its SHA-256 digest in `email_verification_tokens` | Single use, default 24h | Consumed atomically; expired/consumed tokens rejected; never logged |
+| Password reset token | 32-byte token stored as its SHA-256 digest in `password_reset_tokens` | Single use | Consumed atomically; expired/consumed tokens rejected; never logged |
 | Guest transfer code | Single active code per guest, partial unique index | Until revoked or used | One active code per guest; revocable; redeemed atomically; never logged |
 | Group invite code | 12-character code, unique per group | Until rotated | Administrators can rotate; unique constraint; join is rate limited and idempotent |
-| OAuth state | 32-byte random state in `oauth_states`, mirrored in the `goweb_oauth_state` browser cookie | Single use, expiring | Action allowlist, atomic consumption with a single winner; the callback must present the matching `HttpOnly` cookie from the browser that started the flow; a link completes only for the signed-in account that started it; a per-state PKCE S256 code verifier is required to redeem the authorization code |
+| OAuth state | 32-byte random state stored as its SHA-256 digest in `oauth_states`, mirrored in the `goweb_oauth_state` browser cookie | Single use, expiring | Action allowlist, atomic consumption with a single winner; the callback must present the matching `HttpOnly` cookie from the browser that started the flow; a link completes only for the signed-in account that started it; a per-state PKCE S256 code verifier is required to redeem the authorization code |
 | Password hash | Argon2id encoded hash in `users.password_hash` | Stored indefinitely for the account | Never returned or logged; stripped from public user values |
 | Provider subject | `oauth_identities` unique `(provider, subject)` | Stored with the linked account | Never rendered or logged; removed on unlink or account deletion |
 | Deployment secrets | `config.Secret` values from environment | Process lifetime | Redacted from formatting and JSON; production startup rejects unsafe configuration |
@@ -139,7 +139,7 @@ state, and revision-checked writes. None are trusted from the client.
 | Stale-write data loss | Adapter → database | Optimistic locking; conflicts distinguished from not-found | Concurrent editors must reload |
 | Data leakage via logs/traces | App → observability | Secret-free structured fields, query-string stripping, redaction tests | Misconfigured downstream pipeline |
 | Administrator action repudiation | Admin surface | Per-action audit records with actor, target, time, origin, mirrored to security stream | Audit store compromise |
-| Database compromise | Services → PostgreSQL | Least-privilege DB access, encrypted backups, parameterized queries | Full-database access exposes hashes and tokens |
+| Database compromise | Services → PostgreSQL | Least-privilege DB access, encrypted backups, parameterized queries; sessions, confirmation and reset tokens, and OAuth state stored only as SHA-256 digests | Full-database access exposes password hashes and guest transfer codes |
 | Provider compromise | Services → provider | Top-level navigation, single-use state, readable failure recovery | Provider-side account takeover |
 | Denial of service | Browser → adapter | Bounded queues, clamped inputs, graceful shutdown | No in-app WAF; rely on the edge |
 

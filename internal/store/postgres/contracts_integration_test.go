@@ -79,9 +79,12 @@ func TestPostgresRepositoryContractsExerciseAuthenticationAndGuestServices(t *te
 	if err := confirmation.Issue(context.Background(), signUpResult.User.ID); err != nil {
 		t.Fatalf("confirmation Issue() error = %v", err)
 	}
-	confirmationToken := readStoredToken(t, harness.DB, "email_verification_tokens", signUpResult.User.ID)
-	if len(mail.mails) != 1 || !strings.Contains(mail.mails[0].TextBody, confirmationToken) {
-		t.Fatal("confirmation mail did not contain issued token")
+	if len(mail.mails) != 1 {
+		t.Fatalf("confirmation mails = %d, want 1", len(mail.mails))
+	}
+	confirmationToken := mailedToken(t, mail.mails[0].TextBody)
+	if stored := readStoredToken(t, harness.DB, "email_verification_tokens", signUpResult.User.ID); stored != tokenDigest(confirmationToken) {
+		t.Fatalf("stored confirmation token = %q, want only the digest of the mailed token", stored)
 	}
 	if err := confirmation.Confirm(context.Background(), confirmationToken); err != nil {
 		t.Fatalf("confirmation Confirm() error = %v", err)
@@ -106,9 +109,12 @@ func TestPostgresRepositoryContractsExerciseAuthenticationAndGuestServices(t *te
 	if err := reset.Request(context.Background(), "contract@example.test"); err != nil {
 		t.Fatalf("password reset Request() error = %v", err)
 	}
-	resetToken := readStoredToken(t, harness.DB, "password_reset_tokens", signUpResult.User.ID)
-	if len(mail.mails) != 2 || !strings.Contains(mail.mails[1].TextBody, resetToken) {
-		t.Fatal("password reset mail did not contain issued token")
+	if len(mail.mails) != 2 {
+		t.Fatalf("mails = %d, want confirmation and reset", len(mail.mails))
+	}
+	resetToken := mailedToken(t, mail.mails[1].TextBody)
+	if stored := readStoredToken(t, harness.DB, "password_reset_tokens", signUpResult.User.ID); stored != tokenDigest(resetToken) {
+		t.Fatalf("stored reset token = %q, want only the digest of the mailed token", stored)
 	}
 	consumer, err := service.NewPasswordResetConsumer(users, resetTokens, hasher, sessions)
 	if err != nil {
@@ -225,6 +231,16 @@ func (s *contractMailSender) Send(_ context.Context, mail service.Mail) error {
 type contractAttemptState struct{}
 
 func (contractAttemptState) Clear(context.Context, string) error { return nil }
+
+// mailedToken extracts the bearer token from a link in a message body.
+func mailedToken(t *testing.T, body string) string {
+	t.Helper()
+	_, after, ok := strings.Cut(body, "token=")
+	if !ok || len(after) < 64 {
+		t.Fatalf("mail has no token link: %q", body)
+	}
+	return after[:64]
+}
 
 func readStoredToken(t *testing.T, db interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row

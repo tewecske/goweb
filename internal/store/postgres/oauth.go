@@ -50,7 +50,7 @@ func (r *OAuthStateRepository) CreateOAuthState(ctx context.Context, state servi
 	_, err = db.ExecContext(ctx, `
 		INSERT INTO oauth_states (state, provider, action, user_id, code_verifier, created_at, expires_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`, state.State, state.Provider, state.Action, userID, codeVerifier, state.CreatedAt, state.ExpiresAt)
+	`, tokenDigest(state.State), state.Provider, state.Action, userID, codeVerifier, state.CreatedAt, state.ExpiresAt)
 	return mapOAuthStateError(err)
 }
 
@@ -65,13 +65,14 @@ func (r *OAuthStateRepository) ConsumeOAuthState(ctx context.Context, state stri
 		SET consumed_at = $2
 		WHERE state = $1 AND consumed_at IS NULL AND expires_at > $2
 		RETURNING state, provider, action, user_id, code_verifier, created_at, expires_at
-	`, state, now))
+	`, tokenDigest(state), now))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return service.OAuthState{}, service.ErrOAuthStateInvalid
 		}
 		return service.OAuthState{}, mapOAuthStateError(err)
 	}
+	consumed.State = state
 	return consumed, nil
 }
 

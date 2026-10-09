@@ -34,6 +34,13 @@ func TestOAuthStateRepositoryRoundTripsNullableBindingAndConsumesOnce(t *testing
 	if consumed.UserID != 0 || consumed.Provider != "google" || consumed.Action != "sign-in" || consumed.CodeVerifier != "pkce-verifier" {
 		t.Fatalf("anonymous state binding = user %d/provider %q/action %q/verifier %q", consumed.UserID, consumed.Provider, consumed.Action, consumed.CodeVerifier)
 	}
+	if consumed.State != anonymous.State {
+		t.Fatalf("consumed state = %q, want the caller's raw state back", consumed.State)
+	}
+	var storedState string
+	if err := harness.DB.QueryRowContext(context.Background(), "SELECT state FROM oauth_states WHERE user_id IS NULL").Scan(&storedState); err != nil || storedState != tokenDigest(anonymous.State) {
+		t.Fatalf("stored state = %q (%v), want only its digest", storedState, err)
+	}
 	if _, err := stateRepository.ConsumeOAuthState(context.Background(), anonymous.State, 151); !errors.Is(err, service.ErrOAuthStateInvalid) {
 		t.Fatalf("reused state error = %v, want %v", err, service.ErrOAuthStateInvalid)
 	}
