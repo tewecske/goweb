@@ -27,6 +27,7 @@
     "auth.sign_in.submit": {"text": "Bejelentkezés"},
     "auth.error.invalid": {"text": "Ellenőrizze a megadott adatokat, majd próbálja újra."},
     "auth.error.duplicate_email": {"text": "Ezzel az e-mail-címmel már létezik fiók."},
+    "auth.error.rate_limited": {"text": "Túl sok kísérlet. Próbálja újra később."},
     "auth.error.duplicate_username": {"text": "Ez a felhasználónév már foglalt."},
     "auth.error.invalid_credentials": {"text": "Az e-mail-cím, felhasználónév vagy jelszó helytelen."},
     "auth.error.unconfirmed": {"text": "Bejelentkezés előtt erősítse meg e-mail-címét."},

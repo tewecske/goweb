@@ -45,7 +45,7 @@ type Graph struct {
 	SessionService        *service.SessionService
 	PasswordHasher        *service.PasswordHasher
 	Mail                  service.MailSender
-	SignUp                *service.SignUpService
+	SignUp                *service.RateLimitedSignUpService
 	SignIn                *service.RateLimitedSignInService
 	Confirmation          *service.EmailConfirmationService
 	ConfirmationResend    *service.EmailConfirmationResender
@@ -192,9 +192,13 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		return nil, fmt.Errorf("construct password reset rate limiter: %w", err)
 	}
 
-	signUp, err := service.NewSignUpService(users, passwordHasher, sessionService, appConfig.EmailConfirmationRequired)
+	signUpBase, err := service.NewSignUpService(users, passwordHasher, sessionService, appConfig.EmailConfirmationRequired)
 	if err != nil {
 		return nil, fmt.Errorf("construct signup service: %w", err)
+	}
+	signUp, err := service.NewRateLimitedSignUpService(signUpBase, signInLimiter)
+	if err != nil {
+		return nil, fmt.Errorf("construct rate limited signup service: %w", err)
 	}
 	signInBase, err := service.NewSignInService(users, passwordHasher, sessionService, noopFailedAttemptState{}, appConfig.EmailConfirmationRequired)
 	if err != nil {

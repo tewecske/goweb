@@ -59,6 +59,14 @@ state, and revision-checked writes. None are trusted from the client.
 
 - **Authentication rate limits**: independent fixed-window budgets for
   `signin.identifier` and `signin.origin`; successful authentication clears both.
+- **Sign-up limits**: a `signup.origin` budget bounds account creation and
+  probing for registered emails.
+- **Password hashing**: concurrent Argon2id derivations are capped so floods
+  of sign-in, sign-up, or reset requests cannot exhaust memory; password reset
+  hashes only after its token is consumed.
+- **Email confirmation**: when `GOWEB_EMAIL_CONFIRMATION_REQUIRED` is true,
+  sign-up sends the confirmation link and issues no session until the email is
+  confirmed. OAuth sign-up requires an email the provider has verified.
 - **Guest limits**: separate `guest.create` and `guest.redeem` origin budgets.
 - **Invite limits**: `group.invite.join` budget on invite redemption.
 - **Bounded limiter state**: limiter key counts are capped to prevent unbounded

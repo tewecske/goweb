@@ -2,8 +2,8 @@ package httpadapter
 
 import (
 	"context"
-	"io"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -22,6 +22,13 @@ type httpSignUpStub struct {
 
 func (s *httpSignUpStub) SignUp(context.Context, service.SignUpInput) (service.SignUpResult, error) {
 	return s.result, s.err
+}
+
+type httpConfirmationIssuerSpy struct{ issuedFor int64 }
+
+func (s *httpConfirmationIssuerSpy) Issue(_ context.Context, userID int64) error {
+	s.issuedFor = userID
+	return nil
 }
 
 type httpSignInStub struct {
@@ -202,6 +209,30 @@ func TestSignUpCreatesOpaqueSessionAndNeverRendersPassword(t *testing.T) {
 	}
 	if sessionCookie == nil || !sessionCookie.HttpOnly || sessionCookie.Value != "opaque-session" {
 		t.Fatalf("session cookie = %+v, want opaque HttpOnly credential", sessionCookie)
+	}
+}
+
+func TestSignUpWithRequiredConfirmationSendsLinkWithoutSession(t *testing.T) {
+	dependencies := newHTTPTestDependencies(t)
+	dependencies.SignUp = &httpSignUpStub{result: service.SignUpResult{User: service.User{ID: 77}, ConfirmationRequired: true}}
+	issuer := &httpConfirmationIssuerSpy{}
+	dependencies.ConfirmationIssuer = issuer
+	handler := NewRouterWithServices(dependencies)
+	csrf := csrfCookie(t, handler)
+	response := csrfRequest(t, handler, http.MethodPost, "/en/sign-up", url.Values{
+		"_csrf": {csrf.Value}, "email": {"user@example.test"}, "password": {"correct horse battery"},
+	}, csrf)
+
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/en/check-inbox" {
+		t.Fatalf("sign-up response = %d %q, want redirect to check-inbox", response.Code, response.Header().Get("Location"))
+	}
+	if issuer.issuedFor != 77 {
+		t.Fatalf("confirmation issued for user %d, want 77", issuer.issuedFor)
+	}
+	for _, cookie := range response.Result().Cookies() {
+		if cookie.Name == middleware.DefaultSessionCookieName {
+			t.Fatal("unconfirmed sign-up set a session cookie")
+		}
 	}
 }
 

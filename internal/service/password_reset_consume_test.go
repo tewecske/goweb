@@ -152,3 +152,45 @@ func (r *resetSessionRepositoryStub) RevokeSession(context.Context, string, int6
 func (r *resetSessionRepositoryStub) RevokeUserSessions(context.Context, int64) error {
 	return r.revokeErr
 }
+
+type resetHasherSpy struct{ calls int }
+
+func (h *resetHasherSpy) Hash(string) (string, error) {
+	h.calls++
+	return "hashed-password", nil
+}
+
+func TestPasswordResetConsumerHashesOnlyForAValidToken(t *testing.T) {
+	const token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	sessions, err := NewSessionService(&sessionRepositoryStub{}, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	users := &confirmationUserRepositoryStub{user: User{ID: 42, Email: stringPointer("user@example.com")}}
+	for _, test := range []struct {
+		name      string
+		rawToken  string
+		tokens    *passwordResetTokenRepositoryStub
+		wantErr   error
+		wantCalls int
+	}{
+		{name: "malformed token", rawToken: "not-a-token", tokens: &passwordResetTokenRepositoryStub{}, wantErr: ErrInvalidPasswordResetToken},
+		{name: "unknown token", rawToken: token, tokens: &passwordResetTokenRepositoryStub{consumeErr: ErrPasswordResetTokenNotFound}, wantErr: ErrInvalidPasswordResetToken},
+		{name: "valid token", rawToken: token, tokens: &passwordResetTokenRepositoryStub{consumed: PasswordResetToken{UserID: 42, Token: token, ExpiresAt: 200}}, wantCalls: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			hasher := &resetHasherSpy{}
+			consumer, err := NewPasswordResetConsumer(users, test.tokens, hasher, sessions)
+			if err != nil {
+				t.Fatal(err)
+			}
+			consumer.now = func() time.Time { return time.Unix(100, 0) }
+			if err := consumer.Redeem(context.Background(), test.rawToken, "new hunter42"); !errors.Is(err, test.wantErr) {
+				t.Fatalf("Redeem() error = %v, want %v", err, test.wantErr)
+			}
+			if hasher.calls != test.wantCalls {
+				t.Fatalf("Argon2 hash calls = %d, want %d", hasher.calls, test.wantCalls)
+			}
+		})
+	}
+}

@@ -461,6 +461,12 @@ func (s *OAuthSignInService) signInExistingIdentity(ctx context.Context, identit
 }
 
 func (s *OAuthSignInService) createOAuthAccount(ctx context.Context, providerName string, profile OAuthProfile, now int64) (OAuthSignInResult, error) {
+	// A new account takes the provider's email as its own, so the provider
+	// must vouch for it; otherwise anyone could claim an address they do not
+	// control and block its owner from signing up.
+	if !profile.EmailVerified {
+		return OAuthSignInResult{}, ErrOAuthAuthenticationFailed
+	}
 	email := ""
 	if profile.Email != "" {
 		normalized, err := NormalizeEmail(profile.Email)
@@ -493,10 +499,8 @@ func (s *OAuthSignInService) createOAuthAccount(ctx context.Context, providerNam
 		CreatedAt:   now,
 		Version:     0,
 	}
-	if profile.EmailVerified {
-		verifiedAt := now
-		user.EmailVerifiedAt = &verifiedAt
-	}
+	verifiedAt := now
+	user.EmailVerifiedAt = &verifiedAt
 	created, err := s.users.CreateUser(ctx, user)
 	if err != nil {
 		return OAuthSignInResult{}, oauthFailure(err)

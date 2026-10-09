@@ -50,10 +50,8 @@ func (s *PasswordResetConsumer) Redeem(ctx context.Context, rawToken, newPasswor
 	if err := ValidatePassword(newPassword); err != nil {
 		return err
 	}
-	passwordHash, err := s.hasher.Hash(newPassword)
-	if err != nil {
-		return fmt.Errorf("hash password reset: %w", err)
-	}
+	// Consume the token before hashing so only holders of a real reset link
+	// can make the server run Argon2.
 	token, err := normalizePasswordResetToken(rawToken)
 	if err != nil {
 		return err
@@ -81,6 +79,10 @@ func (s *PasswordResetConsumer) Redeem(ctx context.Context, rawToken, newPasswor
 	}
 	if user.ID != reset.UserID || user.IsGuest || user.Email == nil {
 		return ErrInvalidPasswordResetToken
+	}
+	passwordHash, err := s.hasher.Hash(newPassword)
+	if err != nil {
+		return fmt.Errorf("hash password reset: %w", err)
 	}
 	user.PasswordHash = &passwordHash
 	updated, err := s.users.UpdateUser(ctx, user, user.Version)

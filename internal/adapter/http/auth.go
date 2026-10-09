@@ -70,6 +70,7 @@ func (h *authHandler) handlePasswordPage(writer http.ResponseWriter, request *ht
 			Password:    request.PostFormValue("password"),
 			Username:    request.PostFormValue("username"),
 			DisplayName: request.PostFormValue("display_name"),
+			Origin:      requestOrigin(request),
 		})
 		if err != nil {
 			handle, fieldErrors := h.signUpError(language, err)
@@ -77,11 +78,21 @@ func (h *authHandler) handlePasswordPage(writer http.ResponseWriter, request *ht
 			h.renderPasswordPageWithStatus(writer, request, language, kind, form, http.StatusUnprocessableEntity, handle)
 			return
 		}
-		destination := "/home"
 		if result.ConfirmationRequired {
-			destination = "/check-inbox"
+			// No session until the email is confirmed. A failed send is not
+			// fatal: the check-inbox page offers to resend the link.
+			if h.dependencies.ConfirmationIssuer != nil {
+				_ = h.dependencies.ConfirmationIssuer.Issue(request.Context(), result.User.ID)
+			}
+			if IsHTMX(request) {
+				writer.Header().Set("HX-Redirect", localizedPath(language, "/check-inbox"))
+				writer.WriteHeader(http.StatusOK)
+				return
+			}
+			h.redirectLocalized(writer, request, language, "/check-inbox")
+			return
 		}
-		h.finishSignIn(writer, request, language, result.Session.ID, destination)
+		h.finishSignIn(writer, request, language, result.Session.ID, "/home")
 		return
 	}
 	if h.dependencies.SignIn == nil {
@@ -191,6 +202,9 @@ func (h *authHandler) signUpError(language locale.Code, err error) (Alert, []Fie
 	}
 	if errors.Is(err, service.ErrPasswordTooShort) || errors.Is(err, service.ErrPasswordTooLong) || errors.Is(err, service.ErrInvalidPassword) {
 		field = "password"
+	}
+	if errors.Is(err, service.ErrRateLimited) {
+		messageID = "auth.error.rate_limited"
 	}
 	var fields []FieldError
 	if field != "" {

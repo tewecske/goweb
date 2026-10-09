@@ -3,18 +3,28 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 )
 
 func TestSignUpCreatesUserAndSession(t *testing.T) {
+	for _, confirmationRequired := range []bool{false, true} {
+		t.Run(fmt.Sprintf("confirmation required %t", confirmationRequired), func(t *testing.T) {
+			testSignUpCreatesUser(t, confirmationRequired)
+		})
+	}
+}
+
+func testSignUpCreatesUser(t *testing.T, confirmationRequired bool) {
 	users := &signupUserRepositoryStub{}
-	sessions, err := NewSessionService(&sessionRepositoryStub{}, time.Hour)
+	sessionStore := &sessionRepositoryStub{}
+	sessions, err := NewSessionService(sessionStore, time.Hour)
 	if err != nil {
 		t.Fatalf("NewSessionService() error = %v, want nil", err)
 	}
-	service, err := NewSignUpService(users, signupHasherStub{}, sessions, true)
+	service, err := NewSignUpService(users, signupHasherStub{}, sessions, confirmationRequired)
 	if err != nil {
 		t.Fatalf("NewSignUpService() error = %v, want nil", err)
 	}
@@ -28,8 +38,16 @@ func TestSignUpCreatesUserAndSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SignUp() error = %v, want nil", err)
 	}
-	if result.User.ID != users.created.ID || result.Session.UserID != result.User.ID {
-		t.Fatalf("created user/session IDs = %d/%d, want persisted user ID %d", result.User.ID, result.Session.UserID, users.created.ID)
+	if result.User.ID != users.created.ID {
+		t.Fatalf("created user ID = %d, want persisted user ID %d", result.User.ID, users.created.ID)
+	}
+	// An account that must confirm its email cannot sign in yet, so sign-up
+	// must not hand it a session either.
+	if confirmationRequired != (result.Session.ID == "" && sessionStore.created.ID == "") {
+		t.Fatalf("session = %+v (stored %q) with confirmation required %t", result.Session, sessionStore.created.ID, confirmationRequired)
+	}
+	if !confirmationRequired && result.Session.UserID != result.User.ID {
+		t.Fatalf("session user = %d, want %d", result.Session.UserID, result.User.ID)
 	}
 	if result.User.Email == nil || *result.User.Email != "user@example.com" {
 		t.Errorf("created email = %v, want normalized email", result.User.Email)
@@ -46,8 +64,8 @@ func TestSignUpCreatesUserAndSession(t *testing.T) {
 	if users.created.PasswordHash == nil || *users.created.PasswordHash != "hashed-password" {
 		t.Error("stored password hash missing or unexpected")
 	}
-	if !result.ConfirmationRequired {
-		t.Error("ConfirmationRequired = false, want true")
+	if result.ConfirmationRequired != confirmationRequired {
+		t.Errorf("ConfirmationRequired = %t, want %t", result.ConfirmationRequired, confirmationRequired)
 	}
 }
 
@@ -193,4 +211,40 @@ func (r *signupUserRepositoryStub) UpdateUser(context.Context, User, int64) (Use
 
 func (r *signupUserRepositoryStub) DeleteUser(context.Context, int64, int64) error {
 	return ErrUserNotFound
+}
+
+func TestRateLimitedSignUpServiceLimitsEachOrigin(t *testing.T) {
+	users := &signupUserRepositoryStub{}
+	sessions, err := NewSessionService(&sessionRepositoryStub{}, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := NewSignUpService(users, signupHasherStub{}, sessions, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	limiter, err := NewRateLimiter(RateLimitConfig{Limit: 1, Window: time.Minute, MaxKeys: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewRateLimitedSignUpService(base, limiter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signUp := func(email, origin string) error {
+		_, err := service.SignUp(context.Background(), SignUpInput{Email: email, Password: "correct horse battery staple", Origin: origin})
+		return err
+	}
+	if err := signUp("first@example.com", "2001:db8::1"); err != nil {
+		t.Fatalf("first sign-up error = %v", err)
+	}
+	if err := signUp("second@example.com", "2001:db8::2"); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("second sign-up from the same /64 error = %v, want ErrRateLimited", err)
+	}
+	if err := signUp("third@example.com", "198.51.100.7"); err != nil {
+		t.Fatalf("sign-up from another origin error = %v", err)
+	}
+	if users.createCalls != 2 {
+		t.Fatalf("accounts created = %d, want 2 (the limited attempt must not create one)", users.createCalls)
+	}
 }

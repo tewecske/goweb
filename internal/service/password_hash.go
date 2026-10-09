@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -44,9 +45,13 @@ var DefaultPasswordHashConfig = PasswordHashConfig{
 	KeyLength:  32,
 }
 
-// PasswordHasher creates and verifies Argon2id password hashes.
+// PasswordHasher creates and verifies Argon2id password hashes. Each
+// derivation allocates Memory KiB, so concurrent derivations are capped to
+// keep floods of sign-in, sign-up, or reset requests from exhausting memory;
+// excess callers wait for a slot.
 type PasswordHasher struct {
 	config PasswordHashConfig
+	slots  chan struct{}
 }
 
 // NewPasswordHasher constructs a hasher. A zero config selects the defaults;
@@ -56,7 +61,16 @@ func NewPasswordHasher(config PasswordHashConfig) (*PasswordHasher, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &PasswordHasher{config: config}, nil
+	return &PasswordHasher{config: config, slots: make(chan struct{}, max(2, runtime.GOMAXPROCS(0)))}, nil
+}
+
+// derive runs one Argon2id derivation inside a concurrency slot.
+func (h *PasswordHasher) derive(password string, salt []byte, config PasswordHashConfig) []byte {
+	if h.slots != nil {
+		h.slots <- struct{}{}
+		defer func() { <-h.slots }()
+	}
+	return argon2.IDKey([]byte(password), salt, config.Time, config.Memory, config.Threads, config.KeyLength)
 }
 
 // Hash validates and hashes password with a fresh cryptographically random salt.
@@ -76,14 +90,7 @@ func (h *PasswordHasher) Hash(password string) (string, error) {
 	if _, err := rand.Read(salt); err != nil {
 		return "", fmt.Errorf("generate password salt: %w", err)
 	}
-	key := argon2.IDKey(
-		[]byte(password),
-		salt,
-		config.Time,
-		config.Memory,
-		config.Threads,
-		config.KeyLength,
-	)
+	key := h.derive(password, salt, config)
 	return encodePasswordHash(config, salt, key), nil
 }
 
@@ -98,14 +105,7 @@ func (h *PasswordHasher) Verify(password, encodedHash string) (bool, error) {
 		return false, err
 	}
 
-	key := argon2.IDKey(
-		[]byte(password),
-		parsed.salt,
-		parsed.config.Time,
-		parsed.config.Memory,
-		parsed.config.Threads,
-		parsed.config.KeyLength,
-	)
+	key := h.derive(password, parsed.salt, parsed.config)
 	return subtle.ConstantTimeCompare(key, parsed.key) == 1, nil
 }
 

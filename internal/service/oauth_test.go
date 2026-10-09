@@ -57,7 +57,7 @@ func TestOAuthSignInCallbackUsesStableIdentitySubject(t *testing.T) {
 
 func TestOAuthSignInCallbackRefusesEmailMerge(t *testing.T) {
 	const state = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	provider := &oauthProviderStub{name: "google", profile: OAuthProfile{Subject: "new-subject", Email: "existing@example.com"}}
+	provider := &oauthProviderStub{name: "google", profile: OAuthProfile{Subject: "new-subject", Email: "existing@example.com", EmailVerified: true}}
 	states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", CodeVerifier: "stored-verifier", Action: oauthActionSignIn, ExpiresAt: 200}}
 	identities := &oauthIdentityRepositoryStub{findErr: ErrOAuthIdentityNotFound}
 	users := &oauthUserRepositoryStub{byEmail: User{ID: 42, Email: stringPointer("existing@example.com")}}
@@ -68,6 +68,22 @@ func TestOAuthSignInCallbackRefusesEmailMerge(t *testing.T) {
 	}
 	if users.createCalls != 0 || identities.createCalls != 0 {
 		t.Error("email conflict created account or identity")
+	}
+}
+
+func TestOAuthSignInCallbackRefusesUnverifiedEmailForNewAccount(t *testing.T) {
+	const state = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	provider := &oauthProviderStub{name: "google", profile: OAuthProfile{Subject: "new-subject", Email: "someone-else@example.com", EmailVerified: false}}
+	states := &oauthStateRepositoryStub{consumed: OAuthState{State: state, Provider: "google", CodeVerifier: "stored-verifier", Action: oauthActionSignIn, ExpiresAt: 200}}
+	identities := &oauthIdentityRepositoryStub{findErr: ErrOAuthIdentityNotFound}
+	users := &oauthUserRepositoryStub{findEmailErr: ErrUserNotFound}
+	service := newOAuthServiceForTest(t, provider, states, identities, users)
+
+	if _, err := service.CompleteCallback(context.Background(), 0, "google", "code", state); !errors.Is(err, ErrOAuthAuthenticationFailed) {
+		t.Fatalf("CompleteCallback() error = %v, want ErrOAuthAuthenticationFailed", err)
+	}
+	if users.createCalls != 0 || identities.createCalls != 0 {
+		t.Error("unverified provider email created an account")
 	}
 }
 

@@ -33,17 +33,19 @@ var (
 )
 
 // SignUpInput contains account values submitted by a new user. Password is
-// never retained after the sign-up operation returns.
+// never retained after the sign-up operation returns. Origin is the client
+// address used for the sign-up rate limit.
 type SignUpInput struct {
 	Email       string
 	Password    string
 	Username    string
 	DisplayName string
+	Origin      string
 }
 
-// SignUpResult contains the created account and its new session. A required
-// confirmation is reported separately because this flow still establishes a
-// session according to deployment policy.
+// SignUpResult contains the created account and its new session. When email
+// confirmation is required no session is created: the account cannot sign in
+// until it confirms its email, so sign-up must not grant access either.
 type SignUpResult struct {
 	User                 User
 	Session              Session
@@ -153,16 +155,50 @@ func (s *SignUpService) SignUp(ctx context.Context, input SignUpInput) (SignUpRe
 	if created.ID <= 0 {
 		return SignUpResult{}, ErrInvalidCreatedUser
 	}
+	created.PasswordHash = nil
+	if s.confirmationRequired {
+		return SignUpResult{User: created, ConfirmationRequired: true}, nil
+	}
 	session, err := s.sessions.Create(ctx, created.ID)
 	if err != nil {
 		return SignUpResult{}, fmt.Errorf("create signup session: %w", err)
 	}
-	created.PasswordHash = nil
-	return SignUpResult{
-		User:                 created,
-		Session:              session,
-		ConfirmationRequired: s.confirmationRequired,
-	}, nil
+	return SignUpResult{User: created, Session: session}, nil
+}
+
+const signUpOriginAction = "signup.origin"
+
+// RateLimitedSignUpService applies a per-origin budget before sign-up, which
+// bounds password hashing work and probing for registered emails.
+type RateLimitedSignUpService struct {
+	signUp  *SignUpService
+	limiter *RateLimiter
+}
+
+// NewRateLimitedSignUpService decorates sign-up with an origin budget.
+func NewRateLimitedSignUpService(signUp *SignUpService, limiter *RateLimiter) (*RateLimitedSignUpService, error) {
+	if signUp == nil {
+		return nil, errors.New("service: nil signup service")
+	}
+	if limiter == nil {
+		return nil, ErrInvalidRateLimitConfig
+	}
+	return &RateLimitedSignUpService{signUp: signUp, limiter: limiter}, nil
+}
+
+// SignUp consumes one attempt from input.Origin's budget before signing up.
+func (s *RateLimitedSignUpService) SignUp(ctx context.Context, input SignUpInput) (SignUpResult, error) {
+	if s == nil || s.signUp == nil || s.limiter == nil {
+		return SignUpResult{}, ErrInvalidRateLimitConfig
+	}
+	decision, err := s.limiter.Allow(signUpOriginAction, originRateLimitKey(input.Origin))
+	if err != nil {
+		return SignUpResult{}, err
+	}
+	if !decision.Allowed {
+		return SignUpResult{}, RateLimitError{RetryAfter: decision.RetryAfter}
+	}
+	return s.signUp.SignUp(ctx, input)
 }
 
 func (s *SignUpService) rejectDuplicateEmail(ctx context.Context, email string) error {

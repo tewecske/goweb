@@ -27,6 +27,7 @@
     "auth.sign_in.submit": {"text": "Sign in"},
     "auth.error.invalid": {"text": "Check the submitted details and try again."},
     "auth.error.duplicate_email": {"text": "An account already uses this email address."},
+    "auth.error.rate_limited": {"text": "Too many attempts. Try again shortly."},
     "auth.error.duplicate_username": {"text": "That username is already in use."},
     "auth.error.invalid_credentials": {"text": "The email, username, or password is not correct."},
     "auth.error.unconfirmed": {"text": "Confirm your email address before signing in."},
