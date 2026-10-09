@@ -13,7 +13,9 @@ these is true:
 - `GOWEB_PUBLIC_URL` does not use `https`.
 - `GOWEB_DATABASE_URL` is unset.
 - `GOWEB_SESSION_SECRET` is unset (and it must be at least 32 characters).
-- `GOWEB_EMAIL_CONFIRMATION_REQUIRED` is `true` but `GOWEB_MAIL_RELAY` is unset.
+- `GOWEB_MAIL_RELAY` is unset. Confirmation and password-reset mail is
+  delivered through this credential-free `smtp://` or `smtps://` relay;
+  `GOWEB_MAIL_FROM` sets the sender (default `no-reply@` plus the public host).
 - Google sign-in is configured with a non-HTTPS `GOWEB_GOOGLE_REDIRECT_URL`.
 
 Every environment also rejects a credential-bearing public URL, a malformed

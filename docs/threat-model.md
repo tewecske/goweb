@@ -114,7 +114,9 @@ state, and revision-checked writes. None are trusted from the client.
   it.
 - Log aggregation is access-controlled. Security events are separately
   identifiable but still contain only stable, non-secret fields.
-- The mail relay is referenced by host only; the application does not store SMTP
+- The mail relay is referenced by host only and is required in production;
+  `smtp://` relays upgrade with STARTTLS when offered and `smtps://` relays use
+  implicit TLS. The application does not store SMTP
   credentials and does not log message bodies.
 
 ## Threat analysis

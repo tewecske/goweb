@@ -44,7 +44,7 @@ type Graph struct {
 	Providers             *service.ProviderRegistry
 	SessionService        *service.SessionService
 	PasswordHasher        *service.PasswordHasher
-	Mail                  *mailadapter.DevelopmentSender
+	Mail                  service.MailSender
 	SignUp                *service.SignUpService
 	SignIn                *service.RateLimitedSignInService
 	Confirmation          *service.EmailConfirmationService
@@ -87,7 +87,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if database == nil {
 		return nil, ErrNilDatabase
 	}
-	if appConfig.Environment == config.EnvironmentProduction {
+	if appConfig.Environment == config.EnvironmentProduction && !appConfig.MailRelay.IsSet() {
 		return nil, ErrMailDeliveryNotConfigured
 	}
 	appConfig = withRetentionDefaults(appConfig)
@@ -169,7 +169,16 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct password hasher: %w", err)
 	}
-	mailSender := &mailadapter.DevelopmentSender{}
+	// Without a relay, development keeps mail in memory; set GOWEB_MAIL_RELAY
+	// to a local catcher such as Mailpit to read messages.
+	var mailSender service.MailSender = &mailadapter.DevelopmentSender{}
+	if appConfig.MailRelay.IsSet() {
+		smtpSender, err := mailadapter.NewSMTPSender(appConfig.MailRelay.Reveal(), appConfig.MailFrom)
+		if err != nil {
+			return nil, fmt.Errorf("construct smtp sender: %w", err)
+		}
+		mailSender = smtpSender
+	}
 	signInLimiter, err := service.NewRateLimiter(service.DefaultAuthenticationRateLimitConfig)
 	if err != nil {
 		return nil, fmt.Errorf("construct signin rate limiter: %w", err)
@@ -352,7 +361,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		EmailConfirmationRequired: appConfig.EmailConfirmationRequired,
 		SecureSessionCookies:      appConfig.SessionCookieSecure,
 		Providers:                 providers.Names(),
-		MailConfigured:            true,
+		MailConfigured:            appConfig.MailRelay.IsSet(),
 		MailRelay:                 appConfig.MailRelay.Reveal(),
 		SessionLifetime:           appConfig.SessionLifetime,
 		GuestRetention:            appConfig.GuestRetention,

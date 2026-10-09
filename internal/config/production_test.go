@@ -68,9 +68,8 @@ func TestLoadRejectsUnsafeProductionConfiguration(t *testing.T) {
 			},
 		},
 		{
-			name: "email confirmation without mail provider",
+			name: "missing mail relay",
 			mutate: func(values map[string]string) {
-				values[EmailConfirmationRequiredEnv] = "true"
 				delete(values, MailRelayEnv)
 			},
 		},

@@ -17,8 +17,13 @@ var (
 	ErrNilContext = errors.New("mail: nil context")
 )
 
-// DevelopmentSender retains messages in memory instead of delivering them.
-// It is intended for local development and tests; it emits no logs.
+// maxDevelopmentMessages bounds DevelopmentSender memory; older messages are
+// dropped first.
+const maxDevelopmentMessages = 100
+
+// DevelopmentSender retains the most recent messages in memory instead of
+// delivering them. It is intended for local development and tests; it emits no
+// logs.
 type DevelopmentSender struct {
 	mu       sync.RWMutex
 	messages []service.Mail
@@ -45,6 +50,9 @@ func (s *DevelopmentSender) Send(ctx context.Context, message service.Mail) erro
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if len(s.messages) >= maxDevelopmentMessages {
+		s.messages = append(s.messages[:0], s.messages[len(s.messages)-maxDevelopmentMessages+1:]...)
+	}
 	s.messages = append(s.messages, normalized)
 	return nil
 }

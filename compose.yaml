@@ -7,7 +7,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-goweb}
       POSTGRES_DB: ${POSTGRES_DB:-goweb}
     ports:
-      - "${POSTGRES_PORT:-55432}:5432"
+      # Loopback only: the example password must not be reachable from the network.
+      - "127.0.0.1:${POSTGRES_PORT:-55432}:5432"
     volumes:
       - goweb-postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -16,6 +17,14 @@ services:
       timeout: 5s
       retries: 10
       start_period: 5s
+
+  mailpit:
+    image: axllent/mailpit:v1.31
+    container_name: goweb-mailpit
+    ports:
+      # SMTP for GOWEB_MAIL_RELAY=smtp://localhost:1025 and the web inbox.
+      - "127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
 
 volumes:
   goweb-postgres-data:

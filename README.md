@@ -35,7 +35,8 @@ Configuration comes from environment variables. Defaults keep local development 
 | `GOWEB_GUEST_RETENTION` | `720h` (30 days) |
 | `GOWEB_LOGIN_ATTEMPT_RETENTION` | `720h` (30 days) |
 | `GOWEB_USAGE_RETENTION` | `2160h` (90 days) |
-| `GOWEB_MAIL_RELAY` | unset; optional credential-free relay used by the system overview |
+| `GOWEB_MAIL_RELAY` | unset; credential-free `smtp://` or `smtps://` relay that delivers confirmation and password-reset mail. Required in production; without it, development keeps mail in memory |
+| `GOWEB_MAIL_FROM` | `no-reply@` plus the public URL host; sender address for outgoing mail |
 | `GOWEB_TRUSTED_PROXY` | unset; optional trusted proxy IP or CIDR network. Set it behind a reverse proxy so rate limits, sign-in history, and audit records use the client IP from `X-Forwarded-For` instead of the proxy address |
 | `GOWEB_BOOTSTRAP_ADMIN_EMAIL` | unset; non-production bootstrap administrator email |
 | `GOWEB_BOOTSTRAP_ADMIN_PASSWORD` | unset; non-production bootstrap administrator password |

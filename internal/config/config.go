@@ -36,6 +36,8 @@ const (
 	UsageRetentionEnv = "GOWEB_USAGE_RETENTION"
 	// MailRelayEnv names the optional outgoing mail relay.
 	MailRelayEnv = "GOWEB_MAIL_RELAY"
+	// MailFromEnv names the optional sender address for outgoing mail.
+	MailFromEnv = "GOWEB_MAIL_FROM"
 	// TrustedProxyEnv names the optional trusted proxy address or network.
 	TrustedProxyEnv = "GOWEB_TRUSTED_PROXY"
 	// DatabaseURLEnv names the optional database connection URL.
@@ -168,6 +170,7 @@ type Config struct {
 	BootstrapAdminEmail       string
 	BootstrapAdminPassword    Secret
 	MailRelay                 Secret
+	MailFrom                  string
 	TrustedProxy              string
 	GoogleClientID            string
 	GoogleClientSecret        Secret
@@ -274,9 +277,18 @@ func Load(getenv func(string) string) (Config, error) {
 	mailRelay := Secret{value: getenv(MailRelayEnv)}
 	if mailRelay.IsSet() {
 		parsed, err := url.Parse(strings.TrimSpace(mailRelay.value))
-		if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-			return Config{}, fmt.Errorf("%w: %s must be a host address without credentials", ErrInvalidMailRelay, MailRelayEnv)
+		if err != nil || (parsed.Scheme != "smtp" && parsed.Scheme != "smtps") || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return Config{}, fmt.Errorf("%w: %s must be an smtp:// or smtps:// host address without credentials", ErrInvalidMailRelay, MailRelayEnv)
 		}
+	}
+	mailFrom := strings.TrimSpace(getenv(MailFromEnv))
+	if mailFrom == "" {
+		mailFrom = "no-reply@" + publicURL.Hostname()
+		if !plainEmailAddress(mailFrom) {
+			mailFrom = "no-reply@localhost"
+		}
+	} else if !plainEmailAddress(mailFrom) {
+		return Config{}, fmt.Errorf("%w: %s must be a plain email address", ErrInvalidMailRelay, MailFromEnv)
 	}
 	trustedProxy := strings.TrimSpace(getenv(TrustedProxyEnv))
 	if trustedProxy != "" && !validProxyAddress(trustedProxy) {
@@ -318,6 +330,7 @@ func Load(getenv func(string) string) (Config, error) {
 		BootstrapAdminEmail:       bootstrapEmail,
 		BootstrapAdminPassword:    bootstrapPassword,
 		MailRelay:                 mailRelay,
+		MailFrom:                  mailFrom,
 		TrustedProxy:              trustedProxy,
 		GoogleClientID:            googleClientID,
 		GoogleClientSecret:        googleClientSecret,
@@ -348,8 +361,8 @@ func validateProduction(cfg Config) error {
 	if !cfg.SessionSecret.IsSet() {
 		problems = append(problems, SessionSecretEnv+" must be set")
 	}
-	if cfg.EmailConfirmationRequired && !cfg.MailRelay.IsSet() {
-		problems = append(problems, MailRelayEnv+" must be set when email confirmation is required")
+	if !cfg.MailRelay.IsSet() {
+		problems = append(problems, MailRelayEnv+" must be set so password reset and confirmation mail is delivered")
 	}
 	if cfg.GoogleOAuthConfigured() {
 		if parsed, err := url.Parse(cfg.GoogleRedirectURL); err != nil || parsed.Scheme != "https" {
@@ -455,4 +468,9 @@ func valueOrDefault(value, fallback string) string {
 		return fallback
 	}
 	return strings.TrimSpace(value)
+}
+
+func plainEmailAddress(value string) bool {
+	parsed, err := mail.ParseAddress(value)
+	return err == nil && parsed.Name == "" && parsed.Address == value
 }

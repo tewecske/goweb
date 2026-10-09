@@ -116,6 +116,16 @@ docker run --rm --name goweb-postgres \
   -p 55432:5432 postgres:17-alpine
 ```
 
+## Reading mail locally
+
+Without `GOWEB_MAIL_RELAY`, confirmation and password-reset mail stays in
+memory and cannot be read. `make db-up` also starts Mailpit; point the app at
+it to read messages in the browser at `http://localhost:8025`:
+
+```sh
+GOWEB_MAIL_RELAY=smtp://localhost:1025 make run
+```
+
 Migration files use sortable `NNNNNN_description.up.sql` names. Startup creates
 the migration ledger, acquires a PostgreSQL advisory lock, and applies pending
 migrations transactionally.

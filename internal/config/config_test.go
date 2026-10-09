@@ -88,6 +88,7 @@ func TestLoadProductionCookieDefault(t *testing.T) {
 		PublicURLEnv:     "https://example.test",
 		DatabaseURLEnv:   "postgres://user:password@example.test/app",
 		SessionSecretEnv: "01234567890123456789012345678901",
+		MailRelayEnv:     "smtp://mail.example.test:587",
 	}
 	config, err := Load(func(name string) string { return values[name] })
 	if err != nil {
@@ -389,6 +390,27 @@ func TestLoadRejectsCredentialBearingMailRelay(t *testing.T) {
 	}
 	if strings.Contains(config.String(), "mail.example.test") {
 		t.Fatalf("config summary leaked relay address: %s", config.String())
+	}
+	if config.MailFrom != "no-reply@localhost" {
+		t.Fatalf("default MailFrom = %q, want no-reply@ the public URL host", config.MailFrom)
+	}
+	for name, values := range map[string]map[string]string{
+		"non-smtp relay":  {MailRelayEnv: "http://mail.example.test"},
+		"display name":    {MailFromEnv: "App <app@example.test>"},
+		"invalid address": {MailFromEnv: "not an address"},
+	} {
+		if _, err := Load(func(key string) string { return values[key] }); !errors.Is(err, ErrInvalidMailRelay) {
+			t.Fatalf("Load(%s) error = %v, want %v", name, err, ErrInvalidMailRelay)
+		}
+	}
+	ipv6Host, err := Load(func(name string) string {
+		if name == PublicURLEnv {
+			return "http://[::1]:8080"
+		}
+		return ""
+	})
+	if err != nil || ipv6Host.MailFrom != "no-reply@localhost" {
+		t.Fatalf("Load(IPv6 public URL) MailFrom = %q, %v; want fallback sender", ipv6Host.MailFrom, err)
 	}
 }
 
