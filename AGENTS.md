@@ -26,7 +26,7 @@ Package responsibilities:
 - `templates/` stores server-rendered HTML templates.
 - `static/` stores browser assets.
 - `deploy/` stores configuration for local infrastructure such as Ory Hydra (`docs/sso-hydra-plan.md`); it holds no real secrets.
-- `scripts/` stores developer shell scripts invoked from the `Makefile`.
+- `scripts/` stores shell scripts: developer tooling invoked from the `Makefile`, the Hydra contract test, and the read-only single sign-on conversion report operators run before converting an app (`docs/deployment.md`).
 - Keep tests beside packages they cover. Use `tests/` for cross-package or integration support.
 
 ## Go development

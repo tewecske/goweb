@@ -1,6 +1,6 @@
 # Plan: Single Sign-On with Ory Hydra
 
-Status: Phases 0–5 done (2026-10-10). Phase 6 is not started.
+Status: Phases 0–6 done (2026-10-10). The remaining items are listed under Risks and open questions.
 
 ## Goal
 
@@ -488,22 +488,41 @@ Findings:
   works around it by opening the localized page. This should be fixed
   separately; see Risks.
 
-## Phase 6: Production rollout
+## Phase 6: Production rollout (done)
 
-1. Deploy Hydra behind TLS. Keep the admin API on a private network only,
-   because whoever reaches it can sign in as anyone. Use separate system and
-   cookie secrets stored in the secret manager. Back up the Hydra database
-   like the application database.
-2. Switch the identity deployment from `local` to `provider`. It is
-   backward-compatible: its own users and sessions are untouched.
-3. Register each client app with production URLs. Store the client secret
-   through the platform's secret store.
-4. New apps from the template start in `client` mode. Converting an existing
-   `local` app requires its users to exist at the provider. Import them, or
-   rely on verified-email linking from Phase 4, and run a dry-run report of
-   emails that would conflict.
-5. Run the OpenID Foundation conformance suite against Hydra's configuration
-   for the relying-party flows before the first production client.
+The rollout is a checklist in `docs/deployment.md` ("Single sign-on rollout"),
+backed by what was run rather than assumed:
+
+- **Hydra without `--dev`.** Hydra refuses a plain-HTTP issuer (`urls.self.issuer
+  must be https when dev is false`). Run without `--dev`, with an HTTPS issuer
+  behind a TLS-terminating proxy that sets `X-Forwarded-Proto: https`, a full
+  login, consent, token redemption and ID token verification passed with the
+  client's relying party. The public port still answers plain HTTP, so only the
+  gateway may expose it.
+- **Production configuration** was exercised with the real binary: an HTTP
+  issuer, callback, or account URL, a missing Hydra admin URL, Google settings
+  on a client, and leftover client settings on a `local` app are each refused
+  at startup with a secret-free message.
+- **Switching an existing deployment.** A copy of the development database was
+  rolled back to schema version 11, started with the pre-single-sign-on binary,
+  then with the new binary in `local` mode (migrations 12 and 13 applied, users
+  untouched).
+- **Converting an existing app.** On a copy with legacy accounts, signing in as
+  the provider's administrator linked the legacy account (same ID, so its
+  administrator flag and group stayed, with no duplicate account). An account
+  whose local email was unverified, and one whose provider email was
+  unverified, were each refused without any new account or identity. Returning
+  the app to `local` mode let the linked account sign in with its old password.
+- **Dry-run report.** `scripts/sso-conversion-report.sh` classifies every local
+  account (`ready`, `no_provider_account`, `local_email_unverified`,
+  `provider_email_unverified`) from both databases, counts by default, and
+  writes nothing (checked: no rows changed, no temporary objects left). It
+  agreed with the conversion run above.
+- **Conformance suite.** The plan's "run it against Hydra" was mis-aimed: the
+  OpenID Foundation suite plays the identity provider to test a relying party,
+  and Hydra is already certified. The checklist runs it against the client
+  app's own token handling instead (Basic relying party plus the logout
+  plans). It stays manual, and has not been run.
 
 ## Risks and open questions
 
@@ -512,6 +531,12 @@ Findings:
   local session lives until expiry. Mitigation: keep `GOWEB_SESSION_LIFETIME`
   short in client mode (for example 8h), and let expiry re-authenticate
   silently through Hydra while the provider session is alive.
+- **Conformance suite not run.** The OpenID Foundation relying-party and
+  logout plans are the remaining pre-production check for the client app; they
+  need a person and a reachable client, so they are manual.
+- **Accounts without a provider account.** Converting an app strands users who
+  have no verified account at the provider until someone creates or confirms it.
+  The dry-run report counts them first.
 - **Hydra version churn.** The versioning scheme changed after `v2.3.0`. Pin
   exact tags and read release notes before upgrades.
 - **Password-reset email link (existing bug).** The link in the reset email is

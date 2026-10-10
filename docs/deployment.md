@@ -135,6 +135,89 @@ differs as follows.
   throwaway Hydra; the browser specs in `tests/browser/m10-sso.spec.ts` (`make
   sso-e2e`) exercise a running provider, client, and Hydra.
 
+## Single sign-on rollout
+
+An ordered checklist for introducing single sign-on to an existing
+deployment, or starting a new app on it. Each step can be stopped and, except
+where noted, reversed. Hosting details for Hydra itself are in the section
+above.
+
+1. **Prepare Hydra.** Deploy it behind TLS as described above, with a pinned
+   image, its own database, and secrets from your secret store. Check that
+   `https://<issuer>/.well-known/openid-configuration` reports the public
+   issuer, and that the admin port is unreachable from outside.
+   - Hydra refuses a plain-HTTP issuer unless `--dev` is set, so production
+     needs HTTPS. Its public port itself answers plain HTTP; expose it only
+     through the TLS gateway.
+2. **Switch the identity deployment to `provider`.** Set
+   `GOWEB_AUTH_MODE=provider`, `GOWEB_HYDRA_ADMIN_URL`, and
+   `GOWEB_SSO_ISSUER_URL`, then deploy as usual: migration 12 adds one table
+   and nothing else changes for existing users. Point Hydra's `urls.login`,
+   `urls.consent`, `urls.logout`, and `urls.error` at the provider.
+   - The new binary was checked against a database from before single sign-on
+     with `GOWEB_AUTH_MODE` unset: it migrated 11 → 13 and served normally.
+   - **Reverse:** unset `GOWEB_AUTH_MODE`. The table stays and is harmless.
+     While the provider is back in `local` mode, revoking an account's sessions
+     no longer reaches client apps, so their sessions last until they expire.
+3. **Register each client app** in Hydra with its production URLs (see
+   [Required production configuration](#required-production-configuration))
+   and store its client secret in the platform's secret store. Make sure Hydra
+   can reach the back-channel logout URL: it must be public or in a private
+   range Hydra's outbound guard allows.
+4. **New apps** from the template start with `GOWEB_AUTH_MODE=client`, the
+   issuer, client ID, and secret. Nothing else is needed: accounts are created
+   on first sign-in. Promote the app's first administrator as described in the
+   [bootstrap procedure](bootstrap-admin.md#single-sign-on-deployments).
+5. **Convert an existing app** (it keeps its users and data):
+   1. Run the dry run with `psql` available. It reads both databases and
+      writes nothing:
+
+      ```sh
+      scripts/sso-conversion-report.sh "$APP_DATABASE_URL" "$PROVIDER_DATABASE_URL"
+      scripts/sso-conversion-report.sh "$APP_DATABASE_URL" "$PROVIDER_DATABASE_URL" --list
+      ```
+
+      The second form lists the email addresses that need attention, which is
+      personal data.
+   2. Resolve every account that is not `ready`. An account is linked on its
+      first sign-in only when the app and the provider have the same email and
+      both have verified it:
+      - `no_provider_account`: the person has no account at the provider. They
+        can sign up there, or an administrator can create the account at the
+        provider (administrator-created accounts are confirmed immediately)
+        with a temporary password to change afterwards.
+      - `local_email_unverified`: confirm the address in the app while it is
+        still in `local` mode (send a confirmation, or have an administrator
+        confirm it).
+      - `provider_email_unverified`: the provider account must confirm its
+        email first.
+      Accounts that stay unresolved are refused at sign-in rather than
+      duplicated or merged.
+   3. Switch the app to `client` and deploy. Linked accounts keep their ID, so
+      groups, administrator rights, and all other data stay; only the
+      credentials move to the provider.
+   4. Set `GOWEB_SESSION_LIFETIME` short (for example `8h`), because a client
+      that was down during a revocation keeps its local session until it
+      expires.
+   - **Reverse:** unset `GOWEB_AUTH_MODE` and the client settings. Accounts
+     keep their old passwords (checked: a linked account signed in again with
+     its previous password after the app returned to `local` mode). Passwords
+     changed at the provider in the meantime are not copied back.
+6. **Before the first production client**, run the OpenID Foundation
+   conformance suite against the client app's own token handling. The suite
+   plays the identity provider and tests the relying party, so it does not
+   test Hydra (which is already OpenID certified). Use the Basic relying-party
+   plan with the `code` response type and the Back-Channel Logout and
+   RP-Initiated Logout plans; the suite is free at
+   <https://www.certification.openid.net/> or can be run locally. It needs the
+   client app reachable by the suite and someone to drive each test, so it is a
+   manual check, not part of CI. The unit tests already cover the same
+   rejections (wrong signature, algorithm, issuer, audience, expiry, and
+   logout-token rules) with real keys.
+7. **Verify** with `make sso-contract` against the pinned Hydra image, and the
+   browser specs (`make sso-e2e`) against a staging stack, before each Hydra
+   upgrade.
+
 ## Startup migrations
 
 - Migrations live in `migrations/` with sortable
