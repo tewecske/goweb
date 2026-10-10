@@ -367,6 +367,9 @@ func (h *settingsHandler) renderSettings(writer http.ResponseWriter, request *ht
 		Account:          settingsAccountMenu(language, user),
 		Navigation:       primaryNavigation(h.auth.renderer, language, true),
 		Settings: &SettingsView{
+			SSOManaged:     h.dependencies.SSOClient != nil,
+			AccountURL:     h.dependencies.SSOAccountURL,
+			Email:          optionalValueString(user.Email),
 			Username:       optionalValueString(user.Username),
 			DisplayName:    optionalValueString(user.DisplayName),
 			HasPassword:    user.PasswordHash != nil,

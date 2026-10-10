@@ -102,9 +102,9 @@ func (r *SessionRepository) CreateSession(ctx context.Context, session service.S
 		return mapSessionError(err)
 	}
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO sessions (id, user_id, created_at, expires_at, revoked_at)
-		VALUES ($1, $2, $3, $4, $5)
-	`, sessionDigest(session.ID), session.UserID, session.CreatedAt, session.ExpiresAt, session.RevokedAt)
+		INSERT INTO sessions (id, user_id, created_at, expires_at, revoked_at, sso_sid, sso_id_token)
+		VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), NULLIF($7, ''))
+	`, sessionDigest(session.ID), session.UserID, session.CreatedAt, session.ExpiresAt, session.RevokedAt, session.SSOSessionID, session.SSOIDToken)
 	if err != nil {
 		return mapSessionError(err)
 	}
@@ -134,6 +134,52 @@ func (r *SessionRepository) FindSession(ctx context.Context, id string) (service
 	}
 	session.ID = id
 	return session, nil
+}
+
+var _ service.SSOClientSessionRepository = (*SessionRepository)(nil)
+
+// RevokeSSOSessions revokes every active session bound to a Hydra session ID
+// and returns how many it revoked. An unknown sid revokes nothing.
+func (r *SessionRepository) RevokeSSOSessions(ctx context.Context, sid string, revokedAt int64) (int, error) {
+	db, err := r.database(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if sid == "" || len(sid) > 128 {
+		return 0, ErrInvalidData
+	}
+	result, err := db.ExecContext(ctx, `
+		UPDATE sessions SET revoked_at = $2
+		WHERE sso_sid = $1 AND revoked_at IS NULL
+	`, sid, revokedAt)
+	if err != nil {
+		return 0, mapSessionError(err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return 0, mapSessionError(err)
+	}
+	return int(rows), nil
+}
+
+// FindSSOIDToken returns the ID token hint stored with a session, or "" when
+// the session has none. It is read only to build the issuer's logout URL.
+func (r *SessionRepository) FindSSOIDToken(ctx context.Context, id string) (string, error) {
+	db, err := r.database(ctx)
+	if err != nil {
+		return "", err
+	}
+	if id == "" || len(id) > 64 {
+		return "", service.ErrSessionNotFound
+	}
+	var idToken sql.NullString
+	if err := db.QueryRowContext(ctx, `SELECT sso_id_token FROM sessions WHERE id = $1`, sessionDigest(id)).Scan(&idToken); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", service.ErrSessionNotFound
+		}
+		return "", mapSessionError(err)
+	}
+	return idToken.String, nil
 }
 
 // RevokeSession records the first revocation time. Repeated revocation is an

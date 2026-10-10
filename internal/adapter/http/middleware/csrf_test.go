@@ -91,3 +91,21 @@ func TestCSRFHelpers(t *testing.T) {
 		t.Fatalf("NewCSRFToken() error = %v, want nil", err)
 	}
 }
+
+func TestCSRFExemptPathIsExact(t *testing.T) {
+	handler := CSRF(WithCSRFExemptPath("/oauth/sso/backchannel-logout"))(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	for path, want := range map[string]int{
+		"/oauth/sso/backchannel-logout":       http.StatusNoContent,
+		"/oauth/sso/backchannel-logout/extra": http.StatusForbidden,
+		"/oauth/sso/backchannel":              http.StatusForbidden,
+		"/en/sign-out":                        http.StatusForbidden,
+	} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, strings.NewReader("logout_token=x")))
+		if response.Code != want {
+			t.Errorf("POST %s without a token = %d, want %d", path, response.Code, want)
+		}
+	}
+}

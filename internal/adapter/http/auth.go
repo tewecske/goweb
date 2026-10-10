@@ -158,7 +158,13 @@ func (h *authHandler) signOut(writer http.ResponseWriter, request *http.Request)
 		h.renderError(writer, request, http.StatusInternalServerError)
 		return
 	}
+	issuerLogout := ""
 	if sessionID, ok := h.dependencies.SessionCookie.Read(request); ok {
+		if h.dependencies.SSOClient != nil {
+			// Read the issuer logout URL (it needs this session's ID token
+			// hint) before the session is revoked.
+			issuerLogout, _ = h.dependencies.SSOClient.SignOutURL(request.Context(), sessionID)
+		}
 		if err := h.dependencies.SessionAdmin.SignOut(request.Context(), sessionID); err != nil {
 			h.renderError(writer, request, http.StatusInternalServerError)
 			return
@@ -166,6 +172,18 @@ func (h *authHandler) signOut(writer http.ResponseWriter, request *http.Request)
 	}
 	if err := h.dependencies.SessionCookie.Clear(writer, time.Now()); err != nil {
 		h.renderError(writer, request, http.StatusInternalServerError)
+		return
+	}
+	if issuerLogout != "" {
+		// A client app also ends the single sign-on session, which logs the
+		// browser out of the provider and every other client app.
+		http.Redirect(writer, request, issuerLogout, http.StatusSeeOther)
+		return
+	}
+	if h.dependencies.SSOLogoutURL != "" {
+		// The provider also ends the single sign-on session; otherwise client
+		// apps would still sign this browser in without a password.
+		http.Redirect(writer, request, h.dependencies.SSOLogoutURL, http.StatusSeeOther)
 		return
 	}
 	language, ok := requestLanguage(request)
@@ -244,6 +262,9 @@ func (h *authHandler) renderPasswordPageWithStatus(writer http.ResponseWriter, r
 	if kind == "sign-in" && request.URL.Query().Get("oauth") == "error" {
 		page.Alerts = append(page.Alerts, Alert{Level: "error", Message: h.translate(language, "oauth.error.generic")})
 	}
+	if kind == "sign-in" && request.URL.Query().Get("sso") == "expired" {
+		page.Alerts = append(page.Alerts, Alert{Level: "error", Message: h.translate(language, "sso.error.expired")})
+	}
 	h.renderPageWithStatus(writer, request, page, status)
 }
 
@@ -267,6 +288,8 @@ func (h *authHandler) formLabels(language locale.Code) map[string]string {
 		"settings_identities": "settings.identities.heading", "settings_identities_help": "settings.identities.help",
 		"settings_identities_empty": "settings.identities.empty", "settings_identities_add": "settings.identities.add",
 		"settings_identity_provider": "settings.identities.provider", "settings_identity_account": "settings.identities.account",
+		"settings_sso_heading": "settings.sso.heading", "settings_sso_help": "settings.sso.help", "settings_sso_manage": "settings.sso.manage",
+		"guest_upgrade_sso_help": "guest.upgrade.sso_help", "guest_upgrade_sso_submit": "guest.upgrade.sso_submit",
 		"groups_title": "groups.title", "groups_heading": "groups.heading", "groups_sections": "groups.sections", "groups_nav": "groups.nav",
 		"groups_mine": "groups.mine", "groups_join": "groups.join", "groups_create": "groups.create",
 		"groups_name": "groups.name", "groups_members": "groups.members", "groups_role": "groups.role",
@@ -320,6 +343,9 @@ func replaceSession(writer http.ResponseWriter, request *http.Request, dependenc
 func (h *authHandler) finishSignIn(writer http.ResponseWriter, request *http.Request, language locale.Code, sessionID, destination string) {
 	if err := replaceSession(writer, request, h.dependencies, sessionID); err != nil {
 		h.renderError(writer, request, http.StatusInternalServerError)
+		return
+	}
+	if h.completeSSOLogin(writer, request, sessionID) {
 		return
 	}
 	if IsHTMX(request) {

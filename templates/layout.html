@@ -82,7 +82,7 @@
             </summary>
             <ul class="menu dropdown-content z-10 mt-2 w-52 rounded-box bg-base-200 p-2 shadow" role="menu">
               <li role="none"><a role="menuitem" href="{{.SignInURL}}">Sign in</a></li>
-              <li role="none"><a role="menuitem" href="{{.SignUpURL}}">Create account</a></li>
+              {{if .SignUpURL}}<li role="none"><a role="menuitem" href="{{.SignUpURL}}">Create account</a></li>{{end}}
             </ul>
           </details>
         {{end}}

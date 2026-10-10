@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -82,7 +83,7 @@ func main() {
 			TrustedProxy: appConfig.TrustedProxy,
 		})
 		serverOptions = append(serverOptions, appserver.WithDependency(database))
-		router = httpadapter.NewLoggedRouterWithServices(logger, httpadapter.Dependencies{
+		dependencies := httpadapter.Dependencies{
 			Users:                applicationGraph.Users,
 			Sessions:             applicationGraph.SessionService,
 			SessionAdmin:         applicationGraph.SessionService,
@@ -132,7 +133,16 @@ func main() {
 			Tracer:               spanTracer,
 			SecurityLogger:       logger,
 			TrustedProxy:         appConfig.TrustedProxy,
-		})
+		}
+		if applicationGraph.SSOClient != nil {
+			dependencies.SSOClient = applicationGraph.SSOClient
+			dependencies.SSOAccountURL = appConfig.SSOAccountURL
+		}
+		if applicationGraph.SSOProvider != nil {
+			dependencies.SSOProvider = applicationGraph.SSOProvider
+			dependencies.SSOLogoutURL = strings.TrimRight(appConfig.SSOIssuerURL, "/") + "/oauth2/sessions/logout"
+		}
+		router = httpadapter.NewLoggedRouterWithServices(logger, dependencies)
 	}
 
 	server, err := appserver.New(appConfig.HTTPAddress, router, serverOptions...)

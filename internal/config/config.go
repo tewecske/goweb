@@ -54,6 +54,22 @@ const (
 	GoogleClientSecretEnv = "GOWEB_GOOGLE_CLIENT_SECRET"
 	// GoogleRedirectURLEnv overrides the derived Google OAuth redirect URL.
 	GoogleRedirectURLEnv = "GOWEB_GOOGLE_REDIRECT_URL"
+	// AuthModeEnv selects the deployment's single sign-on role.
+	AuthModeEnv = "GOWEB_AUTH_MODE"
+	// HydraAdminURLEnv names the private Ory Hydra admin API address used by
+	// the provider deployment.
+	HydraAdminURLEnv = "GOWEB_HYDRA_ADMIN_URL"
+	// SSOIssuerURLEnv names the OpenID Connect issuer used by client deployments.
+	SSOIssuerURLEnv = "GOWEB_SSO_ISSUER_URL"
+	// SSOClientIDEnv names the client deployment's registered client identifier.
+	SSOClientIDEnv = "GOWEB_SSO_CLIENT_ID"
+	// SSOClientSecretEnv names the client deployment's registered client secret.
+	SSOClientSecretEnv = "GOWEB_SSO_CLIENT_SECRET"
+	// SSORedirectURLEnv overrides the derived single sign-on callback URL.
+	SSORedirectURLEnv = "GOWEB_SSO_REDIRECT_URL"
+	// SSOAccountURLEnv names the provider's account settings page linked from
+	// client deployments.
+	SSOAccountURLEnv = "GOWEB_SSO_ACCOUNT_URL"
 
 	// MinimumBootstrapAdminPasswordLength prevents weak bootstrap credentials.
 	MinimumBootstrapAdminPasswordLength = 8
@@ -99,6 +115,8 @@ var (
 	ErrInvalidTrustedProxy = errors.New("config: invalid trusted proxy")
 	// ErrInvalidOAuth identifies unusable external identity provider settings.
 	ErrInvalidOAuth = errors.New("config: invalid oauth configuration")
+	// ErrInvalidAuthMode identifies an unsupported or incomplete single sign-on role.
+	ErrInvalidAuthMode = errors.New("config: invalid auth mode configuration")
 	// ErrUnsafeProductionConfig identifies deployment settings that are unsafe
 	// to start with in production.
 	ErrUnsafeProductionConfig = errors.New("config: unsafe production configuration")
@@ -114,6 +132,19 @@ const (
 	EnvironmentTest Environment = "test"
 	// EnvironmentProduction is the deployed environment.
 	EnvironmentProduction Environment = "production"
+)
+
+// AuthMode identifies a deployment's role in single sign-on.
+type AuthMode string
+
+const (
+	// AuthModeLocal is a standalone deployment with its own accounts.
+	AuthModeLocal AuthMode = "local"
+	// AuthModeProvider is the identity deployment that serves Hydra's login,
+	// consent, and logout endpoints.
+	AuthModeProvider AuthMode = "provider"
+	// AuthModeClient delegates sign-in to the provider through Hydra.
+	AuthModeClient AuthMode = "client"
 )
 
 // Secret stores sensitive configuration without exposing its value through
@@ -175,6 +206,13 @@ type Config struct {
 	GoogleClientID            string
 	GoogleClientSecret        Secret
 	GoogleRedirectURL         string
+	AuthMode                  AuthMode
+	HydraAdminURL             string
+	SSOIssuerURL              string
+	SSOClientID               string
+	SSOClientSecret           Secret
+	SSORedirectURL            string
+	SSOAccountURL             string
 }
 
 // GoogleOAuthConfigured reports whether Google sign-in has complete settings.
@@ -191,7 +229,7 @@ func (c Config) BootstrapAdminConfigured() bool {
 // String returns a safe diagnostic summary without secret values.
 func (c Config) String() string {
 	return fmt.Sprintf(
-		"environment=%s http_address=%s public_url=%s session_cookie_secure=%t email_confirmation_required=%t session_lifetime=%s guest_retention=%s login_attempt_retention=%s usage_retention=%s database_configured=%t session_secret_configured=%t bootstrap_admin_configured=%t mail_relay_configured=%t trusted_proxy_configured=%t google_oauth_configured=%t",
+		"environment=%s http_address=%s public_url=%s session_cookie_secure=%t email_confirmation_required=%t session_lifetime=%s guest_retention=%s login_attempt_retention=%s usage_retention=%s database_configured=%t session_secret_configured=%t bootstrap_admin_configured=%t mail_relay_configured=%t trusted_proxy_configured=%t google_oauth_configured=%t auth_mode=%s hydra_admin_configured=%t sso_client_configured=%t",
 		c.Environment,
 		c.HTTPAddress,
 		c.PublicURL.String(),
@@ -207,6 +245,9 @@ func (c Config) String() string {
 		c.MailRelay.IsSet(),
 		c.TrustedProxy != "",
 		c.GoogleOAuthConfigured(),
+		c.AuthMode,
+		c.HydraAdminURL != "",
+		c.SSOClientSecret.IsSet(),
 	)
 }
 
@@ -313,7 +354,7 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 	if googleRedirectURL != "" {
-		if err := validateOAuthRedirectURL(googleRedirectURL); err != nil {
+		if err := validateHTTPURL(ErrInvalidOAuth, GoogleRedirectURLEnv, googleRedirectURL); err != nil {
 			return Config{}, err
 		}
 	}
@@ -338,6 +379,9 @@ func Load(getenv func(string) string) (Config, error) {
 		GoogleClientID:            googleClientID,
 		GoogleClientSecret:        googleClientSecret,
 		GoogleRedirectURL:         googleRedirectURL,
+	}
+	if err := applyAuthMode(&loaded, getenv); err != nil {
+		return Config{}, err
 	}
 	if err := validateProduction(loaded); err != nil {
 		return Config{}, err
@@ -370,6 +414,18 @@ func validateProduction(cfg Config) error {
 	if cfg.GoogleOAuthConfigured() {
 		if parsed, err := url.Parse(cfg.GoogleRedirectURL); err != nil || parsed.Scheme != "https" {
 			problems = append(problems, GoogleRedirectURLEnv+" must use https")
+		}
+	}
+	// The provider's Hydra admin URL may stay plain HTTP on a private network;
+	// everything a browser or the token exchange crosses must use TLS.
+	if cfg.AuthMode == AuthModeProvider && !strings.HasPrefix(cfg.SSOIssuerURL, "https://") {
+		problems = append(problems, SSOIssuerURLEnv+" must use https")
+	}
+	if cfg.AuthMode == AuthModeClient {
+		for _, setting := range cfg.ssoClientURLs() {
+			if parsed, err := url.Parse(setting.value); setting.value != "" && (err != nil || parsed.Scheme != "https") {
+				problems = append(problems, setting.name+" must use https")
+			}
 		}
 	}
 	if len(problems) == 0 {
@@ -447,15 +503,114 @@ func parseRetention(name, raw string, fallback time.Duration) (time.Duration, er
 	return period, nil
 }
 
-func validateOAuthRedirectURL(raw string) error {
+// validateHTTPURL requires an absolute http or https URL without credentials,
+// query, or fragment, reporting the variable name but never its value.
+func validateHTTPURL(kind error, name, raw string) error {
 	parsed, err := url.Parse(raw)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return fmt.Errorf("%w: %s must be an absolute http or https URL without credentials or query data", ErrInvalidOAuth, GoogleRedirectURLEnv)
+		return fmt.Errorf("%w: %s must be an absolute http or https URL without credentials or query data", kind, name)
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return fmt.Errorf("%w: %s scheme must be http or https", ErrInvalidOAuth, GoogleRedirectURLEnv)
+		return fmt.Errorf("%w: %s scheme must be http or https", kind, name)
 	}
 	return nil
+}
+
+// applyAuthMode loads the single sign-on role and the settings that belong to
+// it. Settings for another role are rejected rather than silently ignored, so
+// a misconfigured deployment fails at startup.
+func applyAuthMode(cfg *Config, getenv func(string) string) error {
+	mode := AuthMode(strings.ToLower(strings.TrimSpace(getenv(AuthModeEnv))))
+	if mode == "" {
+		mode = AuthModeLocal
+	}
+	if mode != AuthModeLocal && mode != AuthModeProvider && mode != AuthModeClient {
+		return fmt.Errorf("%w: %s must be local, provider, or client", ErrInvalidAuthMode, AuthModeEnv)
+	}
+	cfg.AuthMode = mode
+	cfg.HydraAdminURL = strings.TrimSpace(getenv(HydraAdminURLEnv))
+	cfg.SSOIssuerURL = strings.TrimSpace(getenv(SSOIssuerURLEnv))
+	cfg.SSOClientID = strings.TrimSpace(getenv(SSOClientIDEnv))
+	cfg.SSOClientSecret = Secret{value: getenv(SSOClientSecretEnv)}
+	cfg.SSORedirectURL = strings.TrimSpace(getenv(SSORedirectURLEnv))
+	cfg.SSOAccountURL = strings.TrimSpace(getenv(SSOAccountURLEnv))
+
+	if mode != AuthModeProvider && cfg.HydraAdminURL != "" {
+		return fmt.Errorf("%w: %s requires %s=%s", ErrInvalidAuthMode, HydraAdminURLEnv, AuthModeEnv, AuthModeProvider)
+	}
+	if mode == AuthModeLocal && cfg.SSOIssuerURL != "" {
+		return fmt.Errorf("%w: %s requires %s=%s or %s", ErrInvalidAuthMode, SSOIssuerURLEnv, AuthModeEnv, AuthModeProvider, AuthModeClient)
+	}
+	if mode != AuthModeClient {
+		clientSettings := []struct {
+			name string
+			set  bool
+		}{
+			{SSOClientIDEnv, cfg.SSOClientID != ""},
+			{SSOClientSecretEnv, cfg.SSOClientSecret.IsSet()},
+			{SSORedirectURLEnv, cfg.SSORedirectURL != ""},
+			{SSOAccountURLEnv, cfg.SSOAccountURL != ""},
+		}
+		for _, setting := range clientSettings {
+			if setting.set {
+				return fmt.Errorf("%w: %s requires %s=%s", ErrInvalidAuthMode, setting.name, AuthModeEnv, AuthModeClient)
+			}
+		}
+	}
+	if mode != AuthModeLocal && !cfg.DatabaseURL.IsSet() {
+		return fmt.Errorf("%w: %s=%s requires %s", ErrInvalidAuthMode, AuthModeEnv, mode, DatabaseURLEnv)
+	}
+
+	switch mode {
+	case AuthModeProvider:
+		// The issuer is Hydra's public URL; provider sign-out sends the browser
+		// to its logout endpoint so the single sign-on session ends too.
+		if cfg.HydraAdminURL == "" || cfg.SSOIssuerURL == "" {
+			return fmt.Errorf("%w: %s=%s requires %s and %s", ErrInvalidAuthMode, AuthModeEnv, mode, HydraAdminURLEnv, SSOIssuerURLEnv)
+		}
+		if err := validateHTTPURL(ErrInvalidAuthMode, HydraAdminURLEnv, cfg.HydraAdminURL); err != nil {
+			return err
+		}
+		return validateHTTPURL(ErrInvalidAuthMode, SSOIssuerURLEnv, cfg.SSOIssuerURL)
+	case AuthModeClient:
+		if cfg.SSOIssuerURL == "" || cfg.SSOClientID == "" || !cfg.SSOClientSecret.IsSet() {
+			return fmt.Errorf("%w: %s=%s requires %s, %s, and %s", ErrInvalidAuthMode, AuthModeEnv, mode, SSOIssuerURLEnv, SSOClientIDEnv, SSOClientSecretEnv)
+		}
+		// Sign-in methods other than single sign-on belong on the provider.
+		if cfg.GoogleClientID != "" || cfg.GoogleClientSecret.IsSet() || cfg.GoogleRedirectURL != "" {
+			return fmt.Errorf("%w: Google sign-in is configured on the provider, not on %s=%s", ErrInvalidAuthMode, AuthModeEnv, mode)
+		}
+		if cfg.SSORedirectURL == "" {
+			redirectPath, err := locale.Path(locale.Default, "/oauth/sso/callback")
+			if err != nil {
+				return fmt.Errorf("%w: cannot derive %s", ErrInvalidAuthMode, SSORedirectURLEnv)
+			}
+			cfg.SSORedirectURL = strings.TrimRight(cfg.PublicURL.String(), "/") + redirectPath
+		}
+		for _, setting := range cfg.ssoClientURLs() {
+			if setting.value == "" {
+				continue
+			}
+			if err := validateHTTPURL(ErrInvalidAuthMode, setting.name, setting.value); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+type namedURL struct {
+	name  string
+	value string
+}
+
+// ssoClientURLs lists the client-mode URLs in a stable order for validation.
+func (c Config) ssoClientURLs() []namedURL {
+	return []namedURL{
+		{SSOIssuerURLEnv, c.SSOIssuerURL},
+		{SSORedirectURLEnv, c.SSORedirectURL},
+		{SSOAccountURLEnv, c.SSOAccountURL},
+	}
 }
 
 func validProxyAddress(raw string) bool {

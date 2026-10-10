@@ -138,6 +138,77 @@ set -a; source .env; set +a
 go test -tags=integration ./...
 ```
 
+## Running SSO locally
+
+See [sso-hydra-plan.md](sso-hydra-plan.md) for the design. You run three
+processes: Hydra (in Docker), a provider app, and a client app.
+
+```sh
+make sso-up        # PostgreSQL, Hydra's role/database, goweb_client database, Hydra, back-channel relay
+make sso-client    # registers the dev client app and writes .env.client
+make run-provider  # terminal 1: provider (GOWEB_AUTH_MODE=provider)
+make run-client    # terminal 2: client (GOWEB_AUTH_MODE=client)
+```
+
+By default everything is reachable from this machine only:
+
+| Process | URL |
+| --- | --- |
+| Provider | `http://localhost:8080` |
+| Client | `http://127.0.0.1:8081` |
+| Hydra (issuer) | `http://127.0.0.1:4444` |
+| Hydra admin API | `http://127.0.0.1:4445` (always loopback only) |
+
+Open the client, choose sign in, and sign in or sign up at the provider; you
+return signed in to the client. With the same `GOWEB_BOOTSTRAP_ADMIN_EMAIL`,
+both apps seed that administrator, and signing in to the client as the
+provider's confirmed administrator links the two.
+
+### Testing from another machine (for example over Tailscale)
+
+The browser talks to all three processes, and Hydra redirects it to the exact
+configured URLs, so they must be the addresses the other machine uses. Set in
+`.env` (see `.env.example`):
+
+```sh
+SSO_DEV_BIND=100.92.5.118                                  # this machine's tailnet IP
+SSO_DEV_ISSUER_URL=http://omnissiah.tail17501b.ts.net:4444
+SSO_DEV_PROVIDER_URL=http://100.92.5.118:8080
+SSO_DEV_CLIENT_URL=http://omnissiah.tail17501b.ts.net:8081
+```
+
+Then rerun `make sso-up` (it recreates Hydra), `make sso-client`, and restart
+both apps. Rules:
+
+- Provider and client need different host names, because cookies ignore
+  ports. Here the provider uses the IP address and the client the MagicDNS
+  name.
+- Use the same host and port for the issuer everywhere. The client checks
+  every token's `iss` against `SSO_DEV_ISSUER_URL`, from both the browser and
+  its own server-side calls. Ports stay 4444, 8080, and 8081.
+- Hydra's public API, the provider, and the client listen on `SSO_DEV_BIND`
+  only. Hydra's admin API stays on `127.0.0.1:4445`, because it can sign
+  anyone in.
+- Back-channel logout goes through the `sso-backchannel-relay` container on
+  `127.0.0.1:4446`. Hydra's outbound SSRF guard refuses Tailscale's
+  `100.64.0.0/10` range and has no setting to allow it, so Hydra calls the
+  loopback relay, which forwards to the client.
+- Everything is plain HTTP. That suits a private tailnet; never use these
+  settings on a shared network.
+
+### Notes
+
+- Hydra uses host networking. On Docker Desktop, enable host networking in its
+  settings.
+- Hydra has its own `hydra` PostgreSQL role and database, and the client app
+  its own `goweb_client` database, both created by the one-shot `sso-db-init`
+  service inside the existing Compose PostgreSQL.
+- `make sso-client` deletes and recreates the `goweb-dev-client` client, so the
+  secret changes on every run. It writes the git-ignored, owner-only
+  `.env.client`, which `make run-client` loads on top of `.env`. Restart the
+  client app afterwards.
+- `make db-down` stops Hydra together with PostgreSQL and Mailpit.
+
 ## Checks
 
 Run standard checks:

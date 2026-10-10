@@ -17,6 +17,38 @@ these is true:
   delivered through this credential-free `smtp://` or `smtps://` relay;
   `GOWEB_MAIL_FROM` sets the sender (default `no-reply@` plus the public host).
 - Google sign-in is configured with a non-HTTPS `GOWEB_GOOGLE_REDIRECT_URL`.
+- `GOWEB_AUTH_MODE=provider` with a non-HTTPS `GOWEB_SSO_ISSUER_URL`.
+- `GOWEB_AUTH_MODE=client` with a non-HTTPS `GOWEB_SSO_ISSUER_URL`,
+  `GOWEB_SSO_REDIRECT_URL`, or `GOWEB_SSO_ACCOUNT_URL`. The provider's
+  `GOWEB_HYDRA_ADMIN_URL` may use plain HTTP because it must only be reachable
+  on a private network.
+
+Every environment rejects `GOWEB_AUTH_MODE` settings that do not belong to the
+selected mode, a `provider` or `client` mode without `GOWEB_DATABASE_URL`, and
+Google sign-in on a `client` (it belongs on the provider). See
+[sso-hydra-plan.md](sso-hydra-plan.md). `provider` requires `GOWEB_HYDRA_ADMIN_URL`
+and `GOWEB_SSO_ISSUER_URL`; `client` requires the issuer URL, client ID, and
+client secret registered in Hydra. A provider deployment answers Hydra at the fixed paths `/sso/login`,
+`/sso/consent`, and `/sso/logout`; configure Hydra's `urls.login`,
+`urls.consent`, and `urls.logout` to those paths on the provider's public URL.
+
+Register each client app in Hydra (see `scripts/hydra-dev-client.sh` for the
+exact flags) with:
+
+- redirect URI `<client public URL>/en/oauth/sso/callback`
+- post-logout redirect URI `<client public URL>/en/sign-in`
+- back-channel logout URI `<client public URL>/oauth/sso/backchannel-logout`
+  with `backchannel_logout_session_required`. Hydra must be able to reach it.
+  Hydra's outbound SSRF guard only allows public addresses plus loopback,
+  RFC 1918, and link-local ranges. It refuses carrier-grade NAT addresses
+  (`100.64.0.0/10`, for example Tailscale), and no setting changes that.
+- `skip_consent`, `skip_logout_consent`, `client_secret_basic`, and scopes
+  `openid email profile`
+
+A client app's existing local account is linked to its single sign-on identity
+on first sign-in only when both the local account and the provider vouch for
+the same email address (both verified); otherwise sign-in is refused with a
+conflict, so resolve such accounts before switching an app to client mode.
 
 Every environment also rejects a credential-bearing public URL, a malformed
 mail relay, an invalid `GOWEB_TRUSTED_PROXY`, partially configured Google OAuth

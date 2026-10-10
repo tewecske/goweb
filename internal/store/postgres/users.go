@@ -285,3 +285,58 @@ func mapUserError(err error) error {
 	}
 	return ClassifyError(err)
 }
+
+var _ service.SSOGuestUpgradeRepository = (*UserRepository)(nil)
+
+// UpgradeGuestWithIdentity converts a guest in place and links its single
+// sign-on identity in one transaction, revoking the guest's transfer code.
+// It applies only while the account is still a guest at expectedVersion, so
+// either everything happens or nothing does.
+func (r *UserRepository) UpgradeGuestWithIdentity(ctx context.Context, guest service.User, expectedVersion int64, identity service.OAuthIdentity, revokedAt int64) (service.User, error) {
+	db, err := r.database(ctx)
+	if err != nil {
+		return service.User{}, err
+	}
+	identity.Provider = canonicalProvider(identity.Provider)
+	if guest.ID <= 0 || guest.IsGuest || identity.UserID != guest.ID || identity.Provider == "" || identity.Subject == "" || len(identity.Subject) > 255 {
+		return service.User{}, ErrInvalidData
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return service.User{}, mapUserError(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE guest_claim_codes SET revoked_at = $2
+		WHERE user_id = $1 AND revoked_at IS NULL
+	`, guest.ID, revokedAt); err != nil {
+		return service.User{}, mapGuestClaimError(err)
+	}
+	updated, err := scanUser(tx.QueryRowContext(ctx, `
+		UPDATE users
+		SET email = $1, display_name = $2, is_guest = FALSE, email_verified_at = $3, version = version + 1
+		WHERE id = $4 AND version = $5 AND is_guest
+		RETURNING id, email, password_hash, username, display_name, is_guest,
+			is_admin, theme, locale, created_at, email_verified_at, version
+	`, guest.Email, guest.DisplayName, guest.EmailVerifiedAt, guest.ID, expectedVersion))
+	if errors.Is(err, sql.ErrNoRows) {
+		return service.User{}, service.ErrGuestUpgradeRequiresGuest
+	}
+	if err != nil {
+		return service.User{}, mapUserError(err)
+	}
+	var email any
+	if identity.Email != "" {
+		email = identity.Email
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO oauth_identities (user_id, provider, subject, email, created_at)
+		VALUES ($1, $2, $3, $4, $5)
+	`, guest.ID, identity.Provider, identity.Subject, email, identity.CreatedAt); err != nil {
+		return service.User{}, mapOAuthIdentityError(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return service.User{}, mapUserError(err)
+	}
+	return updated, nil
+}

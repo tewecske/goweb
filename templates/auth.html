@@ -6,6 +6,9 @@
   <div class="card card-border mt-6 w-full max-w-xl bg-base-100 shadow-sm">
     <div class="card-body">
       {{if .Description}}<p class="text-base-content/70">{{.Description}}</p>{{end}}
+      {{if .SSOSignInURL}}
+      <a class="btn btn-primary mt-4" href="{{.SSOSignInURL}}" data-testid="sso-sign-in">{{.SubmitLabel}}</a>
+      {{else}}
       <form class="mt-4 grid gap-4" method="{{.FormMethod}}" action="{{.FormAction}}" hx-post="{{.FormAction}}" hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this" hx-indicator=".htmx-indicator">
         <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
         {{if eq .Kind "sign-up"}}
@@ -48,9 +51,12 @@
           {{end}}
         </div>
       {{end}}
+      {{end}}
+      {{if not .SSOSignInURL}}
       <p class="mt-4 text-sm text-base-content/70">
         {{if eq .Kind "sign-up"}}{{.Labels.already_account}} <a class="link link-primary" href="{{.SignInURL}}">{{.Labels.sign_in}}</a>{{else}}{{.Labels.need_account}} <a class="link link-primary" href="{{.SignUpURL}}">{{.Labels.create_account}}</a>{{end}}
       </p>
+      {{end}}
     </div>
   </div>
 {{end}}

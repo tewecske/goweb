@@ -38,6 +38,39 @@ func TestLoadAcceptsSafeProductionConfiguration(t *testing.T) {
 	}
 }
 
+func addSafeClientMode(values map[string]string) {
+	values[AuthModeEnv] = string(AuthModeClient)
+	values[SSOIssuerURLEnv] = "https://id.example.test"
+	values[SSOClientIDEnv] = "app-client"
+	values[SSOClientSecretEnv] = "client-secret-value"
+}
+
+func TestLoadAcceptsSafeProductionAuthModes(t *testing.T) {
+	client := safeProductionValues()
+	addSafeClientMode(client)
+	loaded, err := loadValues(client)
+	if err != nil {
+		t.Fatalf("Load(production client) error = %v, want nil", err)
+	}
+	if loaded.SSORedirectURL != "https://app.example.test/en/oauth/sso/callback" {
+		t.Fatalf("SSORedirectURL = %q, want the derived https callback", loaded.SSORedirectURL)
+	}
+
+	// The Hydra admin API is reached over a private network, so plain HTTP is
+	// accepted for the provider even in production.
+	provider := safeProductionValues()
+	provider[AuthModeEnv] = string(AuthModeProvider)
+	provider[HydraAdminURLEnv] = "http://hydra-admin.internal:4445"
+	provider[SSOIssuerURLEnv] = "https://id.example.test"
+	if _, err := loadValues(provider); err != nil {
+		t.Fatalf("Load(production provider) error = %v, want nil", err)
+	}
+	provider[SSOIssuerURLEnv] = "http://id.example.test"
+	if _, err := loadValues(provider); !errors.Is(err, ErrUnsafeProductionConfig) {
+		t.Fatalf("Load(production provider, http issuer) error = %v, want %v", err, ErrUnsafeProductionConfig)
+	}
+}
+
 func TestLoadRejectsUnsafeProductionConfiguration(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -79,6 +112,27 @@ func TestLoadRejectsUnsafeProductionConfiguration(t *testing.T) {
 				values[GoogleClientIDEnv] = "client-id"
 				values[GoogleClientSecretEnv] = "client-secret"
 				values[GoogleRedirectURLEnv] = "http://app.example.test/en/oauth/google/callback"
+			},
+		},
+		{
+			name: "plain-http sso issuer",
+			mutate: func(values map[string]string) {
+				addSafeClientMode(values)
+				values[SSOIssuerURLEnv] = "http://id.example.test"
+			},
+		},
+		{
+			name: "plain-http sso callback",
+			mutate: func(values map[string]string) {
+				addSafeClientMode(values)
+				values[SSORedirectURLEnv] = "http://app.example.test/en/oauth/sso/callback"
+			},
+		},
+		{
+			name: "plain-http sso account page",
+			mutate: func(values map[string]string) {
+				addSafeClientMode(values)
+				values[SSOAccountURLEnv] = "http://id.example.test/en/account/settings"
 			},
 		},
 	}

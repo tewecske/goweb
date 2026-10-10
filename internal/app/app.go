@@ -6,11 +6,15 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
+	hydraadapter "github.com/tewecske/goweb/internal/adapter/hydra"
 	mailadapter "github.com/tewecske/goweb/internal/adapter/mail"
 	oauthadapter "github.com/tewecske/goweb/internal/adapter/oauth"
+	oidcadapter "github.com/tewecske/goweb/internal/adapter/oidc"
 	"github.com/tewecske/goweb/internal/config"
+	"github.com/tewecske/goweb/internal/locale"
 	"github.com/tewecske/goweb/internal/service"
 	postgresstore "github.com/tewecske/goweb/internal/store/postgres"
 )
@@ -79,6 +83,63 @@ type Graph struct {
 	Usage                 *service.UsageQueue
 	UsageReportService    *service.UsageReportService
 	SuspiciousService     *service.SuspiciousAccountService
+	// SSOProvider is set only when GOWEB_AUTH_MODE=provider.
+	SSOProvider *service.SSOProviderService
+	// SSOClient is set only when GOWEB_AUTH_MODE=client.
+	SSOClient *service.SSOClientService
+}
+
+// newSSOClient builds a client app's OpenID Connect relying party and
+// sign-in use cases. It performs no network I/O; discovery happens on first use.
+func newSSOClient(appConfig config.Config, states service.OAuthStateRepository, identities service.OAuthIdentityRepository, users *postgresstore.UserRepository, sessions *service.SessionService, ssoSessions service.SSOClientSessionRepository) (*service.SSOClientService, error) {
+	relyingParty, err := oidcadapter.New(oidcadapter.Config{
+		Issuer:       appConfig.SSOIssuerURL,
+		ClientID:     appConfig.SSOClientID,
+		ClientSecret: appConfig.SSOClientSecret.Reveal(),
+		RedirectURL:  appConfig.SSORedirectURL,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("construct oidc client: %w", err)
+	}
+	// The issuer returns here after sign-out; it must match the registered
+	// post-logout redirect URI exactly.
+	signInPath, err := locale.Path(locale.Default, "/sign-in")
+	if err != nil {
+		return nil, fmt.Errorf("derive post-logout redirect: %w", err)
+	}
+	postLogoutURL := strings.TrimRight(appConfig.PublicURL.String(), "/") + signInPath
+	client, err := service.NewSSOClientService(service.SSOClientDependencies{
+		RelyingParty:  relyingParty,
+		States:        states,
+		Identities:    identities,
+		Users:         users,
+		Sessions:      sessions,
+		SSOSessions:   ssoSessions,
+		GuestUpgrades: users,
+		StateLifetime: service.DefaultOAuthStateLifetime,
+		PostLogoutURL: postLogoutURL,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("construct sso client service: %w", err)
+	}
+	return client, nil
+}
+
+// newSSOProvider builds the provider's Hydra admin client and use cases.
+func newSSOProvider(database *sql.DB, users service.UserRepository, appConfig config.Config) (*service.SSOProviderService, error) {
+	admin, err := hydraadapter.NewAdminClient(appConfig.HydraAdminURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("construct hydra admin client: %w", err)
+	}
+	sessions, err := postgresstore.NewSSOLoginSessionRepository(database)
+	if err != nil {
+		return nil, fmt.Errorf("construct sso login session repository: %w", err)
+	}
+	provider, err := service.NewSSOProviderService(admin, users, sessions, appConfig.SessionLifetime, appConfig.EmailConfirmationRequired)
+	if err != nil {
+		return nil, fmt.Errorf("construct sso provider service: %w", err)
+	}
+	return provider, nil
 }
 
 // New constructs the service graph over one migrated database. It performs no
@@ -89,6 +150,9 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	}
 	if appConfig.Environment == config.EnvironmentProduction && !appConfig.MailRelay.IsSet() {
 		return nil, ErrMailDeliveryNotConfigured
+	}
+	if appConfig.AuthMode == "" {
+		appConfig.AuthMode = config.AuthModeLocal
 	}
 	appConfig = withRetentionDefaults(appConfig)
 
@@ -165,6 +229,14 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct session service: %w", err)
 	}
+	var ssoProvider *service.SSOProviderService
+	if appConfig.AuthMode == config.AuthModeProvider {
+		ssoProvider, err = newSSOProvider(database, users, appConfig)
+		if err != nil {
+			return nil, err
+		}
+		sessionService.SetSSORevoker(ssoProvider)
+	}
 	passwordHasher, err := service.NewPasswordHasher(service.PasswordHashConfig{})
 	if err != nil {
 		return nil, fmt.Errorf("construct password hasher: %w", err)
@@ -227,6 +299,13 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	providers, err := newProviderRegistry(appConfig)
 	if err != nil {
 		return nil, err
+	}
+	var ssoClient *service.SSOClientService
+	if appConfig.AuthMode == config.AuthModeClient {
+		ssoClient, err = newSSOClient(appConfig, oauthStates, oauthIdentities, users, sessionService, sessionsRepository)
+		if err != nil {
+			return nil, err
+		}
 	}
 	oauth, err := service.NewOAuthSignInService(providers, oauthStates, oauthIdentities, users, sessionService, service.DefaultOAuthStateLifetime)
 	if err != nil {
@@ -374,6 +453,9 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		UsageRetention:            appConfig.UsageRetention,
 		MaintenanceInterval:       maintenanceWorker.Interval(),
 		TrustedProxy:              appConfig.TrustedProxy,
+		AuthMode:                  string(appConfig.AuthMode),
+		SSOIssuer:                 appConfig.SSOIssuerURL,
+		HydraAdmin:                appConfig.HydraAdminURL,
 	})
 
 	return &Graph{
@@ -407,6 +489,8 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		UsageReportService:    usageReportService,
 		Suspicious:            suspiciousRepository,
 		SuspiciousService:     suspiciousService,
+		SSOProvider:           ssoProvider,
+		SSOClient:             ssoClient,
 	}, nil
 }
 

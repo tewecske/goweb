@@ -1,0 +1,34 @@
+# Ory Hydra configuration for local development. See docs/sso-hydra-plan.md.
+#
+# Hydra stores no users and renders no pages: it redirects the browser to the
+# provider deployment's /sso/* routes. The public listen address, the issuer,
+# and the provider URLs come from compose.yaml, which derives them from the
+# SSO_DEV_* variables in .env (defaults: loopback only). Secrets and the
+# database DSN come from environment variables too.
+
+serve:
+  public:
+    port: 4444
+  admin:
+    # The admin API can sign anyone in. It stays on loopback even when the
+    # public API is reachable from other machines.
+    host: 127.0.0.1
+    port: 4445
+  cookies:
+    same_site_mode: Lax
+
+oidc:
+  subject_identifiers:
+    supported_types:
+      - public
+
+ttl:
+  login_consent_request: 30m
+  auth_code: 10m
+  access_token: 1h
+  id_token: 1h
+
+log:
+  level: info
+  format: json
+  leak_sensitive_values: false

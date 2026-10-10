@@ -391,6 +391,48 @@ func TestAdminAccountServiceDeleteRemovesAccountAndRecordsAudit(t *testing.T) {
 	}
 }
 
+// deleteOrderRevoker records whether the account still existed when its
+// sessions were revoked: deletion cascades away the SSO session records.
+type deleteOrderRevoker struct {
+	users           *userRepositoryStub
+	revokedUserID   int64
+	revokedBeforeDB bool
+	err             error
+}
+
+func (r *deleteOrderRevoker) RevokeUser(_ context.Context, userID int64) error {
+	r.revokedUserID = userID
+	r.revokedBeforeDB = r.users.deleteCalls == 0
+	return r.err
+}
+
+func TestAdminAccountServiceDeleteRevokesSessionsBeforeDeleting(t *testing.T) {
+	users := &userRepositoryStub{created: User{ID: 9}}
+	revoker := &deleteOrderRevoker{users: users}
+	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil, revoker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Delete(context.Background(), AdminActionContext{ActorID: 1}, 9, 0); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	if revoker.revokedUserID != 9 || !revoker.revokedBeforeDB {
+		t.Fatalf("revoked user %d before delete = %t, want 9 revoked first", revoker.revokedUserID, revoker.revokedBeforeDB)
+	}
+
+	failing := &userRepositoryStub{created: User{ID: 9}}
+	service, err = NewAdminAccountService(failing, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil, &deleteOrderRevoker{users: failing, err: ErrSSOUnavailable})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Delete(context.Background(), AdminActionContext{ActorID: 1}, 9, 0); !errors.Is(err, ErrSSOUnavailable) {
+		t.Fatalf("Delete() error = %v, want the revocation failure", err)
+	}
+	if failing.deleteCalls != 0 {
+		t.Fatal("account deleted although its sessions could not be revoked")
+	}
+}
+
 func TestAdminAccountServiceDeleteRefusesSelf(t *testing.T) {
 	users := &userRepositoryStub{created: User{ID: 9}}
 	service, err := NewAdminAccountService(users, &adminUserRepositoryStub{}, adminPasswordHasherStub{}, nil, nil)

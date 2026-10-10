@@ -2,7 +2,7 @@ services:
   postgres:
     image: postgres:17-alpine
     container_name: goweb-postgres
-    environment:
+    environment: &postgres-env
       POSTGRES_USER: ${POSTGRES_USER:-goweb}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-goweb}
       POSTGRES_DB: ${POSTGRES_DB:-goweb}
@@ -25,6 +25,90 @@ services:
       # SMTP for GOWEB_MAIL_RELAY=smtp://localhost:1025 and the web inbox.
       - "127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025"
       - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
+
+  # --- Single sign-on (docs/sso-hydra-plan.md); started by `make sso-up` ---
+
+  # Creates Hydra's own role and database, so Hydra never uses the
+  # application's superuser, and the goweb_client database used by
+  # `make run-client`. Safe to rerun; existing objects are kept.
+  sso-db-init:
+    image: postgres:17-alpine
+    profiles: ["sso"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *postgres-env
+      HYDRA_DB_PASSWORD: ${HYDRA_DB_PASSWORD:-hydra-dev-only-password}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        export PGPASSWORD="$$POSTGRES_PASSWORD"
+        psql -h postgres -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -v ON_ERROR_STOP=1 -v pw="$$HYDRA_DB_PASSWORD" <<'SQL'
+        SELECT 'CREATE ROLE hydra LOGIN' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'hydra') \gexec
+        ALTER ROLE hydra PASSWORD :'pw';
+        SELECT 'CREATE DATABASE hydra OWNER hydra' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'hydra') \gexec
+        SELECT format('CREATE DATABASE goweb_client OWNER %I', current_user) WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'goweb_client') \gexec
+        SQL
+
+  hydra-migrate:
+    image: oryd/hydra:v26.2.0
+    profiles: ["sso"]
+    depends_on:
+      sso-db-init:
+        condition: service_completed_successfully
+    # Host networking so the same loopback addresses work for Hydra, the
+    # browser, and back-channel calls to apps running on the host.
+    network_mode: host
+    environment: &hydra-env
+      DSN: postgres://hydra:${HYDRA_DB_PASSWORD:-hydra-dev-only-password}@127.0.0.1:${POSTGRES_PORT:-55432}/hydra?sslmode=disable
+    command: ["migrate", "sql", "up", "-e", "--yes"]
+
+  hydra:
+    image: oryd/hydra:v26.2.0
+    container_name: goweb-hydra
+    profiles: ["sso"]
+    depends_on:
+      hydra-migrate:
+        condition: service_completed_successfully
+    network_mode: host
+    environment:
+      <<: *hydra-env
+      # Development-only placeholders. Production secrets come from a secret
+      # manager and must never be committed.
+      SECRETS_SYSTEM: ${HYDRA_SECRETS_SYSTEM:-dev-only-hydra-system-secret-change-me}
+      SECRETS_COOKIE: ${HYDRA_SECRETS_COOKIE:-dev-only-hydra-cookie-secret-change-me}
+      # Browser-facing addresses, from the SSO_DEV_* variables in .env. The
+      # issuer must use port 4444; the admin API always stays on loopback.
+      SERVE_PUBLIC_HOST: ${SSO_DEV_BIND:-127.0.0.1}
+      URLS_SELF_ISSUER: ${SSO_DEV_ISSUER_URL:-http://127.0.0.1:4444}
+      URLS_LOGIN: ${SSO_DEV_PROVIDER_URL:-http://localhost:8080}/sso/login
+      URLS_CONSENT: ${SSO_DEV_PROVIDER_URL:-http://localhost:8080}/sso/consent
+      URLS_LOGOUT: ${SSO_DEV_PROVIDER_URL:-http://localhost:8080}/sso/logout
+      URLS_POST_LOGOUT_REDIRECT: ${SSO_DEV_PROVIDER_URL:-http://localhost:8080}/en/sign-in
+    # --dev allows the plain-HTTP loopback issuer; never use it in production.
+    command: ["serve", "all", "--dev", "--config", "/etc/hydra/hydra.yml"]
+    volumes:
+      - ./deploy/hydra/hydra.yml:/etc/hydra/hydra.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:4445/health/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # Hydra's outbound SSRF guard only allows loopback, RFC 1918, and link-local
+  # destinations, so it refuses a dev client on a Tailscale address
+  # (100.64.0.0/10) and has no setting to allow it. Hydra therefore sends the
+  # dev client's back-channel logout to this loopback relay, which forwards it
+  # to the client app (port 8081, the dev client's port).
+  sso-backchannel-relay:
+    image: alpine/socat:1.8.0.3
+    container_name: goweb-sso-backchannel-relay
+    profiles: ["sso"]
+    network_mode: host
+    command: ["TCP-LISTEN:4446,bind=127.0.0.1,fork,reuseaddr", "TCP:${SSO_DEV_BIND:-127.0.0.1}:8081"]
 
 volumes:
   goweb-postgres-data:

@@ -36,6 +36,20 @@ type CSRFTokenGenerator func() (string, error)
 type csrfConfig struct {
 	secure    bool
 	generator CSRFTokenGenerator
+	exempt    map[string]bool
+}
+
+// WithCSRFExemptPath exempts one exact path from the token check. Use it only
+// for server-to-server endpoints that authenticate every request themselves,
+// such as a signed back-channel logout token; browsers never receive a form
+// for them.
+func WithCSRFExemptPath(path string) CSRFOption {
+	return func(config *csrfConfig) {
+		if config.exempt == nil {
+			config.exempt = map[string]bool{}
+		}
+		config.exempt[path] = true
+	}
 }
 
 // CSRFOption configures CSRF middleware.
@@ -84,6 +98,10 @@ func CSRF(options ...CSRFOption) Middleware {
 					setCSRFCookie(writer, token, config.secure || request.TLS != nil)
 				}
 				withCSRFToken(next, writer, request, token)
+				return
+			}
+			if config.exempt[request.URL.Path] {
+				next.ServeHTTP(writer, request)
 				return
 			}
 			if err != nil || !validCSRFToken(token) || !requestHasCSRFToken(request, token) {

@@ -425,8 +425,13 @@ func (h *adminHandler) detailView(language locale.Code, detail service.AdminUser
 	view.ConfirmationLinkActive = detail.ConfirmationLinkActive
 	view.ConfirmationLinkExpiry = formatAdminTime(detail.ConfirmationLinkExpiry)
 	base := "/admin/users/" + strconv.FormatInt(account.ID, 10)
-	view.ConfirmURL = localizedPath(language, base+"/confirm-email")
-	view.SendConfirmationURL = localizedPath(language, base+"/send-confirmation")
+	// In client mode the issuer owns email confirmation and identities, so
+	// those controls are left out (their routes are not registered).
+	clientMode := h.dependencies.SSOClient != nil
+	if !clientMode {
+		view.ConfirmURL = localizedPath(language, base+"/confirm-email")
+		view.SendConfirmationURL = localizedPath(language, base+"/send-confirmation")
+	}
 	if account.Email != nil {
 		view.Email = *account.Email
 	}
@@ -459,7 +464,7 @@ func (h *adminHandler) detailView(language locale.Code, detail service.AdminUser
 			ID:        identity.ID,
 			Provider:  identity.Provider,
 			Label:     identityLabelFor(identity),
-			Removable: true,
+			Removable: !clientMode,
 			RemoveURL: localizedPath(language, "/admin/users/"+strconv.FormatInt(account.ID, 10)+"/identities/"+strconv.FormatInt(identity.ID, 10)+"/remove"),
 		})
 	}
@@ -759,7 +764,7 @@ func (h *adminHandler) renderUsers(writer http.ResponseWriter, request *http.Req
 		Total:           render.page.Total,
 		Pages:           render.page.Pages,
 		Mode:            render.mode,
-		CreateURL:       localizedPath(language, "/admin/users/new"),
+		CreateURL:       h.createAccountURL(language),
 		CreateLabel:     h.t(language, "admin.accounts.create"),
 		Form:            render.accountForm,
 		SortURLs: map[string]string{
@@ -1158,6 +1163,9 @@ func (h *adminHandler) labels(language locale.Code) map[string]string {
 		"admin_system_config_interval":         h.t(language, "admin.system.config.maintenance_interval"),
 		"admin_system_config_rate_limit":       h.t(language, "admin.system.config.rate_limit"),
 		"admin_system_config_trusted_proxy":    h.t(language, "admin.system.config.trusted_proxy"),
+		"admin_system_config_auth_mode":        h.t(language, "admin.system.config.auth_mode"),
+		"admin_system_config_sso_issuer":       h.t(language, "admin.system.config.sso_issuer"),
+		"admin_system_config_hydra_admin":      h.t(language, "admin.system.config.hydra_admin"),
 		"admin_system_config_not_configured":   h.t(language, "admin.system.config.not_configured"),
 		"admin_system_yes":                     h.t(language, "admin.system.yes"),
 		"admin_system_no":                      h.t(language, "admin.system.no"),
@@ -1646,6 +1654,9 @@ func adminSystemConfigView(configuration service.SystemConfiguration) *AdminSyst
 		MaintenanceInterval:       configuration.MaintenanceInterval.String(),
 		AuthRateLimit:             fmt.Sprintf("%d / %s", configuration.AuthRateLimit, configuration.AuthRateLimitWindow),
 		TrustedProxy:              configuration.TrustedProxy,
+		AuthMode:                  configuration.AuthMode,
+		SSOIssuer:                 configuration.SSOIssuer,
+		HydraAdmin:                configuration.HydraAdmin,
 	}
 }
 
@@ -1758,4 +1769,12 @@ func adminActorEmail(user service.User) string {
 		return *user.Email
 	}
 	return ""
+}
+
+// createAccountURL is empty in client mode: accounts come from the issuer.
+func (h *adminHandler) createAccountURL(language locale.Code) string {
+	if h.dependencies.SSOClient != nil {
+		return ""
+	}
+	return localizedPath(language, "/admin/users/new")
 }

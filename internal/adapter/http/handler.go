@@ -60,21 +60,14 @@ func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware
 	settings := newSettingsHandler(renderer, dependencies)
 	groups := newGroupHandler(renderer, dependencies)
 	admin := newAdminHandler(renderer, dependencies)
+	clientMode := dependencies.SSOClient != nil
 	for _, language := range locale.Codes() {
 		prefix := "/" + string(language)
-		mux.HandleFunc("GET "+prefix+"/sign-up", auth.signUp)
-		mux.HandleFunc("POST "+prefix+"/sign-up", auth.signUp)
-		mux.HandleFunc("GET "+prefix+"/sign-in", auth.signIn)
-		mux.HandleFunc("POST "+prefix+"/sign-in", auth.signIn)
 		mux.HandleFunc("GET "+prefix+"/home", auth.home)
 		mux.HandleFunc("GET "+prefix+"/about", about(renderer, auth))
 		mux.HandleFunc("POST "+prefix+"/sign-out", auth.signOut)
 		mux.HandleFunc("GET "+prefix+"/account/settings", settings.page)
-		mux.HandleFunc("POST "+prefix+"/account/settings/profile", settings.updateProfile)
-		mux.HandleFunc("POST "+prefix+"/account/settings/password", settings.updatePassword)
 		mux.HandleFunc("POST "+prefix+"/account/settings/locale", settings.updateLocale)
-		mux.HandleFunc("POST "+prefix+"/account/settings/identity", settings.unlinkIdentity)
-		mux.HandleFunc("POST "+prefix+"/account/settings/identity/link", settings.linkIdentity)
 		mux.HandleFunc("POST "+prefix+"/account/theme", settings.updateTheme)
 		mux.HandleFunc("GET "+prefix+"/groups", groups.list)
 		mux.HandleFunc("POST "+prefix+"/groups", groups.create)
@@ -87,16 +80,11 @@ func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware
 		mux.HandleFunc("POST "+prefix+"/admin/ratelimits/clear", admin.clearRateLimit)
 		mux.HandleFunc("GET "+prefix+"/admin/usage", admin.usage)
 		mux.HandleFunc("GET "+prefix+"/admin/suspicious", admin.suspicious)
-		mux.HandleFunc("GET "+prefix+"/admin/users/new", admin.createAccount)
-		mux.HandleFunc("POST "+prefix+"/admin/users/new", admin.createAccount)
 		mux.HandleFunc("GET "+prefix+"/admin/users/{id}", admin.detail)
 		mux.HandleFunc("GET "+prefix+"/admin/users/{id}/edit", admin.editAccount)
 		mux.HandleFunc("POST "+prefix+"/admin/users/{id}/edit", admin.editAccount)
 		mux.HandleFunc("POST "+prefix+"/admin/users/{id}/delete", admin.deleteAccount)
 		mux.HandleFunc("POST "+prefix+"/admin/users/{id}/sessions/revoke", admin.revokeSessions)
-		mux.HandleFunc("POST "+prefix+"/admin/users/{id}/confirm-email", admin.confirmEmailAccount)
-		mux.HandleFunc("POST "+prefix+"/admin/users/{id}/send-confirmation", admin.sendConfirmation)
-		mux.HandleFunc("POST "+prefix+"/admin/users/{id}/identities/{identityID}/remove", admin.removeIdentity)
 		mux.HandleFunc("POST "+prefix+"/admin/users/{id}/lockout/clear", admin.clearLockout)
 		mux.HandleFunc("GET "+prefix+"/groups/join", groups.join)
 		mux.HandleFunc("POST "+prefix+"/groups/join", groups.join)
@@ -106,6 +94,33 @@ func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware
 		mux.HandleFunc("POST "+prefix+"/groups/{id}/leave", groups.leave)
 		mux.HandleFunc("POST "+prefix+"/groups/{id}/members/{memberID}/role", groups.changeRole)
 		mux.HandleFunc("POST "+prefix+"/groups/{id}/members/{memberID}/remove", groups.removeMember)
+		mux.HandleFunc("GET "+prefix+"/guest/write", auth.guestWrite)
+		mux.HandleFunc("POST "+prefix+"/guest/write", auth.guestWrite)
+		mux.HandleFunc("GET "+prefix+"/guest/transfer", auth.guestTransfer)
+		mux.HandleFunc("POST "+prefix+"/guest/transfer", auth.guestTransfer)
+		if clientMode {
+			// Credentials live at the single sign-on provider; this app only
+			// starts and finishes the issuer's sign-in flow.
+			mux.HandleFunc("GET "+prefix+"/sign-in", auth.ssoSignIn)
+			mux.HandleFunc("GET "+prefix+"/oauth/sso", auth.ssoStart)
+			mux.HandleFunc("GET "+prefix+"/oauth/sso/callback", auth.ssoCallback)
+			mux.HandleFunc("GET "+prefix+"/guest/upgrade", auth.ssoGuestUpgrade)
+			mux.HandleFunc("POST "+prefix+"/guest/upgrade", auth.ssoGuestUpgrade)
+			continue
+		}
+		mux.HandleFunc("GET "+prefix+"/sign-up", auth.signUp)
+		mux.HandleFunc("POST "+prefix+"/sign-up", auth.signUp)
+		mux.HandleFunc("GET "+prefix+"/sign-in", auth.signIn)
+		mux.HandleFunc("POST "+prefix+"/sign-in", auth.signIn)
+		mux.HandleFunc("POST "+prefix+"/account/settings/profile", settings.updateProfile)
+		mux.HandleFunc("POST "+prefix+"/account/settings/password", settings.updatePassword)
+		mux.HandleFunc("POST "+prefix+"/account/settings/identity", settings.unlinkIdentity)
+		mux.HandleFunc("POST "+prefix+"/account/settings/identity/link", settings.linkIdentity)
+		mux.HandleFunc("GET "+prefix+"/admin/users/new", admin.createAccount)
+		mux.HandleFunc("POST "+prefix+"/admin/users/new", admin.createAccount)
+		mux.HandleFunc("POST "+prefix+"/admin/users/{id}/confirm-email", admin.confirmEmailAccount)
+		mux.HandleFunc("POST "+prefix+"/admin/users/{id}/send-confirmation", admin.sendConfirmation)
+		mux.HandleFunc("POST "+prefix+"/admin/users/{id}/identities/{identityID}/remove", admin.removeIdentity)
 		mux.HandleFunc("GET "+prefix+"/resend-confirmation", auth.resendConfirmation)
 		mux.HandleFunc("POST "+prefix+"/resend-confirmation", auth.resendConfirmation)
 		mux.HandleFunc("GET "+prefix+"/forgot-password", auth.forgotPassword)
@@ -118,10 +133,6 @@ func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware
 		mux.HandleFunc("POST "+prefix+"/reset-password", auth.resetPassword)
 		mux.HandleFunc("GET "+prefix+"/password-reset", auth.resetPassword)
 		mux.HandleFunc("POST "+prefix+"/password-reset", auth.resetPassword)
-		mux.HandleFunc("GET "+prefix+"/guest/write", auth.guestWrite)
-		mux.HandleFunc("POST "+prefix+"/guest/write", auth.guestWrite)
-		mux.HandleFunc("GET "+prefix+"/guest/transfer", auth.guestTransfer)
-		mux.HandleFunc("POST "+prefix+"/guest/transfer", auth.guestTransfer)
 		mux.HandleFunc("GET "+prefix+"/guest/upgrade", auth.guestUpgrade)
 		mux.HandleFunc("POST "+prefix+"/guest/upgrade", auth.guestUpgrade)
 		if dependencies.OAuthProviders != nil {
@@ -136,8 +147,18 @@ func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware
 			}
 		}
 	}
-	mux.HandleFunc("GET /confirm-email", auth.confirmEmail)
-	mux.HandleFunc("GET /reset-password", auth.resetPassword)
+	if dependencies.SSOProvider != nil {
+		// Fixed, non-localized URLs registered in Hydra's configuration.
+		mux.HandleFunc("GET /sso/login", auth.ssoLogin)
+		mux.HandleFunc("GET /sso/consent", auth.ssoConsent)
+		mux.HandleFunc("GET /sso/logout", auth.ssoLogout)
+	}
+	if clientMode {
+		mux.HandleFunc("POST "+ssoBackChannelLogoutPath, auth.ssoBackChannelLogout)
+	} else {
+		mux.HandleFunc("GET /confirm-email", auth.confirmEmail)
+		mux.HandleFunc("GET /reset-password", auth.resetPassword)
+	}
 	mux.Handle("GET /static/{path...}", http.StripPrefix("/static/", http.FileServer(http.FS(staticassets.Files()))))
 	mux.HandleFunc("GET /healthz", health)
 
@@ -163,7 +184,13 @@ func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware
 	// Origin checks) before the CSRF token check. This also blocks sibling
 	// subdomains, which SameSite treats as same-site.
 	shared = append(shared, http.NewCrossOriginProtection().Handler)
-	shared = append(shared, middleware.CSRF(middleware.WithCSRFSecure(dependencies.SessionCookie.Secure())))
+	csrfOptions := []middleware.CSRFOption{middleware.WithCSRFSecure(dependencies.SessionCookie.Secure())}
+	if clientMode {
+		// Hydra posts signed logout tokens server to server; the token
+		// signature, not a browser token, authenticates the request.
+		csrfOptions = append(csrfOptions, middleware.WithCSRFExemptPath(ssoBackChannelLogoutPath))
+	}
+	shared = append(shared, middleware.CSRF(csrfOptions...))
 	if requestLogger != nil {
 		shared = append(shared, middleware.Log(requestLogger))
 	}
@@ -247,6 +274,10 @@ func home(renderer *PageRenderer, auth *authHandler) http.HandlerFunc {
 // applySessionState fills the shared header state so public pages reflect the
 // visitor's session instead of always advertising anonymous navigation.
 func applySessionState(renderer *PageRenderer, auth *authHandler, request *http.Request, language locale.Code, page *PageData) {
+	if auth.dependencies.SSOClient != nil {
+		// Accounts are created at the single sign-on provider.
+		page.SignUpURL = ""
+	}
 	if user, ok := auth.currentUser(request); ok {
 		page.Account = settingsAccountMenu(language, user)
 		page.Navigation = primaryNavigation(renderer, language, true)

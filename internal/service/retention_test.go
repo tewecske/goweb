@@ -20,7 +20,7 @@ func TestNewRetentionServiceValidatesConfig(t *testing.T) {
 }
 
 func TestRetentionCleanupTokensUsesSingleCurrentTime(t *testing.T) {
-	repo := &retentionRepositoryStub{counts: []int{2, 3, 1}}
+	repo := &retentionRepositoryStub{counts: []int{2, 3, 1, 4}}
 	service, err := NewRetentionService(repo, time.Hour, 24*time.Hour)
 	if err != nil {
 		t.Fatal(err)
@@ -31,8 +31,12 @@ func TestRetentionCleanupTokensUsesSingleCurrentTime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CleanupTokens() error = %v", err)
 	}
-	if removed != 6 {
-		t.Fatalf("CleanupTokens() removed = %d, want 6", removed)
+	if removed != 10 {
+		t.Fatalf("CleanupTokens() removed = %d, want 10", removed)
+	}
+	// Confirmation tokens, reset tokens, OAuth states, and SSO session IDs.
+	if len(repo.tokenCutoffs) != 4 {
+		t.Fatalf("token cleanups = %d, want 4", len(repo.tokenCutoffs))
 	}
 	for index, cutoff := range repo.tokenCutoffs {
 		if cutoff != 50_000 {
@@ -136,6 +140,11 @@ func (r *retentionRepositoryStub) DeleteExpiredPasswordResetTokens(_ context.Con
 }
 
 func (r *retentionRepositoryStub) DeleteExpiredOAuthStates(_ context.Context, cutoff int64) (int, error) {
+	r.tokenCutoffs = append(r.tokenCutoffs, cutoff)
+	return r.next()
+}
+
+func (r *retentionRepositoryStub) DeleteExpiredSSOLoginSessions(_ context.Context, cutoff int64) (int, error) {
 	r.tokenCutoffs = append(r.tokenCutoffs, cutoff)
 	return r.next()
 }

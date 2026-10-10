@@ -37,24 +37,26 @@ const (
 
 // PageData contains escaped, server-owned data for a full HTML document.
 type PageData struct {
-	Language          string
-	Title             string
-	Heading           string
-	Kind              string
-	Message           string
-	Description       string
-	CSRFToken         string
-	Form              FormData
-	FormAction        string
-	FormMethod        string
-	SubmitLabel       string
-	Template          string
-	FragmentTemplate  string
-	Navigation        []NavigationItem
-	Languages         []LanguageOption
-	Account           *AccountMenu
-	SignInURL         string
-	SignUpURL         string
+	Language         string
+	Title            string
+	Heading          string
+	Kind             string
+	Message          string
+	Description      string
+	CSRFToken        string
+	Form             FormData
+	FormAction       string
+	FormMethod       string
+	SubmitLabel      string
+	Template         string
+	FragmentTemplate string
+	Navigation       []NavigationItem
+	Languages        []LanguageOption
+	Account          *AccountMenu
+	SignInURL        string
+	SignUpURL        string
+	// SSOSignInURL replaces the sign-in form with one button in client mode.
+	SSOSignInURL      string
 	OAuthProviders    []OAuthProviderView
 	GuestBanner       bool
 	GuestOwned        bool
@@ -234,6 +236,9 @@ type AdminSystemConfigView struct {
 	MaintenanceInterval       string
 	AuthRateLimit             string
 	TrustedProxy              string
+	AuthMode                  string
+	SSOIssuer                 string
+	HydraAdmin                string
 }
 
 // AdminMaintenanceJobView is one background job's retained last-run state.
@@ -454,6 +459,11 @@ type GroupMemberView struct {
 
 // SettingsView contains server-owned account settings data for rendering.
 type SettingsView struct {
+	// SSOManaged hides credential and identity controls in client mode,
+	// where the issuer owns them; AccountURL links to the issuer's page.
+	SSOManaged     bool
+	AccountURL     string
+	Email          string
 	Username       string
 	DisplayName    string
 	HasPassword    bool

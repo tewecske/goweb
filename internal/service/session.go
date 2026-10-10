@@ -36,10 +36,26 @@ var (
 	ErrSessionIDGeneration = errors.New("service: session id generation failed")
 )
 
+// SSOSessionRevoker ends the single sign-on sessions held for an account.
+type SSOSessionRevoker interface {
+	RevokeUser(context.Context, int64) error
+}
+
 // SessionService owns session lifecycle rules at the application boundary.
 type SessionService struct {
 	sessions SessionRepository
 	lifetime time.Duration
+	sso      SSOSessionRevoker
+}
+
+// SetSSORevoker makes RevokeUser also end single sign-on sessions, so every
+// path that revokes an account's sessions (administrator revocation, password
+// change, password reset) reaches client apps too. Call it during composition,
+// before serving requests.
+func (s *SessionService) SetSSORevoker(revoker SSOSessionRevoker) {
+	if s != nil {
+		s.sso = revoker
+	}
 }
 
 // NewSessionService constructs session operations with a fixed lifetime.
@@ -55,6 +71,22 @@ func NewSessionService(sessions SessionRepository, lifetime time.Duration) (*Ses
 
 // Create creates and persists one opaque session for userID.
 func (s *SessionService) Create(ctx context.Context, userID int64) (Session, error) {
+	return s.create(ctx, userID, "", "")
+}
+
+// CreateSSO creates a session bound to the Hydra login session sid, keeping
+// idToken as the hint Hydra requires for sign-out. The returned session never
+// carries the ID token.
+func (s *SessionService) CreateSSO(ctx context.Context, userID int64, sid, idToken string) (Session, error) {
+	if strings.TrimSpace(sid) == "" || strings.TrimSpace(idToken) == "" {
+		return Session{}, ErrInvalidSession
+	}
+	session, err := s.create(ctx, userID, sid, idToken)
+	session.SSOIDToken = ""
+	return session, err
+}
+
+func (s *SessionService) create(ctx context.Context, userID int64, sid, idToken string) (Session, error) {
 	if err := validateSessionService(s, ctx); err != nil {
 		return Session{}, err
 	}
@@ -72,10 +104,12 @@ func (s *SessionService) Create(ctx context.Context, userID int64) (Session, err
 		return Session{}, ErrInvalidSessionLifetime
 	}
 	session := Session{
-		ID:        id,
-		UserID:    userID,
-		CreatedAt: createdAt,
-		ExpiresAt: expiresAt,
+		ID:           id,
+		UserID:       userID,
+		CreatedAt:    createdAt,
+		ExpiresAt:    expiresAt,
+		SSOSessionID: sid,
+		SSOIDToken:   idToken,
 	}
 	if err := s.sessions.CreateSession(ctx, session); err != nil {
 		return Session{}, fmt.Errorf("create session: %w", err)
@@ -154,6 +188,11 @@ func (s *SessionService) RevokeUser(ctx context.Context, userID int64) error {
 	}
 	if err := s.sessions.RevokeUserSessions(ctx, userID); err != nil {
 		return fmt.Errorf("revoke user sessions: %w", err)
+	}
+	if s.sso != nil {
+		if err := s.sso.RevokeUser(ctx, userID); err != nil {
+			return fmt.Errorf("revoke single sign-on sessions: %w", err)
+		}
 	}
 	return nil
 }

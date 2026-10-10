@@ -452,3 +452,149 @@ func TestLoadValidatesTrustedProxy(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadAuthMode(t *testing.T) {
+	const databaseURL = "postgres://user:password@example.test/app"
+	tests := []struct {
+		name   string
+		values map[string]string
+		want   Config
+	}{
+		{
+			name:   "defaults to local",
+			values: map[string]string{},
+			want:   Config{AuthMode: AuthModeLocal},
+		},
+		{
+			name: "provider",
+			values: map[string]string{
+				AuthModeEnv:      " Provider ",
+				DatabaseURLEnv:   databaseURL,
+				HydraAdminURLEnv: "http://hydra-admin.internal:4445",
+				SSOIssuerURLEnv:  "http://127.0.0.1:4444",
+			},
+			want: Config{AuthMode: AuthModeProvider, HydraAdminURL: "http://hydra-admin.internal:4445", SSOIssuerURL: "http://127.0.0.1:4444"},
+		},
+		{
+			name: "client derives the callback from the public URL",
+			values: map[string]string{
+				AuthModeEnv:        "client",
+				DatabaseURLEnv:     databaseURL,
+				PublicURLEnv:       "http://127.0.0.1:8081/",
+				SSOIssuerURLEnv:    "http://127.0.0.1:4444",
+				SSOClientIDEnv:     "app-client",
+				SSOClientSecretEnv: "client-secret",
+			},
+			want: Config{
+				AuthMode:       AuthModeClient,
+				SSOIssuerURL:   "http://127.0.0.1:4444",
+				SSOClientID:    "app-client",
+				SSORedirectURL: "http://127.0.0.1:8081/en/oauth/sso/callback",
+			},
+		},
+		{
+			name: "client keeps explicit callback and account page",
+			values: map[string]string{
+				AuthModeEnv:        "client",
+				DatabaseURLEnv:     databaseURL,
+				SSOIssuerURLEnv:    "https://id.example.test",
+				SSOClientIDEnv:     "app-client",
+				SSOClientSecretEnv: "client-secret",
+				SSORedirectURLEnv:  "https://app.example.test/hu/oauth/sso/callback",
+				SSOAccountURLEnv:   "https://accounts.example.test/en/account/settings",
+			},
+			want: Config{
+				AuthMode:       AuthModeClient,
+				SSOIssuerURL:   "https://id.example.test",
+				SSOClientID:    "app-client",
+				SSORedirectURL: "https://app.example.test/hu/oauth/sso/callback",
+				SSOAccountURL:  "https://accounts.example.test/en/account/settings",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			loaded, err := loadValues(test.values)
+			if err != nil {
+				t.Fatalf("Load() error = %v, want nil", err)
+			}
+			got := Config{
+				AuthMode:       loaded.AuthMode,
+				HydraAdminURL:  loaded.HydraAdminURL,
+				SSOIssuerURL:   loaded.SSOIssuerURL,
+				SSOClientID:    loaded.SSOClientID,
+				SSORedirectURL: loaded.SSORedirectURL,
+				SSOAccountURL:  loaded.SSOAccountURL,
+			}
+			if got != test.want {
+				t.Fatalf("auth settings = %+v, want %+v", got, test.want)
+			}
+			wantSecret := test.values[SSOClientSecretEnv]
+			if loaded.SSOClientSecret.Reveal() != wantSecret {
+				t.Fatalf("SSOClientSecret set = %t, want %t", loaded.SSOClientSecret.IsSet(), wantSecret != "")
+			}
+		})
+	}
+}
+
+func TestLoadRejectsInvalidAuthMode(t *testing.T) {
+	const databaseURL = "postgres://user:password@example.test/app"
+	client := func(overrides map[string]string) map[string]string {
+		values := map[string]string{
+			AuthModeEnv:        "client",
+			DatabaseURLEnv:     databaseURL,
+			SSOIssuerURLEnv:    "https://id.example.test",
+			SSOClientIDEnv:     "app-client",
+			SSOClientSecretEnv: "client-secret-value",
+		}
+		for name, value := range overrides {
+			if value == "" {
+				delete(values, name)
+				continue
+			}
+			values[name] = value
+		}
+		return values
+	}
+	tests := []struct {
+		name   string
+		values map[string]string
+	}{
+		{name: "unknown mode", values: map[string]string{AuthModeEnv: "sso"}},
+		{name: "provider without database", values: map[string]string{AuthModeEnv: "provider", HydraAdminURLEnv: "http://127.0.0.1:4445", SSOIssuerURLEnv: "http://127.0.0.1:4444"}},
+		{name: "provider without hydra admin", values: map[string]string{AuthModeEnv: "provider", DatabaseURLEnv: databaseURL, SSOIssuerURLEnv: "http://127.0.0.1:4444"}},
+		{name: "provider without issuer", values: map[string]string{AuthModeEnv: "provider", DatabaseURLEnv: databaseURL, HydraAdminURLEnv: "http://127.0.0.1:4445"}},
+		{name: "provider hydra admin with credentials", values: map[string]string{AuthModeEnv: "provider", DatabaseURLEnv: databaseURL, HydraAdminURLEnv: "http://admin:pw@127.0.0.1:4445", SSOIssuerURLEnv: "http://127.0.0.1:4444"}},
+		{name: "provider issuer with query", values: map[string]string{AuthModeEnv: "provider", DatabaseURLEnv: databaseURL, HydraAdminURLEnv: "http://127.0.0.1:4445", SSOIssuerURLEnv: "http://127.0.0.1:4444/?x=1"}},
+		{name: "provider with client settings", values: map[string]string{AuthModeEnv: "provider", DatabaseURLEnv: databaseURL, HydraAdminURLEnv: "http://127.0.0.1:4445", SSOIssuerURLEnv: "http://127.0.0.1:4444", SSOClientIDEnv: "app-client"}},
+		{name: "local with issuer", values: map[string]string{SSOIssuerURLEnv: "https://id.example.test"}},
+		{name: "local with client id", values: map[string]string{SSOClientIDEnv: "app-client"}},
+		{name: "local with client secret", values: map[string]string{SSOClientSecretEnv: "client-secret-value"}},
+		{name: "local with hydra admin", values: map[string]string{HydraAdminURLEnv: "http://127.0.0.1:4445"}},
+		{name: "client without database", values: client(map[string]string{DatabaseURLEnv: ""})},
+		{name: "client without secret", values: client(map[string]string{SSOClientSecretEnv: ""})},
+		{name: "client without client id", values: client(map[string]string{SSOClientIDEnv: ""})},
+		{name: "client without issuer", values: client(map[string]string{SSOIssuerURLEnv: ""})},
+		{name: "client with hydra admin", values: client(map[string]string{HydraAdminURLEnv: "http://127.0.0.1:4445"})},
+		{name: "client with google sign-in", values: client(map[string]string{GoogleClientIDEnv: "google-id", GoogleClientSecretEnv: "google-secret"})},
+		{name: "client issuer with query", values: client(map[string]string{SSOIssuerURLEnv: "https://id.example.test/?realm=x"})},
+		{name: "client relative redirect", values: client(map[string]string{SSORedirectURLEnv: "/en/oauth/sso/callback"})},
+		{name: "client non-http account page", values: client(map[string]string{SSOAccountURLEnv: "ftp://accounts.example.test"})},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			loaded, err := loadValues(test.values)
+			if !errors.Is(err, ErrInvalidAuthMode) {
+				t.Fatalf("Load() error = %v, want errors.Is(_, %v)", err, ErrInvalidAuthMode)
+			}
+			if loaded != (Config{}) {
+				t.Fatal("Load() returned a non-zero config for an invalid auth mode")
+			}
+			for _, secret := range []string{"client-secret-value", "pw@", "password"} {
+				if strings.Contains(err.Error(), secret) {
+					t.Fatalf("auth mode error leaked %q: %v", secret, err)
+				}
+			}
+		})
+	}
+}

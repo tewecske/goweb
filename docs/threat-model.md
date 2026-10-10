@@ -21,7 +21,7 @@ Assets to protect:
 - OAuth flow state and external provider subjects.
 - Administrator audit history and sign-in history.
 - Deployment secrets: database URL, session secret, bootstrap administrator
-  password, mail relay.
+  password, mail relay, single sign-on client secret.
 - Operational data: usage events, request IDs, trace IDs.
 
 ## Trust boundaries
@@ -35,6 +35,10 @@ Assets to protect:
 | Services → mail relay | Message content | Plain-text messages; tokens may appear in the message body but never in logs, traces, metrics, or diagnostics |
 | Services → external providers | OAuth redirect and state | Top-level browser navigation; single-use server-side state; provider failure returns to a readable sign-in/settings state |
 | Operators → administrator surface | Administrative authority | Shared admin authorization guard, per-action audit records mirrored to a separate security log stream with actor and target IDs; privilege grants, revocations, and password resets have their own action codes; site administrators' changes to groups they do not administer are audited; a record that cannot be stored is still reported to the security stream as failed |
+| Hydra → provider `/sso/*` (`GOWEB_AUTH_MODE=provider`) | Browser redirect carrying a login, consent, or logout challenge | Challenge shape and size validated; every challenge is resolved through the Hydra admin API, never trusted from the query string; ineligible accounts (deleted, guest, unconfirmed when confirmation is required) are rejected at login and consent; expired or handled challenges return to sign-in with a generic alert |
+| Provider → Hydra admin API | Login decisions, claims, revocation | Private network only (the admin API can sign anyone in); 10 s timeout, 1 MiB response cap; Hydra redirect targets must be absolute http(s); errors never include response bodies, challenges, subjects, or session IDs |
+| Browser → client `/{language}/oauth/sso/callback` (`GOWEB_AUTH_MODE=client`) | Authorization code and state | Single-use hashed state bound to the starting browser by the `HttpOnly` state cookie; PKCE S256; the code is redeemed server to server with `client_secret_basic`; the ID token is verified (RS256 only, key by `kid` from the issuer's JWKS, exact `iss`, `aud`/`azp`, `exp`/`iat` with one minute of skew, no `events`) before any account is touched |
+| Hydra → client `POST /oauth/sso/backchannel-logout` | Signed logout token | Exempt from the browser CSRF token (server to server) but authenticated by the token: RS256 signature, exact `iss`, `aud`, `iat` within five minutes, `jti`, the back-channel `events` member, `sid`, and no `nonce` (Back-Channel Logout 1.0 §2.6); it only revokes sessions bound to that `sid` |
 | Application → logs/traces/usage | Diagnostic output | Stable low-cardinality fields; no passwords, hashes, sessions, tokens, provider subjects, query strings, or credentials |
 
 ## Bearer credentials
@@ -50,6 +54,11 @@ Assets to protect:
 | OAuth state | 32-byte random state stored as its SHA-256 digest in `oauth_states`, mirrored in the `goweb_oauth_state` browser cookie | Single use, expiring | Action allowlist, atomic consumption with a single winner; the callback must present the matching `HttpOnly` cookie from the browser that started the flow; a link completes only for the signed-in account that started it; a per-state PKCE S256 code verifier is required to redeem the authorization code |
 | Password hash | Argon2id encoded hash in `users.password_hash` | Stored indefinitely for the account | Never returned or logged; stripped from public user values |
 | Provider subject | `oauth_identities` unique `(provider, subject)` | Stored with the linked account | Never rendered or logged; removed on unlink or account deletion |
+| SSO login challenge | Hydra challenge (about 1.3 KB, encrypted by Hydra) in the `goweb_login_challenge` cookie while the visitor signs in at the provider | 30 minutes or until any sign-in completes | `HttpOnly`, `SameSite=Lax` (Hydra redirects cross-site), `Secure` whenever session cookies are; cleared on use; only completes the flow for the account that just signed in |
+| SSO session ID (`sid`) | Hydra login session ID in `sso_login_sessions`, per account | Until logout, revocation, or the remembered-session lifetime | Not a credential on its own (using it needs the private admin API); never rendered or logged; cascades with the account; expired rows removed by token retention |
+| Client ID token hint | ID token stored in `sessions.sso_id_token` of a client-mode session | Until the session row is removed | Never accepted as authentication by this app; read only to build the issuer logout URL; never rendered or logged |
+| Client SSO binding (`sso_sid`) | Hydra session ID on a client-mode session | Session lifetime | Identifier only; lets a verified logout token revoke exactly those sessions |
+| SSO client secret | `GOWEB_SSO_CLIENT_SECRET` (`config.Secret`) | Process lifetime | Sent only to the issuer's token endpoint; redacted from configuration and client diagnostics |
 | Deployment secrets | `config.Secret` values from environment | Process lifetime | Redacted from formatting and JSON; production startup rejects unsafe configuration |
 
 Additional sources of authority: server-generated request IDs, single-use OAuth
@@ -145,6 +154,11 @@ state, and revision-checked writes. None are trusted from the client.
 | Administrator action repudiation | Admin surface | Per-action audit records with actor, target, time, origin, mirrored to security stream | Audit store compromise |
 | Database compromise | Services → PostgreSQL | Least-privilege DB access, encrypted backups, parameterized queries; sessions, confirmation and reset tokens, and OAuth state stored only as SHA-256 digests | Full-database access exposes password hashes and guest transfer codes |
 | Provider compromise | Services → provider | Top-level navigation, single-use state, readable failure recovery | Provider-side account takeover |
+| SSO session outliving revocation | Provider → Hydra → client apps | `SessionService.RevokeUser` (admin revocation, password change, password reset) and account deletion revoke every recorded Hydra `sid` (back-channel logout) and the account's consent (tokens); provider sign-out goes through Hydra's logout endpoint | Hydra gives up after 3 back-channel attempts; a client that was down keeps its local session until expiry |
+| Forged or replayed ID or logout tokens | Issuer → client | Signature, issuer, audience, and time checks; tokens of one type are rejected as the other (`events` claim); unknown keys refresh the JWKS at most every 30 seconds | A replayed logout token only repeats an idempotent revocation |
+| Guest upgrade hijack | Browser → client guest upgrade | Starting is a CSRF-protected POST by a signed-in guest; the state is bound to that guest and completes only when the callback's browser is still signed in as it; an identity that already has an account, or an email another account holds, is refused and the guest is left untouched; conversion, identity link, and transfer-code revocation commit together; every other guest session is revoked | Accounts are never merged, so a visitor who already has an account keeps the guest data separate |
+| Account takeover through email collision | Issuer → client account mapping | Accounts map by issuer subject; an existing local account is linked by email only when both sides have a verified address; otherwise sign-in is refused | Linking trusts the provider's email verification |
+| Forced logout (logout CSRF) | Browser → Hydra → provider `/sso/logout` | Logout is idempotent and only ends sessions | A third-party page can sign a visitor out of every app; accepted as low impact |
 | Denial of service | Browser → adapter | Bounded queues, clamped inputs, graceful shutdown | No in-app WAF; rely on the edge |
 
 ## Out of scope

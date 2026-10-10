@@ -51,6 +51,14 @@
       <section class="card card-border bg-base-100 shadow-sm">
         <div class="card-body">
           <h2 class="card-title">Keep this account</h2>
+          {{if .SSOSignInURL}}
+          <p>{{.Labels.guest_upgrade_sso_help}}</p>
+          {{/* A plain form: the browser must navigate to the issuer. */}}
+          <form method="post" action="{{.SSOSignInURL}}">
+            <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+            <button class="btn btn-primary" type="submit" data-testid="guest-upgrade-sso">{{.Labels.guest_upgrade_sso_submit}}</button>
+          </form>
+          {{else}}
           <form class="grid gap-4" method="post" action="{{.FormAction}}" hx-post="{{.FormAction}}" hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this" hx-indicator=".htmx-indicator">
             <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
             <fieldset class="fieldset">
@@ -65,6 +73,7 @@
             </fieldset>
             <button class="btn btn-primary" type="submit">{{.Labels.upgrade}}</button>
           </form>
+          {{end}}
         </div>
       </section>
     {{end}}

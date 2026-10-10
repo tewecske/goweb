@@ -67,11 +67,7 @@ func (h *authHandler) oauthCallback(writer http.ResponseWriter, request *http.Re
 		h.renderError(writer, request, http.StatusInternalServerError)
 		return
 	}
-	if err := replaceSession(writer, request, h.dependencies, result.SignIn.Session.ID); err != nil {
-		h.renderError(writer, request, http.StatusInternalServerError)
-		return
-	}
-	h.redirectLocalized(writer, request, language, "/home")
+	h.finishSignIn(writer, request, language, result.SignIn.Session.ID, "/home")
 }
 
 func (h *authHandler) oauthFailureRedirect(writer http.ResponseWriter, request *http.Request) {

@@ -17,12 +17,16 @@ Package responsibilities:
 - `internal/adapter/http` owns routes, page rendering, full-page/HTMX responses, and transport adapters.
 - `internal/adapter/mail` owns mail delivery adapters; mail ports stay in consuming services.
 - `internal/adapter/oauth` owns external identity provider clients; OAuth ports and flow state stay in `internal/service`.
+- `internal/adapter/hydra` owns the Ory Hydra admin API client for the single sign-on provider; the `SSOAdmin` port and challenge handling stay in `internal/service`.
+- `internal/adapter/oidc` owns the OpenID Connect relying party for client apps (discovery, JWKS, RS256-only ID and logout token verification, standard library only); the `SSORelyingParty` port and account mapping stay in `internal/service`.
 - `internal/adapter/http/middleware` owns request context, recovery, logging, tracing, authentication, and CSRF boundaries.
 - `internal/server` owns listener lifecycle, graceful shutdown, and dependency closure.
 - `internal/store` owns database connection settings, migration execution, and persistence adapters.
 - `migrations/` stores ordered database schema changes.
 - `templates/` stores server-rendered HTML templates.
 - `static/` stores browser assets.
+- `deploy/` stores configuration for local infrastructure such as Ory Hydra (`docs/sso-hydra-plan.md`); it holds no real secrets.
+- `scripts/` stores developer shell scripts invoked from the `Makefile`.
 - Keep tests beside packages they cover. Use `tests/` for cross-package or integration support.
 
 ## Go development
@@ -37,7 +41,9 @@ Use Go 1.26 language features only. Prefer standard-library packages. Add third-
 - Close registered dependencies after HTTP shutdown, even when startup fails.
 - When `GOWEB_DATABASE_URL` is configured, startup opens PostgreSQL and applies migrations before serving requests. Local no-database startup remains supported until persistence-backed features require the store.
 - `GOWEB_BOOTSTRAP_ADMIN_EMAIL` and `GOWEB_BOOTSTRAP_ADMIN_PASSWORD` seed one confirmed administrator on startup when both are set in non-production; never configure them in production.
-- Production startup fails through `config.ErrUnsafeProductionConfig` unless `GOWEB_SESSION_COOKIE_SECURE` is true, `GOWEB_PUBLIC_URL` uses HTTPS, `GOWEB_DATABASE_URL` and `GOWEB_SESSION_SECRET` are set, and `GOWEB_MAIL_RELAY` is set.
+- Production startup fails through `config.ErrUnsafeProductionConfig` unless `GOWEB_SESSION_COOKIE_SECURE` is true, `GOWEB_PUBLIC_URL` uses HTTPS, `GOWEB_DATABASE_URL` and `GOWEB_SESSION_SECRET` are set, and `GOWEB_MAIL_RELAY` is set. In `GOWEB_AUTH_MODE=provider` the SSO issuer, and in `client` the SSO issuer, callback, and account URLs, must also use HTTPS.
+- `GOWEB_AUTH_MODE` (`local`, `provider`, `client`) selects the single sign-on role (`docs/sso-hydra-plan.md`); settings for another mode are rejected. `provider` requires `GOWEB_HYDRA_ADMIN_URL` and `GOWEB_SSO_ISSUER_URL`; `client` requires `GOWEB_SSO_ISSUER_URL`, `GOWEB_SSO_CLIENT_ID`, and `GOWEB_SSO_CLIENT_SECRET`, and registers no local credential routes (sign-up, password sign-in, recovery, confirmation, password and identity settings, admin account creation); guests upgrade by signing in through single sign-on.
+- Every path that revokes all of an account's sessions must go through `SessionService.RevokeUser`, which also revokes the account's Hydra sessions in provider mode; delete accounts only after revoking, because deletion cascades away the recorded session IDs.
 - A background maintenance worker runs scheduled cleanup jobs through `internal/service`; `cmd/web` starts it with the signal context so it stops on shutdown. Job status is live process state and never stores credentials.
 - Retention for guests, sign-in history, and usage events is configured through `GOWEB_GUEST_RETENTION`, `GOWEB_LOGIN_ATTEMPT_RETENTION`, and `GOWEB_USAGE_RETENTION`; cleanup only removes expired, consumed, or over-age records.
 

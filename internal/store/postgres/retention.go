@@ -42,6 +42,13 @@ func (r *RetentionRepository) DeleteExpiredOAuthStates(ctx context.Context, now 
 		`DELETE FROM oauth_states WHERE consumed_at IS NOT NULL OR expires_at <= $1`, now)
 }
 
+// DeleteExpiredSSOLoginSessions removes single sign-on session IDs whose Hydra
+// session can no longer be alive.
+func (r *RetentionRepository) DeleteExpiredSSOLoginSessions(ctx context.Context, now int64) (int, error) {
+	return r.delete(ctx, "delete expired sso login sessions",
+		`DELETE FROM sso_login_sessions WHERE expires_at <= $1`, now)
+}
+
 // DeleteLoginAttemptsBefore removes sign-in history older than cutoff.
 func (r *RetentionRepository) DeleteLoginAttemptsBefore(ctx context.Context, cutoff int64) (int, error) {
 	return r.delete(ctx, "delete old login attempts",

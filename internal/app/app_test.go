@@ -28,6 +28,68 @@ func TestNewRejectsProductionWithoutMailDelivery(t *testing.T) {
 	}
 }
 
+func TestNewWiresSSOClientOnlyInClientMode(t *testing.T) {
+	appConfig := config.Config{
+		Environment:     config.EnvironmentDevelopment,
+		PublicURL:       url.URL{Scheme: "http", Host: "127.0.0.1:8081"},
+		SessionLifetime: time.Hour,
+		AuthMode:        config.AuthModeClient,
+		SSOIssuerURL:    "http://127.0.0.1:4444",
+		SSOClientID:     "app-client",
+		SSORedirectURL:  "http://127.0.0.1:8081/en/oauth/sso/callback",
+	}
+	if _, err := New(&sql.DB{}, appConfig); err == nil {
+		t.Fatal("New(client) without a client secret succeeded")
+	}
+	loaded, err := config.Load(func(name string) string {
+		return map[string]string{
+			config.AuthModeEnv:        "client",
+			config.DatabaseURLEnv:     "postgres://user:pw@127.0.0.1/app",
+			config.PublicURLEnv:       "http://127.0.0.1:8081",
+			config.SSOIssuerURLEnv:    "http://127.0.0.1:4444",
+			config.SSOClientIDEnv:     "app-client",
+			config.SSOClientSecretEnv: "client-secret",
+		}[name]
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph, err := New(&sql.DB{}, loaded)
+	if err != nil {
+		t.Fatalf("New(client) error = %v", err)
+	}
+	if graph.SSOClient == nil || graph.SSOProvider != nil {
+		t.Fatalf("client mode wiring: client %t provider %t, want only the client", graph.SSOClient != nil, graph.SSOProvider != nil)
+	}
+}
+
+func TestNewWiresSSOProviderOnlyInProviderMode(t *testing.T) {
+	base := config.Config{
+		Environment:     config.EnvironmentDevelopment,
+		PublicURL:       url.URL{Scheme: "http", Host: "localhost:8080"},
+		SessionLifetime: time.Hour,
+	}
+	local, err := New(&sql.DB{}, base)
+	if err != nil {
+		t.Fatalf("New(local) error = %v", err)
+	}
+	if local.SSOProvider != nil {
+		t.Fatal("local mode wired an SSO provider")
+	}
+
+	provider := base
+	provider.AuthMode = config.AuthModeProvider
+	provider.HydraAdminURL = "http://127.0.0.1:4445"
+	provider.SSOIssuerURL = "http://127.0.0.1:4444"
+	graph, err := New(&sql.DB{}, provider)
+	if err != nil {
+		t.Fatalf("New(provider) error = %v", err)
+	}
+	if graph.SSOProvider == nil {
+		t.Fatal("provider mode did not wire the SSO provider")
+	}
+}
+
 func TestNewBuildsCompleteGraphWithoutDatabaseIO(t *testing.T) {
 	database := &sql.DB{}
 	appConfig := config.Config{
@@ -56,6 +118,9 @@ func TestNewBuildsCompleteGraphWithoutDatabaseIO(t *testing.T) {
 		if value == nil {
 			t.Fatalf("graph field %s is nil", name)
 		}
+	}
+	if mode := graph.SystemInfo.SystemConfiguration().AuthMode; mode != string(config.AuthModeLocal) {
+		t.Fatalf("system AuthMode = %q, want %q for an unset mode", mode, config.AuthModeLocal)
 	}
 }
 

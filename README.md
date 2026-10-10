@@ -43,6 +43,13 @@ Configuration comes from environment variables. Defaults keep local development 
 | `GOWEB_GOOGLE_CLIENT_ID` | unset; enables Google sign-in when set with the client secret |
 | `GOWEB_GOOGLE_CLIENT_SECRET` | unset; Google OAuth client secret |
 | `GOWEB_GOOGLE_REDIRECT_URL` | derived as `<GOWEB_PUBLIC_URL>/en/oauth/google/callback` |
+| `GOWEB_AUTH_MODE` | `local`; single sign-on role: `local`, `provider`, or `client` ([plan](docs/sso-hydra-plan.md)). `provider` and `client` require `GOWEB_DATABASE_URL` |
+| `GOWEB_HYDRA_ADMIN_URL` | unset; provider only. Private Ory Hydra admin API address; plain HTTP is allowed on a private network |
+| `GOWEB_SSO_ISSUER_URL` | unset; provider and client. Hydra's public URL (OpenID Connect issuer); the provider sends sign-out through its logout endpoint. HTTPS in production |
+| `GOWEB_SSO_CLIENT_ID` | unset; client only. Client ID registered in Hydra |
+| `GOWEB_SSO_CLIENT_SECRET` | unset; client only. Client secret registered in Hydra |
+| `GOWEB_SSO_REDIRECT_URL` | client only; derived as `<GOWEB_PUBLIC_URL>/en/oauth/sso/callback` |
+| `GOWEB_SSO_ACCOUNT_URL` | unset; client only. Provider account settings page linked from the client |
 
 `GOWEB_DATABASE_URL` and `GOWEB_SESSION_SECRET` are optional foundation inputs. Secret values are redacted from formatting and JSON diagnostics; callers must not log or return revealed values.
 

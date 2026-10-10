@@ -31,6 +31,9 @@ type SystemInfoSettings struct {
 	UsageRetention            time.Duration
 	MaintenanceInterval       time.Duration
 	TrustedProxy              string
+	AuthMode                  string
+	SSOIssuer                 string
+	HydraAdmin                string
 }
 
 // SystemConfiguration is the safe configuration overview. It never carries
@@ -54,6 +57,9 @@ type SystemConfiguration struct {
 	AuthRateLimitWindow       time.Duration
 	AuthRateLimitMaxKeys      int
 	TrustedProxy              string
+	AuthMode                  string
+	SSOIssuer                 string
+	HydraAdmin                string
 }
 
 // SystemConfigurationProvider supplies the safe deployment summary.
@@ -71,6 +77,9 @@ type SystemInfoService struct {
 func NewSystemInfoService(settings SystemInfoSettings) *SystemInfoService {
 	settings.PublicURL = sanitizeURL(settings.PublicURL)
 	settings.MailRelay = sanitizeURL(settings.MailRelay)
+	settings.SSOIssuer = sanitizeURL(settings.SSOIssuer)
+	settings.HydraAdmin = sanitizeURL(settings.HydraAdmin)
+	settings.AuthMode = strings.TrimSpace(settings.AuthMode)
 	settings.TrustedProxy = strings.TrimSpace(settings.TrustedProxy)
 	providers := make([]string, 0, len(settings.Providers))
 	for _, provider := range settings.Providers {
@@ -104,6 +113,9 @@ func (s *SystemInfoService) SystemConfiguration() SystemConfiguration {
 		AuthRateLimitWindow:       AuthenticationRateLimitWindow,
 		AuthRateLimitMaxKeys:      AuthenticationRateLimitMaxKeys,
 		TrustedProxy:              s.settings.TrustedProxy,
+		AuthMode:                  s.settings.AuthMode,
+		SSOIssuer:                 s.settings.SSOIssuer,
+		HydraAdmin:                s.settings.HydraAdmin,
 	}
 	configuration.Providers = append([]string(nil), s.settings.Providers...)
 	return configuration

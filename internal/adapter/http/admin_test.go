@@ -1331,6 +1331,8 @@ func TestAdminSystemRendersSanitizedConfiguration(t *testing.T) {
 		AuthRateLimit:             10,
 		AuthRateLimitWindow:       time.Minute,
 		TrustedProxy:              "10.0.0.0/8",
+		AuthMode:                  "client",
+		SSOIssuer:                 "https://id.example.test",
 	}}
 	handler := newAdminTestHandler(t, dependencies)
 
@@ -1340,7 +1342,10 @@ func TestAdminSystemRendersSanitizedConfiguration(t *testing.T) {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
 	}
 	body := response.Body.String()
-	for _, want := range []string{"Configuration", "https://example.test", "smtp://mail.example.test:587", "10.0.0.0/8", "example"} {
+	if strings.Contains(body, "Hydra admin API") {
+		t.Errorf("system body shows the Hydra admin row although it is not configured")
+	}
+	for _, want := range []string{"Configuration", "https://example.test", "smtp://mail.example.test:587", "10.0.0.0/8", "example", "Sign-in mode", "<dd>client</dd>", "Single sign-on issuer", "https://id.example.test"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("system body missing %q", want)
 		}

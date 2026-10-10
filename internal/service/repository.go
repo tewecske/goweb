@@ -54,6 +54,11 @@ type Session struct {
 	CreatedAt int64
 	ExpiresAt int64
 	RevokedAt *int64
+	// SSOSessionID and SSOIDToken bind a client-mode session to the Hydra
+	// login session that created it. They are written at creation only, are
+	// never credentials for this app, and must never be logged or rendered.
+	SSOSessionID string
+	SSOIDToken   string
 }
 
 // GuestClaimCode is the active transfer credential for one guest account.

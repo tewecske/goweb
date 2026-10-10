@@ -369,6 +369,13 @@ func (s *AdminAccountService) Delete(ctx context.Context, actor AdminActionConte
 		}
 		return err
 	}
+	// Deletion cascades away the account's session records, including the
+	// single sign-on session IDs, so revoke first while they still exist.
+	if s.sessions != nil {
+		if err := s.sessions.RevokeUser(ctx, targetID); err != nil {
+			return err
+		}
+	}
 	if err := s.users.DeleteUser(ctx, targetID, expectedVersion); err != nil {
 		switch {
 		case errors.Is(err, ErrUserNotFound):

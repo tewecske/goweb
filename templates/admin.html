@@ -66,6 +66,9 @@
           <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_mail_relay}}</dt><dd>{{if .MailRelay}}{{.MailRelay}}{{else}}{{$.Labels.admin_system_config_not_configured}}{{end}}</dd></div>
           <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_rate_limit}}</dt><dd>{{.AuthRateLimit}}</dd></div>
           <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_trusted_proxy}}</dt><dd>{{if .TrustedProxy}}{{.TrustedProxy}}{{else}}{{$.Labels.admin_system_config_not_configured}}{{end}}</dd></div>
+          <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_auth_mode}}</dt><dd>{{.AuthMode}}</dd></div>
+          {{if .SSOIssuer}}<div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_sso_issuer}}</dt><dd>{{.SSOIssuer}}</dd></div>{{end}}
+          {{if .HydraAdmin}}<div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_hydra_admin}}</dt><dd>{{.HydraAdmin}}</dd></div>{{end}}
           <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_session}}</dt><dd>{{.SessionLifetime}}</dd></div>
           <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_interval}}</dt><dd>{{.MaintenanceInterval}}</dd></div>
           <div><dt class="text-sm opacity-70">{{$.Labels.admin_system_config_guest}}</dt><dd>{{.GuestRetention}}</dd></div>
@@ -459,7 +462,7 @@
           <p class="text-sm opacity-70">{{$.Labels.admin_detail_link_none}}</p>
         {{end}}
         <div class="flex flex-wrap gap-2">
-          {{if not .Confirmed}}
+          {{if and (not .Confirmed) .ConfirmURL}}
             <form method="post" action="{{.ConfirmURL}}" hx-post="{{.ConfirmURL}}"
                   hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this"
                   hx-confirm="{{$.Labels.admin_confirmation_confirm_confirm}}">
@@ -467,11 +470,13 @@
               <button class="btn btn-sm btn-primary" type="submit">{{$.Labels.admin_confirmation_confirm}}</button>
             </form>
           {{end}}
+          {{if .SendConfirmationURL}}
           <form method="post" action="{{.SendConfirmationURL}}" hx-post="{{.SendConfirmationURL}}"
                 hx-target="#page-content" hx-swap="outerHTML" hx-disabled-elt="this">
             <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
             <button class="btn btn-sm" type="submit">{{$.Labels.admin_confirmation_send}}</button>
           </form>
+          {{end}}
         </div>
       </div>
     </section>
@@ -654,9 +659,11 @@
     {{if or (eq .Mode "create") (eq .Mode "edit")}}
       {{template "admin-account-form" $}}
     {{else}}
+      {{if .CreateURL}}
       <div class="flex justify-end">
         <a class="btn btn-primary btn-sm" href="{{.CreateURL}}">{{$.Labels.admin_create}}</a>
       </div>
+      {{end}}
 
       <form class="grid gap-4" method="get" action="{{.BaseURL}}"
             hx-get="{{.BaseURL}}" hx-target="#page-content" hx-swap="outerHTML"

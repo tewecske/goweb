@@ -101,6 +101,47 @@ func TestSessionServiceRevoke(t *testing.T) {
 	}
 }
 
+func TestSessionServiceRevokeUserAlsoEndsSSOSessions(t *testing.T) {
+	repository := &sessionRepositoryStub{}
+	service, err := NewSessionService(repository, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sso := &sessionRevokerStub{err: ErrSSOUnavailable}
+	service.SetSSORevoker(sso)
+
+	err = service.RevokeUser(context.Background(), 42)
+	if !errors.Is(err, ErrSSOUnavailable) {
+		t.Fatalf("RevokeUser() error = %v, want the SSO failure reported", err)
+	}
+	if repository.revokedUserID != 42 || sso.userID != 42 {
+		t.Fatalf("revoked local %d / sso %d, want both for 42 (local even when SSO fails)", repository.revokedUserID, sso.userID)
+	}
+}
+
+func TestSessionServiceCreateSSOStoresTheBindingButNeverReturnsTheToken(t *testing.T) {
+	repository := &sessionRepositoryStub{}
+	service, err := NewSessionService(repository, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := service.CreateSSO(context.Background(), 42, "sid-1", "id.token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repository.created.SSOSessionID != "sid-1" || repository.created.SSOIDToken != "id.token" {
+		t.Fatalf("stored binding = %q/%q", repository.created.SSOSessionID, repository.created.SSOIDToken)
+	}
+	if session.SSOSessionID != "sid-1" || session.SSOIDToken != "" {
+		t.Fatalf("returned session sid %q token %q, want the sid without the token", session.SSOSessionID, session.SSOIDToken)
+	}
+	for _, binding := range [][2]string{{"", "id.token"}, {"sid-1", ""}} {
+		if _, err := service.CreateSSO(context.Background(), 42, binding[0], binding[1]); !errors.Is(err, ErrInvalidSession) {
+			t.Fatalf("CreateSSO(%q, %q) error = %v, want %v", binding[0], binding[1], err, ErrInvalidSession)
+		}
+	}
+}
+
 func TestNewSessionServiceRejectsInvalidInputs(t *testing.T) {
 	if _, err := NewSessionService(nil, time.Hour); !errors.Is(err, ErrNilSessionRepository) {
 		t.Fatalf("NewSessionService(nil) error = %v, want %v", err, ErrNilSessionRepository)

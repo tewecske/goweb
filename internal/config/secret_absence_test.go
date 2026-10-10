@@ -12,8 +12,13 @@ func TestConfigDiagnosticsNeverExposeConfiguredSecrets(t *testing.T) {
 		databaseCredential = "db-credential-5a1b-9c2d-secret"
 		sessionCredential  = "session-credential-4e7f-8a1b-c3d5-secret"
 		bootstrapPassword  = "bootstrap-password-2f6a-1b8c"
+		ssoClientSecret    = "sso-client-secret-7c3e-9d1f"
 	)
 	values := map[string]string{
+		AuthModeEnv:               string(AuthModeClient),
+		SSOIssuerURLEnv:           "http://127.0.0.1:4444",
+		SSOClientIDEnv:            "app-client",
+		SSOClientSecretEnv:        ssoClientSecret,
 		DatabaseURLEnv:            "postgres://goweb:" + databaseCredential + "@localhost:5432/goweb",
 		SessionSecretEnv:          sessionCredential,
 		BootstrapAdminEmailEnv:    "admin@example.test",
@@ -40,7 +45,7 @@ func TestConfigDiagnosticsNeverExposeConfiguredSecrets(t *testing.T) {
 		"secret %#v":   fmt.Sprintf("%#v", loaded.SessionSecret),
 		"bootstrap %v": fmt.Sprintf("%v", loaded.BootstrapAdminPassword),
 	}
-	secrets := []string{databaseCredential, sessionCredential, bootstrapPassword, "mail.example.test"}
+	secrets := []string{databaseCredential, sessionCredential, bootstrapPassword, ssoClientSecret, "mail.example.test"}
 	for format, output := range outputs {
 		for _, secret := range secrets {
 			if strings.Contains(output, secret) {

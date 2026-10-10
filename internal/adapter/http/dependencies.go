@@ -76,6 +76,18 @@ type Dependencies struct {
 	Tracer         middleware.SpanTracer
 	SecurityLogger middleware.SecurityRequestLogger
 
+	// SSOProvider answers Hydra's login, consent, and logout challenges. It is
+	// set only when GOWEB_AUTH_MODE=provider; nil leaves the /sso routes out.
+	SSOProvider SSOProviderUseCases
+	// SSOLogoutURL is Hydra's public logout endpoint. Provider sign-out sends
+	// the browser there so the single sign-on session ends with the local one.
+	SSOLogoutURL string
+	// SSOClient signs visitors in through the issuer. It is set only when
+	// GOWEB_AUTH_MODE=client; it replaces every local credential route.
+	SSOClient SSOClientUseCases
+	// SSOAccountURL is the issuer-side account page linked from settings.
+	SSOAccountURL string
+
 	// TrustedProxy is the reverse proxy address or network whose
 	// X-Forwarded-For header identifies the client for rate limits and audit.
 	TrustedProxy string
@@ -172,6 +184,28 @@ type AdminUsageReporter interface {
 // AdminSuspiciousReporter builds suspicious-account reports.
 type AdminSuspiciousReporter interface {
 	Report(context.Context, string) (service.SuspiciousReport, error)
+}
+
+// SSOProviderUseCases answers Hydra challenges for the provider deployment.
+// Each method returns the URL the browser must visit next; BeginLogin returns
+// an empty URL when the visitor must sign in first.
+type SSOProviderUseCases interface {
+	BeginLogin(ctx context.Context, challenge string, currentUserID int64) (string, error)
+	CompleteLogin(ctx context.Context, challenge string, userID int64) (string, error)
+	Consent(ctx context.Context, challenge string) (string, error)
+	Logout(ctx context.Context, challenge string) (string, error)
+}
+
+// SSOClientUseCases signs visitors in to a client app through the issuer and
+// upgrades guests into issuer accounts.
+type SSOClientUseCases interface {
+	Start(ctx context.Context) (string, string, error)
+	StartUpgrade(ctx context.Context, guestID int64) (string, string, error)
+	// Callback receives the account signed in to the browser (or zero) so an
+	// upgrade completes only for the guest that started it.
+	Callback(ctx context.Context, actorUserID int64, code, state string) (service.SSOCallbackResult, error)
+	BackChannelLogout(ctx context.Context, logoutToken string) error
+	SignOutURL(ctx context.Context, sessionID string) (string, error)
 }
 
 // UserFinder resolves an account for an authenticated session.

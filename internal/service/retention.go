@@ -27,6 +27,7 @@ type RetentionRepository interface {
 	DeleteExpiredEmailConfirmationTokens(context.Context, int64) (int, error)
 	DeleteExpiredPasswordResetTokens(context.Context, int64) (int, error)
 	DeleteExpiredOAuthStates(context.Context, int64) (int, error)
+	DeleteExpiredSSOLoginSessions(context.Context, int64) (int, error)
 	DeleteLoginAttemptsBefore(context.Context, int64) (int, error)
 	DeleteUsageEventsBefore(context.Context, int64) (int, error)
 }
@@ -68,6 +69,7 @@ func (s *RetentionService) CleanupTokens(ctx context.Context) (int, error) {
 		s.repository.DeleteExpiredEmailConfirmationTokens,
 		s.repository.DeleteExpiredPasswordResetTokens,
 		s.repository.DeleteExpiredOAuthStates,
+		s.repository.DeleteExpiredSSOLoginSessions,
 	} {
 		count, err := remove(ctx, now)
 		if err != nil {

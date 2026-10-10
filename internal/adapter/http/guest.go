@@ -177,6 +177,11 @@ func (h *authHandler) renderGuestWithStatus(writer http.ResponseWriter, request 
 		Alerts:            alerts,
 		Labels:            h.formLabels(language),
 	}
+	if h.dependencies.SSOClient != nil {
+		// Client mode: the upgrade page offers single sign-on instead of a
+		// password form.
+		page.SSOSignInURL = page.FormAction
+	}
 	if user.ID > 0 {
 		page.Account = &AccountMenu{Label: accountLabel(user), SettingsURL: mustLocalePath(language, "/account/settings"), SignOutURL: mustLocalePath(language, "/sign-out"), Theme: user.Theme, ThemeURL: mustLocalePath(language, "/account/theme")}
 	}
