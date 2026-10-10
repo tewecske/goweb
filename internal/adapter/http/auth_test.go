@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -752,5 +753,21 @@ func TestRouterHardensBrowserRequests(t *testing.T) {
 	secureCSRF := csrfCookie(t, NewRouterWithServices(dependencies))
 	if !secureCSRF.Secure {
 		t.Error("CSRF cookie is not Secure when session cookies are, so it would travel over plain HTTP behind a TLS proxy")
+	}
+}
+
+// The whole highlighted menu row must submit sign-out. When the button was
+// nested in a <form>, daisyUI styled the form as the row and a click on its
+// padding did nothing.
+func TestAccountMenuSignOutIsTheMenuItem(t *testing.T) {
+	handler := NewRouterWithServices(newHTTPTestDependencies(t))
+	request := httptest.NewRequest(http.MethodGet, "/en/home", nil)
+	request.AddCookie(&http.Cookie{Name: middleware.DefaultSessionCookieName, Value: "opaque-session"})
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	body := response.Body.String()
+	form := regexp.MustCompile(`<form id="sign-out-form" method="post" action="/en/sign-out" hidden>\s*<input type="hidden" name="_csrf" value="[^"]*">\s*</form>\s*<button type="submit" form="sign-out-form">Sign out</button>\s*</li>`)
+	if !form.MatchString(body) {
+		t.Fatalf("account menu does not render sign-out as the menu item submitting a separate form:\n%s", body)
 	}
 }

@@ -63,12 +63,14 @@
               {{if .Account.IsAdmin}}
               <li role="none"><a role="menuitem" href="{{.Account.AdminURL}}">Admin</a></li>
               {{end}}
-               <li role="none">
-                 <form method="post" action="{{.Account.SignOutURL}}">
-                   <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
-                   <button class="w-full text-left" type="submit">Sign out</button>
-                 </form>
-               </li>
+              <li role="none">
+                {{/* The button is the menu item itself (not nested in the form)
+                     so the whole highlighted row is clickable; form= submits it. */}}
+                <form id="sign-out-form" method="post" action="{{.Account.SignOutURL}}" hidden>
+                  <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+                </form>
+                <button type="submit" form="sign-out-form">Sign out</button>
+              </li>
             </ul>
           </details>
         {{else}}
