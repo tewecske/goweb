@@ -1,7 +1,7 @@
 BINARY_NAME := goweb
 GO := go
 
-.PHONY: build clean fmt-check test vet assets check run run-provider run-client db-up db-down sso-up sso-client
+.PHONY: build clean fmt-check test vet assets check run run-provider run-client db-up db-down sso-up sso-client sso-contract sso-e2e
 
 build:
 	mkdir -p bin
@@ -43,6 +43,20 @@ sso-up:
 sso-client:
 	@set -a; if [ -f .env ]; then . ./.env; fi; set +a; umask 077; scripts/hydra-dev-client.sh > .env.client
 	@echo "wrote .env.client; start the client app with: make run-client"
+
+# Contract test of the Hydra integration against a throwaway in-memory Hydra
+# (needs Docker; independent of the development stack).
+sso-contract:
+	scripts/hydra-contract-test.sh
+
+# Browser specs for single sign-on against the running dev stack: Hydra
+# (make sso-up), the provider (make run-provider), and the client (make
+# run-client). The password-reset scenario also needs the provider started with
+# GOWEB_MAIL_RELAY=smtp://localhost:1025 and Mailpit (make db-up).
+sso-e2e:
+	@set -a; if [ -f .env ]; then . ./.env; fi; set +a; \
+	GOWEB_SSO_E2E=1 GOWEB_BROWSER_SSO_MAILPIT_URL="$${GOWEB_BROWSER_SSO_MAILPIT_URL:-http://127.0.0.1:8025}" \
+	npx playwright test tests/browser/m10-sso.spec.ts
 
 # The single sign-on provider (GOWEB_AUTH_MODE=provider) at SSO_DEV_PROVIDER_URL
 # (default http://localhost:8080), using the main database from .env.

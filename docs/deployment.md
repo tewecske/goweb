@@ -89,6 +89,52 @@ limits, and audit records show the proxy address.
 7. Stop the previous instance with `SIGTERM` so `internal/server` drains active
    requests, then closes registered dependencies.
 
+## Single sign-on: hosting Ory Hydra
+
+Apps in `provider` and `client` mode need an Ory Hydra deployment
+([plan](sso-hydra-plan.md)). Local development uses `compose.yaml`; production
+differs as follows.
+
+- **Version.** Pin an exact image tag (the plan records `oryd/hydra:v26.2.0`)
+  and read the release notes before upgrading. Do not run `--dev`.
+- **Network.** Terminate TLS at a load balancer or gateway in front of Hydra's
+  public port (4444). The issuer URL must be the public HTTPS address clients
+  and browsers use, exactly as configured in `GOWEB_SSO_ISSUER_URL`. The admin
+  port (4445) must never be reachable from the internet or from client
+  networks: anyone who can call it can sign in as any user. Only the provider
+  deployment reaches it, through `GOWEB_HYDRA_ADMIN_URL` on a private network.
+- **Database.** Give Hydra its own PostgreSQL role and database, never the
+  application's. Run `hydra migrate sql up -e --yes` as a separate step before
+  starting a new Hydra version; do not let several instances race to migrate.
+  Start the very first deployment with a single instance, so key generation
+  finishes once.
+- **Configuration.** Set `urls.self.issuer`, `urls.login`, `urls.consent`,
+  `urls.logout`, and `urls.error` to the issuer and the provider's public
+  URL. Keep `log.leak_sensitive_values` false.
+- **Secrets.** `secrets.system` and `secrets.cookie` must be long random values
+  from your secret store, never the development placeholders in
+  `compose.yaml`. To rotate either one, prepend the new value to its list and
+  keep the old values listed so existing data stays readable: only the first
+  entry encrypts, and all entries decrypt. Existing rows are not re-encrypted.
+- **Signing keys.** Hydra signs ID tokens with the newest key in the
+  `hydra.openid.id-token` key set and publishes all of them at
+  `/.well-known/jwks.json`. Rotate with
+  `hydra create jwks --endpoint <admin URL> hydra.openid.id-token --alg RS256`;
+  client apps refetch the key set when they see an unknown key ID (at most
+  every 30 seconds), so no client restart is needed.
+- **Cleanup.** Run `hydra janitor` on a schedule to remove expired tokens and
+  stale login and consent requests, for example
+  `DSN=<Hydra database URL> hydra janitor -e --tokens --requests --keep-if-younger 24h`.
+  It deletes in batches, is irreversible, and ran successfully against a copy of
+  the development database (it removed the expired access tokens). Try it on a
+  restored backup first, and see `hydra janitor --help` for the lifespans.
+- **Client registration.** Register each app as described under
+  [Required production configuration](#required-production-configuration).
+  Client secrets are shown once, at creation.
+- **Verification.** `make sso-contract` runs the Hydra contract test against a
+  throwaway Hydra; the browser specs in `tests/browser/m10-sso.spec.ts` (`make
+  sso-e2e`) exercise a running provider, client, and Hydra.
+
 ## Startup migrations
 
 - Migrations live in `migrations/` with sortable

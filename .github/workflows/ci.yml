@@ -39,3 +39,21 @@ jobs:
 
       - name: Build packages
         run: go build ./...
+
+  # Drives the provider's Hydra admin client and the client app's OpenID
+  # Connect relying party against a real, throwaway in-memory Hydra. The
+  # browser specs (tests/browser) stay opt-in and are not run here.
+  sso-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run the Hydra contract test
+        run: scripts/hydra-contract-test.sh

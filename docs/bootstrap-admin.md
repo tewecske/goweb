@@ -65,6 +65,25 @@ administrator out of band:
 6. If the promotion is no longer needed, set `is_admin = FALSE` again with the
    same statement shape and sign the account out.
 
+## Single sign-on deployments
+
+With `GOWEB_AUTH_MODE` set, accounts and credentials live at the provider, so
+provision the first administrator there with either procedure above.
+
+- **Client apps** have their own administrators, because administrator rights
+  are not shared through single sign-on. A client account that does not exist
+  yet is created on the first sign-in, so sign in to the client once as the
+  person who should administer it, then promote that account with the SQL
+  statement above against the client's database.
+- A client account that existed before the app switched to client mode is
+  linked to its single sign-on identity on first sign-in only when both the
+  local account and the provider have verified the same email address;
+  otherwise sign-in is refused and the accounts must be reconciled first.
+- In development, both apps seed the same
+  `GOWEB_BOOTSTRAP_ADMIN_EMAIL`/`GOWEB_BOOTSTRAP_ADMIN_PASSWORD` administrator
+  locally, so signing in to the client as the provider's confirmed
+  administrator links the two and gives administrator rights in both.
+
 ## Verification and hygiene
 
 - Verify the administrator count with a read-only query:

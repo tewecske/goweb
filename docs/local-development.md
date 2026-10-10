@@ -196,6 +196,22 @@ both apps. Rules:
 - Everything is plain HTTP. That suits a private tailnet; never use these
   settings on a shared network.
 
+### Testing single sign-on
+
+```sh
+make sso-contract   # Hydra contract test against a throwaway in-memory Hydra
+make sso-e2e        # browser specs against the running dev stack
+```
+
+`make sso-contract` needs only Docker; it also runs in CI. `make sso-e2e` needs
+Hydra, the provider, and the client running as above. Its password-reset
+scenario also needs the provider started with
+`GOWEB_MAIL_RELAY=smtp://localhost:1025` and Mailpit running (`make db-up`);
+the scenario is skipped without `GOWEB_BROWSER_SSO_MAILPIT_URL`, which the
+make target defaults to `http://127.0.0.1:8025`. The specs read the provider
+and client URLs from `SSO_DEV_PROVIDER_URL` and `SSO_DEV_CLIENT_URL`, so they
+work for the tailnet setup too.
+
 ### Notes
 
 - Hydra uses host networking. On Docker Desktop, enable host networking in its

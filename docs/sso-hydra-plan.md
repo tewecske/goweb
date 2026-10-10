@@ -1,6 +1,6 @@
 # Plan: Single Sign-On with Ory Hydra
 
-Status: Phases 0–4 done (2026-10-10). Phases 5–6 are not started.
+Status: Phases 0–5 done (2026-10-10). Phase 6 is not started.
 
 ## Goal
 
@@ -439,31 +439,54 @@ Verified:
   - A second guest signing in as that existing account was sent back with the
     "already has an account" alert and stayed a signed-in guest.
 
-## Phase 5: End-to-end verification and docs
+## Phase 5: End-to-end verification and docs (done)
 
-- Browser spec `tests/browser/m10-sso.spec.ts`, opt-in like the others, with
-  the provider on `:8080`, a client on `:8081`, and Hydra from compose. It
-  covers:
-  - First visit to the client leads to the provider sign-in and back, signed
-    in.
-  - A second client visit is silent: no form shown.
-  - Sign-out at the client also ends the provider session.
-  - An administrator "revoke sessions" at the provider makes the client's next
-    request unauthenticated.
-  - Password reset at the provider has the same effect.
-  - A guest upgrade on the client keeps the guest's groups.
-- CI: keep the browser spec opt-in. Add a Go integration test that runs only
-  when `GOWEB_HYDRA_TEST_ADMIN_URL` is set.
-- Docs to update:
-  - `architecture.md`: modes, new packages, the SSO flow.
-  - `threat-model.md`: new trust boundaries (browser ↔ Hydra, provider →
-    Hydra admin, Hydra → client back-channel) and new credentials (login
-    challenge cookie, `sid`, client secret, ID and logout tokens, Hydra
-    system secret).
-  - `deployment.md`: Hydra hosting, migrations, key rotation, client
-    registration procedure, keeping the admin port private.
-  - `local-development.md`, `bootstrap-admin.md`, `backup-retention.md` (Hydra
-    database backups), `.env.example`, `AGENTS.md` runtime section.
+- `tests/browser/m10-sso.spec.ts`, opt-in with `GOWEB_SSO_E2E=1` (`make
+  sso-e2e`), against a running provider, client, and Hydra. It reads the
+  provider and client URLs from `SSO_DEV_PROVIDER_URL` and `SSO_DEV_CLIENT_URL`,
+  so it works for the tailnet setup too. Scenarios (all with fresh accounts):
+  - first visit signs up at the provider and returns to the client signed in
+    (and shows the provider's account in the client's settings)
+  - a second client visit never shows the provider's sign-in form
+  - client sign-out ends the provider and Hydra sessions
+  - an administrator's "revoke sessions" logs the client out
+  - a password reset on another device logs the client out (needs Mailpit; the
+    scenario skips without `GOWEB_BROWSER_SSO_MAILPIT_URL`)
+  - a guest joins a group, upgrades through single sign-on, and keeps the group
+- `tests/hydra_integration_test.go` (`make sso-contract`, which also runs in CI
+  as the `sso-contract` job): the provider's Hydra admin client and the client
+  app's relying party against a throwaway in-memory Hydra, without a browser:
+  login and consent, token redemption and ID token verification, the silent
+  second sign-in, a real back-channel logout verified by the relying party, and
+  expired challenges. It skips unless `GOWEB_HYDRA_TEST_ADMIN_URL` and
+  `GOWEB_HYDRA_TEST_ISSUER_URL` are set. The plan said these would be one
+  variable; two are needed because the issuer must match Hydra's configuration
+  exactly. The browser specs stay out of CI.
+- Docs: `deployment.md` (hosting Hydra: version, network, database, secrets and
+  their rotation, signing-key rotation, janitor, client registration),
+  `backup-retention.md`, `bootstrap-admin.md`, `local-development.md`,
+  `tests/README.md`, `architecture.md`, `.env.example`, and AGENTS.md.
+  `threat-model.md` was updated in Phases 3 and 4 with every boundary and
+  credential this feature adds.
+
+Verified:
+- Both new tests were checked against mistakes they should catch. The contract
+  test fails when revocation uses the subject instead of the session ID
+  (the back-channel logout never arrives) and when ID token claims are sent
+  outside `session.id_token`. The silent-visit assertion fails when the
+  provider session is also cleared.
+- The runbook steps were run, not assumed: creating a new signing key (the
+  client signed in afterwards without a restart, and the key set then
+  published four keys), and `hydra janitor` against a copy of the development
+  database.
+
+Findings:
+- The emailed password-reset link points at the non-localized `/reset-password`,
+  whose form has an empty action and posts to a path that only accepts GET
+  (405). It is not caused by single sign-on and predates it: a user who opens
+  the link and submits the form gets a method-not-allowed error. The browser spec
+  works around it by opening the localized page. This should be fixed
+  separately; see Risks.
 
 ## Phase 6: Production rollout
 
@@ -491,6 +514,12 @@ Verified:
   silently through Hydra while the provider session is alive.
 - **Hydra version churn.** The versioning scheme changed after `v2.3.0`. Pin
   exact tags and read release notes before upgrades.
+- **Password-reset email link (existing bug).** The link in the reset email is
+  `<public URL>/reset-password?token=…`, and the form on that page posts to
+  itself (`/reset-password`), which is routed for GET only (405 on submit).
+  The localized `/{language}/reset-password` page works. Fix: link to a
+  localized path or accept POST on the non-localized route. Not changed in
+  Phase 5.
 - **Shared locale and theme.** These stay per app by design. Revisit if users
   expect them to follow them across apps.
 - **Admin roles across apps.** These stay per app by design. A future

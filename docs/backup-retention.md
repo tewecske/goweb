@@ -49,6 +49,24 @@ worker keeps its last-run state in process memory. Current status and a manual
 credentials. Retention periods are read once at startup from the environment,
 so changing them requires a restart.
 
+## Single sign-on data
+
+- The provider's `sso_login_sessions` table records Hydra session IDs per
+  account. They are identifiers, not credentials, and rows expire with the
+  `token_retention` job.
+- Client-mode sessions keep `sso_sid` and the ID token used as the sign-out
+  hint in the `sessions` table until the session row is removed. Backups
+  therefore contain ID tokens for unexpired sessions; treat them like other
+  session data.
+- Hydra stores its own state (clients, consent and login sessions, tokens, and
+  signing keys) in its own database. Back it up with the same care as the
+  application database: **losing it invalidates every issued token and loses the
+  signing keys, and losing `secrets.system` makes its encrypted data
+  unreadable.** Back up the secrets with your secret store, separately from the
+  database.
+- Hydra's expired data is removed by `hydra janitor`, not by this application's
+  retention worker; schedule it (see the [deployment runbook](deployment.md#single-sign-on-hosting-ory-hydra)).
+
 ## Backup expectations
 
 - Scope: back up the whole database (schema and data). Backups therefore

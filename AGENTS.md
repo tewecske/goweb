@@ -75,6 +75,7 @@ go build ./...
 Tests must cover success and failure paths, remain isolated and repeatable, and avoid secret fixtures. GitHub Actions repeats module verification, formatting, vet, race tests, and package builds.
 
 - Browser checks use `npm run test:browser`; specs stay opt-in via `GOWEB_BROWSER_E2E=1`.
+- Single sign-on has a Hydra contract test (`make sso-contract`, runs in CI against a throwaway Hydra; skips without `GOWEB_HYDRA_TEST_*`) and opt-in browser specs (`make sso-e2e`, `GOWEB_SSO_E2E=1`, needing Hydra, a provider, and a client running).
 - Browser runs require external mail/provider/database fixtures from environment when exercising persistence-backed flows; never commit credentials, tokens, or bearer fixtures.
 
 ## Frontend
