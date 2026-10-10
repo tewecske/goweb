@@ -87,6 +87,7 @@ services:
       URLS_CONSENT: ${SSO_DEV_PROVIDER_URL:-http://localhost:8080}/sso/consent
       URLS_LOGOUT: ${SSO_DEV_PROVIDER_URL:-http://localhost:8080}/sso/logout
       URLS_POST_LOGOUT_REDIRECT: ${SSO_DEV_PROVIDER_URL:-http://localhost:8080}/en/sign-in
+      URLS_ERROR: ${SSO_DEV_PROVIDER_URL:-http://localhost:8080}/sso/error
     # --dev allows the plain-HTTP loopback issuer; never use it in production.
     command: ["serve", "all", "--dev", "--config", "/etc/hydra/hydra.yml"]
     volumes:

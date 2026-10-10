@@ -4,6 +4,7 @@
 
 {{define "state-content"}}
   <p class="mt-4 max-w-2xl text-base-content/70">{{.Message}}</p>
+  {{with .SignInURL}}<p class="mt-6"><a class="btn btn-primary" href="{{.}}">{{$.Labels.back_sign_in}}</a></p>{{end}}
 {{end}}
 
 {{define "state-fragment"}}

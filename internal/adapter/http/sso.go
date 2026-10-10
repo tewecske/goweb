@@ -115,6 +115,44 @@ func (h *authHandler) completeSSOLogin(writer http.ResponseWriter, request *http
 	return true
 }
 
+// ssoErrorMessages maps the OAuth error codes Hydra reports to catalog
+// messages. Hydra's free-text description and hint are never shown: anyone can
+// craft this URL, and the debug text is meant for operators.
+var ssoErrorMessages = map[string]string{
+	"invalid_client":            "sso.error_page.invalid_client",
+	"unauthorized_client":       "sso.error_page.invalid_client",
+	"invalid_request":           "sso.error_page.invalid_request",
+	"invalid_scope":             "sso.error_page.invalid_request",
+	"unsupported_response_type": "sso.error_page.invalid_request",
+	"access_denied":             "sso.error_page.access_denied",
+	"login_required":            "sso.error_page.access_denied",
+	"request_forbidden":         "sso.error_page.access_denied",
+}
+
+// ssoError is Hydra's urls.error page. It explains the failure in the
+// visitor's language and offers a way back, instead of Hydra's bare fallback.
+func (h *authHandler) ssoError(writer http.ResponseWriter, request *http.Request) {
+	language := resolveRequestLanguage(request, "")
+	messageID, known := ssoErrorMessages[request.URL.Query().Get("error")]
+	if !known {
+		messageID = "sso.error_page.generic"
+	}
+	page := PageData{
+		Language:         string(language),
+		Title:            h.translate(language, "sso.error_page.title"),
+		Heading:          h.translate(language, "sso.error_page.heading"),
+		Kind:             "state",
+		Message:          h.translate(language, messageID),
+		Template:         "state",
+		FragmentTemplate: "state-fragment",
+		SignInURL:        h.path(language, "/sign-in"),
+		Navigation:       primaryNavigation(h.renderer, language, false),
+		Labels:           h.formLabels(language),
+	}
+	// Bad Request: the flow that led here cannot continue.
+	h.renderPageWithStatus(writer, request, page, http.StatusBadRequest)
+}
+
 func (h *authHandler) ssoFailureRedirect(writer http.ResponseWriter, request *http.Request) {
 	path, err := locale.Path(resolveRequestLanguage(request, ""), "/sign-in")
 	if err != nil {

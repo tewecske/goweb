@@ -29,8 +29,10 @@ Google sign-in on a `client` (it belongs on the provider). See
 [sso-hydra-plan.md](sso-hydra-plan.md). `provider` requires `GOWEB_HYDRA_ADMIN_URL`
 and `GOWEB_SSO_ISSUER_URL`; `client` requires the issuer URL, client ID, and
 client secret registered in Hydra. A provider deployment answers Hydra at the fixed paths `/sso/login`,
-`/sso/consent`, and `/sso/logout`; configure Hydra's `urls.login`,
-`urls.consent`, and `urls.logout` to those paths on the provider's public URL.
+`/sso/consent`, `/sso/logout`, and `/sso/error`; configure Hydra's `urls.login`,
+`urls.consent`, `urls.logout`, and `urls.error` to those paths on the provider's
+public URL. The error page maps Hydra's error code to a localized explanation
+and never displays Hydra's description, hint, or debug text.
 
 Register each client app in Hydra (see `scripts/hydra-dev-client.sh` for the
 exact flags) with:

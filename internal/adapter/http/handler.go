@@ -152,6 +152,7 @@ func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware
 		mux.HandleFunc("GET /sso/login", auth.ssoLogin)
 		mux.HandleFunc("GET /sso/consent", auth.ssoConsent)
 		mux.HandleFunc("GET /sso/logout", auth.ssoLogout)
+		mux.HandleFunc("GET /sso/error", auth.ssoError)
 	}
 	if clientMode {
 		mux.HandleFunc("POST "+ssoBackChannelLogoutPath, auth.ssoBackChannelLogout)

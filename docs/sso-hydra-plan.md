@@ -143,8 +143,9 @@ Consequences for the later phases (already applied below):
     request 30m.
   - Secrets (`SECRETS_SYSTEM`, `SECRETS_COOKIE`) and the DSN come from the
     environment, with development-only fallbacks in `compose.yaml`.
-  - `urls.error` is not set yet. Hydra's fallback error page is used until
-    Phase 3 adds a provider error page.
+  - `urls.error` points to the provider's `/sso/error` page (added after
+    Phase 4). It shows a localized message chosen by the OAuth error code and
+    a way back to sign-in; Hydra's free text is never echoed.
 - `scripts/hydra-dev-client.sh` (`make sso-client`) recreates the
   `goweb-dev-client` client:
   - redirect `<client>/en/oauth/sso/callback`, matching how the Google

@@ -276,3 +276,23 @@ func TestProviderSignOutAlsoEndsSSOSession(t *testing.T) {
 		t.Fatal("provider sign-out did not revoke the local session first")
 	}
 }
+
+func TestSSOErrorPageExplainsWithoutEchoingHydraText(t *testing.T) {
+	handler := NewRouterWithServices(ssoTestDependencies(t, &httpSSOProviderStub{}))
+	tests := map[string]string{
+		"invalid_client":     "sso.error_page.invalid_client",
+		"invalid_request":    "sso.error_page.invalid_request",
+		"access_denied":      "sso.error_page.access_denied",
+		"something_else":     "sso.error_page.generic",
+		"<script>x</script>": "sso.error_page.generic",
+	}
+	for code, messageID := range tests {
+		query := url.Values{"error": {code}, "error_description": {"injected-description"}, "error_hint": {"injected-hint"}, "error_debug": {"injected-debug"}}
+		response := serveContract(t, handler, newContractRequest(http.MethodGet, "/sso/error?"+query.Encode()))
+		response.assertStatus(t, http.StatusBadRequest).
+			assertCatalogMessage(t, "en", messageID).
+			assertBodyContains(t, `href="/en/sign-in"`).
+			assertBodyAbsent(t, "injected-").
+			assertBodyAbsent(t, "<script>x</script>")
+	}
+}
