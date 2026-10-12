@@ -71,6 +71,7 @@ type Client struct {
 	mu              sync.Mutex
 	metadata        *metadata
 	keys            map[string]*rsa.PublicKey
+	onlyKey         *rsa.PublicKey // the key set's single usable key, if it has exactly one
 	keysRefreshedAt time.Time
 }
 
@@ -108,7 +109,9 @@ func New(config Config) (*Client, error) {
 	}, nil
 }
 
-// AuthorizationURL builds the issuer authorization request with PKCE S256.
+// AuthorizationURL builds the issuer authorization request with PKCE S256. The
+// nonce is the code challenge: it is unique to this request, and Exchange can
+// recompute it from the stored code verifier, so no extra state is stored.
 func (c *Client) AuthorizationURL(ctx context.Context, state, codeChallenge string) (string, error) {
 	meta, err := c.discover(ctx)
 	if err != nil {
@@ -121,6 +124,7 @@ func (c *Client) AuthorizationURL(ctx context.Context, state, codeChallenge stri
 	query.Set("redirect_uri", c.redirectURL)
 	query.Set("scope", scopes)
 	query.Set("state", state)
+	query.Set("nonce", codeChallenge)
 	query.Set("code_challenge", codeChallenge)
 	query.Set("code_challenge_method", "S256")
 	endpoint.RawQuery = query.Encode()
@@ -157,6 +161,11 @@ func (c *Client) Exchange(ctx context.Context, code, codeVerifier string) (servi
 	claims, err := c.verifyIDToken(ctx, payload.IDToken)
 	if err != nil {
 		return service.SSOIdentity{}, err
+	}
+	// OpenID Connect Core 3.1.3.7: the nonce sent in the request must come back.
+	challenge := sha256.Sum256([]byte(codeVerifier))
+	if claims.Nonce == nil || *claims.Nonce != base64.RawURLEncoding.EncodeToString(challenge[:]) {
+		return service.SSOIdentity{}, fmt.Errorf("%w: nonce mismatch", ErrInvalidToken)
 	}
 	return service.SSOIdentity{
 		Subject:       claims.Subject,
@@ -283,7 +292,7 @@ func (c *Client) verify(ctx context.Context, raw string) (claims, error) {
 	if err := decodeSegment(parts[0], &header); err != nil {
 		return claims{}, fmt.Errorf("%w: malformed header", ErrInvalidToken)
 	}
-	if header.Algorithm != "RS256" || header.KeyID == "" || header.Critical != nil {
+	if header.Algorithm != "RS256" || header.Critical != nil {
 		return claims{}, fmt.Errorf("%w: unsupported header", ErrInvalidToken)
 	}
 	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
@@ -335,7 +344,9 @@ func (c *Client) discover(ctx context.Context) (metadata, error) {
 }
 
 // key returns the signing key for keyID, refreshing the key set when the ID
-// is unknown, at most once per keyRefreshPause.
+// is unknown, at most once per keyRefreshPause. A token without a kid header
+// is verified with the issuer's only key; a set with several keys cannot say
+// which one signed it, so such a token is rejected.
 func (c *Client) key(ctx context.Context, keyID string) (*rsa.PublicKey, error) {
 	meta, err := c.discover(ctx)
 	if err != nil {
@@ -343,7 +354,7 @@ func (c *Client) key(ctx context.Context, keyID string) (*rsa.PublicKey, error) 
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if key, ok := c.keys[keyID]; ok {
+	if key, ok := c.lookup(keyID); ok {
 		return key, nil
 	}
 	if !c.keysRefreshedAt.IsZero() && c.now().Sub(c.keysRefreshedAt) < keyRefreshPause {
@@ -368,21 +379,41 @@ func (c *Client) key(ctx context.Context, keyID string) (*rsa.PublicKey, error) 
 		return nil, fmt.Errorf("%w: key set unavailable", ErrInvalidToken)
 	}
 	keys := map[string]*rsa.PublicKey{}
+	usable := 0
+	var last *rsa.PublicKey
 	for _, jwk := range set.Keys {
-		if jwk.KeyType != "RSA" || jwk.KeyID == "" || (jwk.Use != "" && jwk.Use != "sig") || (jwk.Algorithm != "" && jwk.Algorithm != "RS256") {
+		if jwk.KeyType != "RSA" || (jwk.Use != "" && jwk.Use != "sig") || (jwk.Algorithm != "" && jwk.Algorithm != "RS256") {
 			continue
 		}
 		key, err := rsaKey(jwk.Modulus, jwk.Exponent)
 		if err != nil {
 			continue
 		}
-		keys[jwk.KeyID] = key
+		usable++
+		last = key
+		if jwk.KeyID != "" {
+			keys[jwk.KeyID] = key
+		}
 	}
 	c.keys = keys
-	if key, ok := keys[keyID]; ok {
+	c.onlyKey = nil
+	if usable == 1 {
+		c.onlyKey = last
+	}
+	if key, ok := c.lookup(keyID); ok {
 		return key, nil
 	}
 	return nil, fmt.Errorf("%w: unknown key", ErrInvalidToken)
+}
+
+// lookup finds a key by kid. An empty kid matches only a key set with exactly
+// one usable key. Call with c.mu held.
+func (c *Client) lookup(keyID string) (*rsa.PublicKey, bool) {
+	if keyID == "" {
+		return c.onlyKey, c.onlyKey != nil
+	}
+	key, ok := c.keys[keyID]
+	return key, ok
 }
 
 func rsaKey(modulus, exponent string) (*rsa.PublicKey, error) {

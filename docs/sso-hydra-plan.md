@@ -307,12 +307,15 @@ What was built:
   - Discovery on first use. The document's `issuer` must equal the configured
     issuer exactly.
   - The key set (JWKS) is cached by `kid`. An unknown `kid` refreshes it at
-    most every 30 s.
+    most every 30 s. A token without `kid` is verified with the set's only
+    key and rejected when the set has several.
   - Only RS256 keys of at least 2048 bits are accepted; `alg` must be RS256
     and the `crit` header is rejected.
   - ID token checks: exact `iss`; `aud` contains the client, with `azp` equal
     to the client when there are several audiences or when present; `exp` and
-    `iat` with 60 s of clock skew; a `sub` is present; and an `events` claim
+    `iat` with 60 s of clock skew; a `sub` is present; `nonce` equals the
+    S256 code challenge sent in the request (the client derives it from the
+    stored PKCE verifier, so no extra state is kept); and an `events` claim
     is rejected so a logout token cannot pass as an ID token.
   - Logout token checks (Back-Channel Logout 1.0 §2.6): `iss`, `aud`, `iat`
     within 5 minutes, `jti`, the back-channel event as an object, `sid`, and
@@ -533,13 +536,11 @@ backed by what was run rather than assumed:
 - **Conformance suite results.** Run locally on 12 October 2026 against
   `internal/adapter/oidc` (`scripts/oidc-conformance.sh`). The Back-Channel
   Logout (8 of 8) and RP-Initiated Logout plans pass, and the Basic plan
-  rejects all invalid tokens. Open: (1) an ID token with no `kid` header is
-  rejected, while the specification allows it for a single-key set and OIDF
-  lists the test as required; (2) the client sends and checks no `nonce`, so a
-  token with an invalid one is accepted, which is allowed for the code flow but
-  not what the OIDF test expects. Neither affects Hydra, which always sets
-  `kid`. The suite cannot fully judge this client, because it never calls the
-  userinfo endpoint.
+  rejects all invalid tokens. The first run found two deviations, both fixed
+  the same day: an ID token without `kid` was rejected (now accepted when the
+  key set has one key), and the client sent no `nonce` (now sent as the PKCE
+  challenge and checked). The suite cannot fully judge this client, because it
+  never calls the userinfo endpoint.
 - **Accounts without a provider account.** Converting an app strands users who
   have no verified account at the provider until someone creates or confirms it.
   The dry-run report counts them first.

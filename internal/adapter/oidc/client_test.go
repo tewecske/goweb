@@ -125,9 +125,18 @@ func sign(t *testing.T, key *rsa.PrivateKey, header, claims map[string]any) stri
 	return input + "." + base64.RawURLEncoding.EncodeToString(signature)
 }
 
+// testVerifier is the PKCE verifier of the sign-in under test. The client
+// sends its S256 challenge as the nonce, so valid ID tokens echo it.
+const testVerifier = "the-verifier"
+
+func testNonce() string {
+	digest := sha256.Sum256([]byte(testVerifier))
+	return base64.RawURLEncoding.EncodeToString(digest[:])
+}
+
 func (f *fakeIssuer) idClaims() map[string]any {
 	return map[string]any{
-		"iss": f.issuer, "sub": "42", "aud": []string{testClientID}, "exp": testNow.Add(time.Hour).Unix(), "iat": testNow.Unix(),
+		"iss": f.issuer, "sub": "42", "aud": []string{testClientID}, "exp": testNow.Add(time.Hour).Unix(), "iat": testNow.Unix(), "nonce": testNonce(),
 		"sid": "sid-1", "email": "ada@example.test", "email_verified": true, "name": "Ada", "locale": "hu",
 	}
 }
@@ -144,7 +153,7 @@ var rs256 = map[string]any{"alg": "RS256", "kid": "k1", "typ": "JWT"}
 func TestExchangeVerifiesTheIDTokenAndAuthenticatesTheClient(t *testing.T) {
 	fake := newFakeIssuer(t)
 	fake.idToken = sign(t, signingKey, rs256, fake.idClaims())
-	identity, err := fake.client(t).Exchange(context.Background(), "the-code", "the-verifier")
+	identity, err := fake.client(t).Exchange(context.Background(), "the-code", testVerifier)
 	if err != nil {
 		t.Fatalf("Exchange() error = %v", err)
 	}
@@ -200,6 +209,8 @@ func TestIDTokenRejections(t *testing.T) {
 		"wrong audience":            sign(t, signingKey, rs256, with(func(c map[string]any) { c["aud"] = "other-client" })),
 		"expired":                   sign(t, signingKey, rs256, with(func(c map[string]any) { c["exp"] = testNow.Add(-2 * time.Minute).Unix() })),
 		"issued in the future":      sign(t, signingKey, rs256, with(func(c map[string]any) { c["iat"] = testNow.Add(5 * time.Minute).Unix() })),
+		"no nonce":                  sign(t, signingKey, rs256, with(func(c map[string]any) { delete(c, "nonce") })),
+		"wrong nonce":               sign(t, signingKey, rs256, with(func(c map[string]any) { c["nonce"] = "another-request" })),
 		"no subject":                sign(t, signingKey, rs256, with(func(c map[string]any) { delete(c, "sub") })),
 		"several audiences no azp":  sign(t, signingKey, rs256, with(func(c map[string]any) { c["aud"] = []string{testClientID, "api"} })),
 		"azp of another client":     sign(t, signingKey, rs256, with(func(c map[string]any) { c["azp"] = "other-client" })),
@@ -208,7 +219,7 @@ func TestIDTokenRejections(t *testing.T) {
 	for name, token := range tests {
 		t.Run(name, func(t *testing.T) {
 			fake.idToken = token
-			if _, err := fake.client(t).Exchange(context.Background(), "code", "verifier"); !errors.Is(err, ErrInvalidToken) {
+			if _, err := fake.client(t).Exchange(context.Background(), "code", testVerifier); !errors.Is(err, ErrInvalidToken) {
 				t.Fatalf("Exchange() error = %v, want %v", err, ErrInvalidToken)
 			}
 		})
@@ -219,8 +230,31 @@ func TestIDTokenRejections(t *testing.T) {
 		c["aud"] = []string{testClientID, "api"}
 		c["azp"] = testClientID
 	}))
-	if _, err := fake.client(t).Exchange(context.Background(), "code", "verifier"); err != nil {
+	if _, err := fake.client(t).Exchange(context.Background(), "code", testVerifier); err != nil {
 		t.Fatalf("Exchange(within skew, azp matches) error = %v", err)
+	}
+}
+
+func TestIDTokenWithoutKidNeedsASingleKeyInTheSet(t *testing.T) {
+	noKid := map[string]any{"alg": "RS256", "typ": "JWT"}
+	fake := newFakeIssuer(t)
+	fake.idToken = sign(t, signingKey, noKid, fake.idClaims())
+	// The default set holds one usable key (the weak key is ignored).
+	if _, err := fake.client(t).Exchange(context.Background(), "code", testVerifier); err != nil {
+		t.Fatalf("single-key set, no kid: error = %v", err)
+	}
+	// The one key still has to match the signature.
+	fake.idToken = sign(t, rotateKey, noKid, fake.idClaims())
+	if _, err := fake.client(t).Exchange(context.Background(), "code", testVerifier); !errors.Is(err, ErrInvalidToken) {
+		t.Fatalf("single-key set, no kid, other signer: error = %v, want %v", err, ErrInvalidToken)
+	}
+	// With several keys the token cannot say which one signed it.
+	fake.mu.Lock()
+	fake.keys["k2"] = &rotateKey.PublicKey
+	fake.mu.Unlock()
+	fake.idToken = sign(t, signingKey, noKid, fake.idClaims())
+	if _, err := fake.client(t).Exchange(context.Background(), "code", testVerifier); !errors.Is(err, ErrInvalidToken) {
+		t.Fatalf("two-key set, no kid: error = %v, want %v", err, ErrInvalidToken)
 	}
 }
 
@@ -305,7 +339,7 @@ func TestAuthorizationAndEndSessionURLs(t *testing.T) {
 	}
 	authorization, _ := url.Parse(raw)
 	query := authorization.Query()
-	for key, want := range map[string]string{"existing": "1", "response_type": "code", "client_id": testClientID, "scope": "openid email profile", "state": "st", "code_challenge": "ch", "code_challenge_method": "S256", "redirect_uri": "http://127.0.0.1:8081/en/oauth/sso/callback"} {
+	for key, want := range map[string]string{"existing": "1", "response_type": "code", "client_id": testClientID, "scope": "openid email profile", "state": "st", "nonce": "ch", "code_challenge": "ch", "code_challenge_method": "S256", "redirect_uri": "http://127.0.0.1:8081/en/oauth/sso/callback"} {
 		if query.Get(key) != want {
 			t.Errorf("authorization %s = %q, want %q", key, query.Get(key), want)
 		}

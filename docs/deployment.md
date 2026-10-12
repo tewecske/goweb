@@ -216,13 +216,11 @@ above.
    verdict: the client never calls the userinfo endpoint, so the suite passes
    the negative modules whether or not the token was rejected, and leaves the
    positive modules waiting. Known results (October 2026): both logout plans
-   pass; the Basic plan rejects every invalid token (issuer, `sub`, audience,
-   `iat`, `alg=none`, bad signature). Two deviations remain: an ID token
-   without a `kid` header is rejected (the specification allows it when the
-   key set has one key; Hydra always sets `kid`), and the client sends no
-   `nonce`, so a token with a wrong one is accepted (optional for the code
-   flow, where PKCE and `state` apply). The unit tests cover the same
-   rejections with real keys.
+   pass, and the Basic plan rejects every invalid token (issuer, `sub`,
+   audience, `iat`, `alg=none`, bad signature, wrong `nonce`). The client sends
+   its PKCE challenge as the `nonce` and checks it, and accepts an ID token
+   without a `kid` header only when the issuer's key set has exactly one key.
+   The unit tests cover the same rejections with real keys.
 7. **Verify** with `make sso-contract` against the pinned Hydra image, and the
    browser specs (`make sso-e2e`) against a staging stack, before each Hydra
    upgrade.
