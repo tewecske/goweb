@@ -520,7 +520,8 @@ backed by what was run rather than assumed:
   OpenID Foundation suite plays the identity provider to test a relying party,
   and Hydra is already certified. The checklist runs it against the client
   app's own token handling instead (Basic relying party plus the logout
-  plans). It stays manual, and has not been run.
+  plans). It stays manual (`scripts/oidc-conformance.sh`); results are in the
+  Risks section.
 
 ## Risks and open questions
 
@@ -529,9 +530,16 @@ backed by what was run rather than assumed:
   local session lives until expiry. Mitigation: keep `GOWEB_SESSION_LIFETIME`
   short in client mode (for example 8h), and let expiry re-authenticate
   silently through Hydra while the provider session is alive.
-- **Conformance suite not run.** The OpenID Foundation relying-party and
-  logout plans are the remaining pre-production check for the client app; they
-  need a person and a reachable client, so they are manual.
+- **Conformance suite results.** Run locally on 12 October 2026 against
+  `internal/adapter/oidc` (`scripts/oidc-conformance.sh`). The Back-Channel
+  Logout (8 of 8) and RP-Initiated Logout plans pass, and the Basic plan
+  rejects all invalid tokens. Open: (1) an ID token with no `kid` header is
+  rejected, while the specification allows it for a single-key set and OIDF
+  lists the test as required; (2) the client sends and checks no `nonce`, so a
+  token with an invalid one is accepted, which is allowed for the code flow but
+  not what the OIDF test expects. Neither affects Hydra, which always sets
+  `kid`. The suite cannot fully judge this client, because it never calls the
+  userinfo endpoint.
 - **Accounts without a provider account.** Converting an app strands users who
   have no verified account at the provider until someone creates or confirms it.
   The dry-run report counts them first.

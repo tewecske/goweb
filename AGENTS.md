@@ -14,6 +14,7 @@ Package responsibilities:
 - `internal/locale` owns supported language codes, canonical localized paths, and translation catalogs.
 - `internal/service` contains application use cases.
 - `tests/browser` contains opt-in Playwright acceptance specs; do not commit browser credentials or bearer-token fixtures.
+- `tests/oidcconformance` drives the OpenID Foundation conformance suite against `internal/adapter/oidc`; run it through `scripts/oidc-conformance.sh` (manual, not CI).
 - `internal/adapter/http` owns routes, page rendering, full-page/HTMX responses, and transport adapters.
 - `internal/adapter/mail` owns mail delivery adapters; mail ports stay in consuming services.
 - `internal/adapter/oauth` owns external identity provider clients; OAuth ports and flow state stay in `internal/service`.

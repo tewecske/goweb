@@ -206,14 +206,23 @@ above.
 6. **Before the first production client**, run the OpenID Foundation
    conformance suite against the client app's own token handling. The suite
    plays the identity provider and tests the relying party, so it does not
-   test Hydra (which is already OpenID certified). Use the Basic relying-party
-   plan with the `code` response type and the Back-Channel Logout and
-   RP-Initiated Logout plans; the suite is free at
-   <https://www.certification.openid.net/> or can be run locally. It needs the
-   client app reachable by the suite and someone to drive each test, so it is a
-   manual check, not part of CI. The unit tests already cover the same
-   rejections (wrong signature, algorithm, issuer, audience, expiry, and
-   logout-token rules) with real keys.
+   test Hydra (which is already OpenID certified). Run
+   `scripts/oidc-conformance.sh up`, then `run`, then `down`. It starts the
+   suite locally in Docker (<https://localhost.emobix.co.uk:8443>) and drives
+   the Basic relying-party plan, the RP-Initiated Logout plan, and the
+   Back-Channel Logout plan through `internal/adapter/oidc`, the same code the
+   client app uses, printing one verdict per module. It is a manual check, not
+   part of CI. Read the `client:` line of each module as well as the suite's
+   verdict: the client never calls the userinfo endpoint, so the suite passes
+   the negative modules whether or not the token was rejected, and leaves the
+   positive modules waiting. Known results (October 2026): both logout plans
+   pass; the Basic plan rejects every invalid token (issuer, `sub`, audience,
+   `iat`, `alg=none`, bad signature). Two deviations remain: an ID token
+   without a `kid` header is rejected (the specification allows it when the
+   key set has one key; Hydra always sets `kid`), and the client sends no
+   `nonce`, so a token with a wrong one is accepted (optional for the code
+   flow, where PKCE and `state` apply). The unit tests cover the same
+   rejections with real keys.
 7. **Verify** with `make sso-contract` against the pinned Hydra image, and the
    browser specs (`make sso-e2e`) against a staging stack, before each Hydra
    upgrade.

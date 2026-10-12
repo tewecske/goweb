@@ -27,3 +27,6 @@
 
 # Amp orb portal registrations
 .amp/portals/*
+
+# Local OpenID conformance suite (scripts/oidc-conformance.sh).
+/.conformance/
