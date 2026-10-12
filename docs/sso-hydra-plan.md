@@ -481,12 +481,10 @@ Verified:
   database.
 
 Findings:
-- The emailed password-reset link points at the non-localized `/reset-password`,
-  whose form has an empty action and posts to a path that only accepts GET
-  (405). It is not caused by single sign-on and predates it: a user who opens
-  the link and submits the form gets a method-not-allowed error. The browser spec
-  works around it by opening the localized page. This should be fixed
-  separately; see Risks.
+- The emailed password-reset link pointed at the non-localized `/reset-password`,
+  whose form posted to a path that only accepted GET (405). It predated single
+  sign-on and is fixed: that route now redirects to the localized page, keeping
+  the token in the query, and the browser spec follows the emailed link as is.
 
 ## Phase 6: Production rollout (done)
 
@@ -539,12 +537,6 @@ backed by what was run rather than assumed:
   The dry-run report counts them first.
 - **Hydra version churn.** The versioning scheme changed after `v2.3.0`. Pin
   exact tags and read release notes before upgrades.
-- **Password-reset email link (existing bug).** The link in the reset email is
-  `<public URL>/reset-password?token=…`, and the form on that page posts to
-  itself (`/reset-password`), which is routed for GET only (405 on submit).
-  The localized `/{language}/reset-password` page works. Fix: link to a
-  localized path or accept POST on the non-localized route. Not changed in
-  Phase 5.
 - **Shared locale and theme.** These stay per app by design. Revisit if users
   expect them to follow them across apps.
 - **Admin roles across apps.** These stay per app by design. A future

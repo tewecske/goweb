@@ -182,9 +182,7 @@ test.describe("M10 single sign-on", () => {
     await otherPage.getByRole("button", { name: /send reset link/i }).click();
     await expect(otherPage.locator("#alerts")).toContainText(/instructions will arrive/i);
     const link = new URL(await readResetLink(user.email));
-    // The emailed link is the non-localized /reset-password, whose form posts
-    // back to a path that only accepts GET (405), so open the localized page.
-    await otherPage.goto(`${providerURL}/en${link.pathname}${link.search}`);
+    await otherPage.goto(link.href);
     const newPassword = uniquePassword();
     await otherPage.getByLabel("New password", { exact: true }).fill(newPassword);
     await otherPage.getByRole("button", { name: /set new password/i }).click();

@@ -158,7 +158,7 @@ func newRouterWithServices(recoveryLogger *slog.Logger, requestLogger middleware
 		mux.HandleFunc("POST "+ssoBackChannelLogoutPath, auth.ssoBackChannelLogout)
 	} else {
 		mux.HandleFunc("GET /confirm-email", auth.confirmEmail)
-		mux.HandleFunc("GET /reset-password", auth.resetPassword)
+		mux.HandleFunc("GET /reset-password", auth.resetPasswordLink)
 	}
 	mux.Handle("GET /static/{path...}", http.StripPrefix("/static/", http.FileServer(http.FS(staticassets.Files()))))
 	mux.HandleFunc("GET /healthz", health)

@@ -771,3 +771,29 @@ func TestAccountMenuSignOutIsTheMenuItem(t *testing.T) {
 		t.Fatalf("account menu does not render sign-out as the menu item submitting a separate form:\n%s", body)
 	}
 }
+
+func TestEmailedResetLinkLeadsToPageThatAcceptsThePost(t *testing.T) {
+	dependencies := newHTTPTestDependencies(t)
+	dependencies.PasswordResetterUse = httpResetUseStub{}
+	handler := NewRouterWithServices(dependencies)
+
+	// The emailed link is not localized; the form on the page it leads to must
+	// post to a route that accepts POST, with the token preserved.
+	link := httptest.NewRecorder()
+	handler.ServeHTTP(link, httptest.NewRequest(http.MethodGet, "/reset-password?token=secret-reset-token", nil))
+	if link.Code != http.StatusFound {
+		t.Fatalf("emailed link status = %d, want %d", link.Code, http.StatusFound)
+	}
+	location := link.Header().Get("Location")
+	if location != "/en/reset-password?token=secret-reset-token" {
+		t.Fatalf("redirect location = %q", location)
+	}
+
+	csrf := csrfCookie(t, handler)
+	response := csrfRequest(t, handler, http.MethodPost, location, url.Values{
+		"_csrf": {csrf.Value}, "password": {"correct-horse-battery-staple"},
+	}, csrf)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Password changed") {
+		t.Fatalf("post after emailed link = %d %q", response.Code, response.Body.String())
+	}
+}

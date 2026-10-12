@@ -76,6 +76,17 @@ func (h *authHandler) confirmEmail(writer http.ResponseWriter, request *http.Req
 	h.renderRecoveryWithStatus(writer, request, "confirm-email", FormData{}, http.StatusOK, alert)
 }
 
+// resetPasswordLink serves the non-localized link sent by email. It hands off to
+// the localized page, whose form posts to a route that accepts POST, and keeps
+// the token in the query so links in already-sent mail keep working.
+func (h *authHandler) resetPasswordLink(writer http.ResponseWriter, request *http.Request) {
+	target := mustLocalePath(resolveRequestLanguage(request, ""), "/reset-password")
+	if request.URL.RawQuery != "" {
+		target += "?" + request.URL.RawQuery
+	}
+	http.Redirect(writer, request, target, http.StatusFound)
+}
+
 func (h *authHandler) resetPassword(writer http.ResponseWriter, request *http.Request) {
 	language := recoveryLanguage(request)
 	if request.Method == http.MethodGet {
