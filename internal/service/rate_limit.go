@@ -7,7 +7,6 @@ import (
 	"net/netip"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -65,20 +64,53 @@ func (e RateLimitError) Unwrap() error {
 	return ErrRateLimited
 }
 
-type rateLimitBucket struct {
-	action  string
-	key     string
-	started time.Time
-	count   int
+// RateLimitStore keeps fixed-window attempt counters. The in-memory store
+// serves one process; a database store is shared by every instance of an app,
+// so a restart or a second instance does not reset or multiply the budgets.
+// Every method takes the time so tests control the clock.
+type RateLimitStore interface {
+	// Hit counts one attempt in the action/key window, opening a window of the
+	// given length when none is live. The count includes this attempt and can
+	// exceed the limit; the limiter compares it. hint is the redacted key.
+	Hit(ctx context.Context, action, key, hint string, window time.Duration, now time.Time) (RateLimitHit, error)
+	// Get returns the live window for action/key, or the zero value.
+	Get(ctx context.Context, action, key string, now time.Time) (RateLimitHit, error)
+	// Clear removes one action/key window.
+	Clear(ctx context.Context, action, key string) error
+	// List returns every live window.
+	List(ctx context.Context, now time.Time) ([]RateLimitStoredBucket, error)
+	// ClearAction removes every window of one action and returns the count.
+	ClearAction(ctx context.Context, action string) (int, error)
+	// ClearAll removes every window and returns the count.
+	ClearAll(ctx context.Context) (int, error)
 }
 
-// RateLimiter implements bounded, concurrent fixed-window budgets. Action is
-// part of every key, so sign-in and other authentication actions stay separate.
+// RateLimitHit is the live window of one action/key. The zero value means no
+// live window.
+type RateLimitHit struct {
+	Count   int
+	Started time.Time
+}
+
+// RateLimitStoredBucket is one live window with its redacted key hint.
+type RateLimitStoredBucket struct {
+	Action  string
+	KeyHint string
+	Count   int
+	Started time.Time
+}
+
+// rateLimitStoreTimeout bounds one store call, because limiter methods carry
+// no context of their own.
+const rateLimitStoreTimeout = 5 * time.Second
+
+// RateLimiter implements bounded, concurrent fixed-window budgets over a
+// RateLimitStore. Action is part of every key, so sign-in and other
+// authentication actions stay separate.
 type RateLimiter struct {
-	mu      sync.Mutex
-	config  RateLimitConfig
-	now     func() time.Time
-	buckets map[string]rateLimitBucket
+	config RateLimitConfig
+	now    func() time.Time
+	store  RateLimitStore
 }
 
 // NewRateLimiter constructs a bounded in-memory limiter.
@@ -86,16 +118,34 @@ func NewRateLimiter(config RateLimitConfig) (*RateLimiter, error) {
 	if config.Limit <= 0 || config.Window <= 0 || config.MaxKeys <= 0 {
 		return nil, ErrInvalidRateLimitConfig
 	}
-	return &RateLimiter{
-		config:  config,
-		now:     time.Now,
-		buckets: make(map[string]rateLimitBucket),
-	}, nil
+	return &RateLimiter{config: config, now: time.Now, store: newMemoryRateLimitStore(config)}, nil
+}
+
+// NewRateLimiterWithStore constructs a limiter over a shared store. MaxKeys
+// bounds only the in-memory store, so it is not required here.
+func NewRateLimiterWithStore(config RateLimitConfig, store RateLimitStore) (*RateLimiter, error) {
+	if config.Limit <= 0 || config.Window <= 0 || store == nil {
+		return nil, ErrInvalidRateLimitConfig
+	}
+	return &RateLimiter{config: config, now: time.Now, store: store}, nil
+}
+
+func (l *RateLimiter) usable() bool {
+	return l != nil && l.now != nil && l.store != nil
+}
+
+func storeContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), rateLimitStoreTimeout)
+}
+
+// retryAfter is the time left in a window that started at started.
+func (l *RateLimiter) retryAfter(started, now time.Time) time.Duration {
+	return l.config.Window - now.Sub(started)
 }
 
 // Allow consumes one attempt from action/key budget.
 func (l *RateLimiter) Allow(action, key string) (RateLimitDecision, error) {
-	if l == nil || l.now == nil || l.buckets == nil {
+	if !l.usable() {
 		return RateLimitDecision{}, ErrInvalidRateLimitConfig
 	}
 	if err := validateRateLimitKey(action); err != nil {
@@ -104,41 +154,23 @@ func (l *RateLimiter) Allow(action, key string) (RateLimitDecision, error) {
 	if err := validateRateLimitKey(key); err != nil {
 		return RateLimitDecision{}, err
 	}
-
-	compositeKey := action + "\x00" + key
 	now := l.now()
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.pruneExpired(now)
-	bucket, exists := l.buckets[compositeKey]
-	if !exists {
-		if len(l.buckets) >= l.config.MaxKeys && !l.evictOldestUnblocked() {
-			return RateLimitDecision{}, ErrRateLimitCapacity
-		}
-		bucket = rateLimitBucket{action: action, key: key, started: now}
+	ctx, cancel := storeContext()
+	defer cancel()
+	hit, err := l.store.Hit(ctx, action, key, redactRateLimitKey(key), l.config.Window, now)
+	if err != nil {
+		return RateLimitDecision{}, err
 	}
-	if now.Sub(bucket.started) >= l.config.Window {
-		bucket = rateLimitBucket{action: action, key: key, started: now}
+	if hit.Count > l.config.Limit {
+		return RateLimitDecision{Allowed: false, Remaining: 0, RetryAfter: l.retryAfter(hit.Started, now)}, nil
 	}
-	if bucket.count >= l.config.Limit {
-		return RateLimitDecision{
-			Allowed:    false,
-			Remaining:  0,
-			RetryAfter: l.config.Window - now.Sub(bucket.started),
-		}, nil
-	}
-	bucket.count++
-	l.buckets[compositeKey] = bucket
-	return RateLimitDecision{
-		Allowed:   true,
-		Remaining: l.config.Limit - bucket.count,
-	}, nil
+	return RateLimitDecision{Allowed: true, Remaining: l.config.Limit - hit.Count}, nil
 }
 
 // Clear removes one action/key budget, allowing successful authentication to
 // reset relevant failed-attempt state.
 func (l *RateLimiter) Clear(action, key string) error {
-	if l == nil || l.buckets == nil {
+	if !l.usable() {
 		return ErrInvalidRateLimitConfig
 	}
 	if err := validateRateLimitKey(action); err != nil {
@@ -147,25 +179,32 @@ func (l *RateLimiter) Clear(action, key string) error {
 	if err := validateRateLimitKey(key); err != nil {
 		return err
 	}
-	l.mu.Lock()
-	delete(l.buckets, action+"\x00"+key)
-	l.mu.Unlock()
-	return nil
+	ctx, cancel := storeContext()
+	defer cancel()
+	return l.store.Clear(ctx, action, key)
+}
+
+// live lists the live windows for the read-only views. A store failure yields
+// no windows rather than a guess.
+func (l *RateLimiter) live() []RateLimitStoredBucket {
+	if !l.usable() {
+		return nil
+	}
+	ctx, cancel := storeContext()
+	defer cancel()
+	buckets, err := l.store.List(ctx, l.now())
+	if err != nil {
+		return nil
+	}
+	return buckets
 }
 
 // LockedCount reports how many keys are currently at their fixed-window
 // limit. It never exposes the limited keys themselves.
 func (l *RateLimiter) LockedCount() int {
-	if l == nil || l.now == nil || l.buckets == nil {
-		return 0
-	}
-	now := l.now()
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.pruneExpired(now)
 	locked := 0
-	for _, bucket := range l.buckets {
-		if bucket.count >= l.config.Limit {
+	for _, bucket := range l.live() {
+		if bucket.Count >= l.config.Limit {
 			locked++
 		}
 	}
@@ -193,28 +232,21 @@ type RateLimitBucketInfo struct {
 
 // Actions returns one summary per action currently held by the limiter.
 func (l *RateLimiter) Actions() []RateLimitActionInfo {
-	if l == nil || l.now == nil || l.buckets == nil {
-		return nil
-	}
-	now := l.now()
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.pruneExpired(now)
 	index := make(map[string]int)
 	actions := make([]RateLimitActionInfo, 0)
-	for _, bucket := range l.buckets {
-		position, exists := index[bucket.action]
+	for _, bucket := range l.live() {
+		position, exists := index[bucket.Action]
 		if !exists {
 			position = len(actions)
-			index[bucket.action] = position
+			index[bucket.Action] = position
 			actions = append(actions, RateLimitActionInfo{
-				Action: bucket.action,
+				Action: bucket.Action,
 				Limit:  l.config.Limit,
 				Window: l.config.Window,
 			})
 		}
 		actions[position].Buckets++
-		if bucket.count >= l.config.Limit {
+		if bucket.Count >= l.config.Limit {
 			actions[position].Locked++
 		}
 	}
@@ -224,27 +256,30 @@ func (l *RateLimiter) Actions() []RateLimitActionInfo {
 
 // Buckets returns redacted live budgets for one action.
 func (l *RateLimiter) Buckets(action string) ([]RateLimitBucketInfo, error) {
-	if l == nil || l.now == nil || l.buckets == nil {
+	if !l.usable() {
 		return nil, ErrInvalidRateLimitConfig
 	}
 	if err := validateRateLimitKey(action); err != nil {
 		return nil, err
 	}
 	now := l.now()
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.pruneExpired(now)
+	ctx, cancel := storeContext()
+	defer cancel()
+	stored, err := l.store.List(ctx, now)
+	if err != nil {
+		return nil, err
+	}
 	buckets := make([]RateLimitBucketInfo, 0)
-	for _, bucket := range l.buckets {
-		if bucket.action != action {
+	for _, bucket := range stored {
+		if bucket.Action != action {
 			continue
 		}
 		buckets = append(buckets, RateLimitBucketInfo{
-			Action:     bucket.action,
-			KeyHint:    redactRateLimitKey(bucket.key),
-			Count:      bucket.count,
+			Action:     bucket.Action,
+			KeyHint:    bucket.KeyHint,
+			Count:      min(bucket.Count, l.config.Limit),
 			Limit:      l.config.Limit,
-			RetryAfter: l.config.Window - now.Sub(bucket.started),
+			RetryAfter: l.retryAfter(bucket.Started, now),
 		})
 	}
 	sort.Slice(buckets, func(i, j int) bool { return buckets[i].Count > buckets[j].Count })
@@ -254,34 +289,25 @@ func (l *RateLimiter) Buckets(action string) ([]RateLimitBucketInfo, error) {
 // ClearAction removes every budget for one action and returns the removed
 // count. Clearing an unknown action is a successful no-op.
 func (l *RateLimiter) ClearAction(action string) (int, error) {
-	if l == nil || l.buckets == nil {
+	if !l.usable() {
 		return 0, ErrInvalidRateLimitConfig
 	}
 	if err := validateRateLimitKey(action); err != nil {
 		return 0, err
 	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	removed := 0
-	for key, bucket := range l.buckets {
-		if bucket.action == action {
-			delete(l.buckets, key)
-			removed++
-		}
-	}
-	return removed, nil
+	ctx, cancel := storeContext()
+	defer cancel()
+	return l.store.ClearAction(ctx, action)
 }
 
 // ClearAll removes every live budget and returns the removed count.
-func (l *RateLimiter) ClearAll() int {
-	if l == nil || l.buckets == nil {
-		return 0
+func (l *RateLimiter) ClearAll() (int, error) {
+	if !l.usable() {
+		return 0, ErrInvalidRateLimitConfig
 	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	removed := len(l.buckets)
-	l.buckets = make(map[string]rateLimitBucket)
-	return removed
+	ctx, cancel := storeContext()
+	defer cancel()
+	return l.store.ClearAll(ctx)
 }
 
 // redactRateLimitKey keeps a short, non-reversible hint so administrators can
@@ -305,7 +331,7 @@ type RateLimitSnapshot struct {
 // Snapshot returns the current budget for action/key without consuming it. It
 // is read-only so administrators can diagnose live lockout state.
 func (l *RateLimiter) Snapshot(action, key string) (RateLimitSnapshot, error) {
-	if l == nil || l.now == nil || l.buckets == nil {
+	if !l.usable() {
 		return RateLimitSnapshot{}, ErrInvalidRateLimitConfig
 	}
 	if err := validateRateLimitKey(action); err != nil {
@@ -315,42 +341,18 @@ func (l *RateLimiter) Snapshot(action, key string) (RateLimitSnapshot, error) {
 		return RateLimitSnapshot{}, err
 	}
 	now := l.now()
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	ctx, cancel := storeContext()
+	defer cancel()
+	hit, err := l.store.Get(ctx, action, key, now)
+	if err != nil {
+		return RateLimitSnapshot{}, err
+	}
 	snapshot := RateLimitSnapshot{Limit: l.config.Limit}
-	bucket, exists := l.buckets[action+"\x00"+key]
-	if !exists || now.Sub(bucket.started) >= l.config.Window {
-		return snapshot, nil
+	if hit.Count > 0 {
+		snapshot.Count = min(hit.Count, l.config.Limit)
+		snapshot.RetryAfter = l.retryAfter(hit.Started, now)
 	}
-	snapshot.Count = bucket.count
-	snapshot.RetryAfter = l.config.Window - now.Sub(bucket.started)
 	return snapshot, nil
-}
-
-func (l *RateLimiter) pruneExpired(now time.Time) {
-	for key, bucket := range l.buckets {
-		if now.Sub(bucket.started) >= l.config.Window {
-			delete(l.buckets, key)
-		}
-	}
-}
-
-// evictOldestUnblocked frees room for a new key when the limiter is full, so
-// flooding it with fresh keys cannot lock every other caller out. Keys at their
-// limit are kept: evicting them would reset an active block.
-func (l *RateLimiter) evictOldestUnblocked() bool {
-	oldestKey := ""
-	var oldest time.Time
-	for key, bucket := range l.buckets {
-		if bucket.count < l.config.Limit && (oldestKey == "" || bucket.started.Before(oldest)) {
-			oldestKey, oldest = key, bucket.started
-		}
-	}
-	if oldestKey == "" {
-		return false
-	}
-	delete(l.buckets, oldestKey)
-	return true
 }
 
 // originRateLimitKey groups IPv6 clients by /64 prefix, which one subscriber

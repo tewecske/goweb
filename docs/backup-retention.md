@@ -15,6 +15,7 @@ and the expectations for datastore backups. See the
 | OAuth flow states | `oauth_states` | not age-based | `token_retention` removes consumed or expired states. |
 | Sign-in history | `login_attempts` | `GOWEB_LOGIN_ATTEMPT_RETENTION` (`720h`) | `login_attempt_retention` removes attempts older than the cutoff. |
 | Usage events | `usage_events` | `GOWEB_USAGE_RETENTION` (`2160h`) | `usage_retention` removes events older than the cutoff. |
+| Rate-limit windows | `rate_limit_buckets` | live for one window (one minute) | `rate_limit_retention` removes expired windows. Keys are stored only as hashes. Not worth backing up. |
 | Administrator audit log | `audit_log` | not automatically removed | Preserved as the historical record of administrator actions. |
 | Sessions and external identities | `sessions`, `oauth_identities` | not age-based | Expired and revoked sessions are rejected at lookup; rows are removed when their account is deleted. |
 
@@ -35,12 +36,13 @@ Notes:
 ## Cleanup schedule
 
 The maintenance worker runs every `service.DefaultMaintenanceInterval` (six
-hours) and registers four jobs:
+hours) and registers five jobs:
 
 - `guest_cleanup`
 - `token_retention`
 - `login_attempt_retention`
 - `usage_retention`
+- `rate_limit_retention`
 
 Each run is independent: one job failing does not cancel the others, and the
 worker keeps its last-run state in process memory. Current status and a manual

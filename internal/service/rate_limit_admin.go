@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 )
 
@@ -14,7 +15,7 @@ type RateLimitInspector interface {
 	Actions() []RateLimitActionInfo
 	Buckets(string) ([]RateLimitBucketInfo, error)
 	ClearAction(string) (int, error)
-	ClearAll() int
+	ClearAll() (int, error)
 }
 
 // RateLimitAdminService lists and clears live rate-limit budgets. Every clear
@@ -119,7 +120,12 @@ func (s *RateLimitAdminService) ClearAll(ctx context.Context, actor AdminActionC
 	}
 	removed := 0
 	for _, limiter := range s.limiters {
-		removed += limiter.ClearAll()
+		count, err := limiter.ClearAll()
+		removed += count
+		if err != nil {
+			s.record(ctx, actor, "all", removed)
+			return removed, fmt.Errorf("clear rate limits: %w", err)
+		}
 	}
 	s.record(ctx, actor, "all", removed)
 	return removed, nil

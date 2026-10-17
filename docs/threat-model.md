@@ -69,6 +69,9 @@ state, and revision-checked writes. None are trusted from the client.
 
 - **Authentication rate limits**: independent fixed-window budgets for
   `signin.identifier` and `signin.origin`; successful authentication clears both.
+  Counters live in PostgreSQL (`rate_limit_buckets`), so every instance of an
+  app shares one budget and a restart does not reset it. Keys are stored only
+  as SHA-256 hashes plus a redacted hint.
 - **Sign-up limits**: a `signup.origin` budget bounds account creation and
   probing for registered emails.
 - **Password hashing**: concurrent Argon2id derivations are capped so floods
@@ -145,7 +148,7 @@ state, and revision-checked writes. None are trusted from the client.
 
 | Threat | Boundary | Mitigation | Residual risk |
 | --- | --- | --- | --- |
-| Credential stuffing / brute force | Browser → adapter | Per-identifier and per-origin rate limits, lockout diagnostics, durable sign-in history | Distributed multi-instance deployments get per-instance budgets |
+| Credential stuffing / brute force | Browser → adapter | Per-identifier and per-origin rate limits, lockout diagnostics, durable sign-in history | One database round trip per attempt; a database outage fails sign-in closed |
 | Session theft | Browser ↔ adapter | `HttpOnly`/`SameSite`/`Secure` cookie, server-side revocation and expiry | Malware on the client or a compromised proxy |
 | CSRF | Browser → adapter | Double-submit token on every state-changing request, constant-time compare | XSS would defeat any token scheme |
 | Token replay | Browser → adapter | Single-use atomic consumption, expiry, uniform failure messages | A stolen link used before the legitimate user |
@@ -165,7 +168,6 @@ state, and revision-checked writes. None are trusted from the client.
 ## Out of scope
 
 - Multi-factor authentication and hardware keys.
-- Distributed rate limiting across instances.
 - Edge controls (WAF, DDoS protection, HSTS) owned by the deployment platform.
 - Compromised operator credentials or a compromised database host.
 - Email deliverability and relay provider security.

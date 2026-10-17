@@ -251,15 +251,15 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		}
 		mailSender = smtpSender
 	}
-	signInLimiter, err := service.NewRateLimiter(service.DefaultAuthenticationRateLimitConfig)
+	signInLimiter, rateLimitStore, err := newSharedRateLimiter(database, "signin", service.DefaultAuthenticationRateLimitConfig)
 	if err != nil {
 		return nil, fmt.Errorf("construct signin rate limiter: %w", err)
 	}
-	confirmationLimiter, err := service.NewRateLimiter(service.RateLimitConfig{Limit: 10, Window: time.Minute, MaxKeys: 10_000})
+	confirmationLimiter, _, err := newSharedRateLimiter(database, "confirmation", service.RateLimitConfig{Limit: 10, Window: time.Minute})
 	if err != nil {
 		return nil, fmt.Errorf("construct confirmation rate limiter: %w", err)
 	}
-	passwordResetLimiter, err := service.NewRateLimiter(service.RateLimitConfig{Limit: 10, Window: time.Minute, MaxKeys: 10_000})
+	passwordResetLimiter, _, err := newSharedRateLimiter(database, "password-reset", service.RateLimitConfig{Limit: 10, Window: time.Minute})
 	if err != nil {
 		return nil, fmt.Errorf("construct password reset rate limiter: %w", err)
 	}
@@ -327,9 +327,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct guest upgrade service: %w", err)
 	}
-	guestLimiter, err := service.NewRateLimiter(service.RateLimitConfig{
-		Limit: 10, Window: time.Minute, MaxKeys: 10_000,
-	})
+	guestLimiter, _, err := newSharedRateLimiter(database, "guest", service.RateLimitConfig{Limit: 10, Window: time.Minute})
 	if err != nil {
 		return nil, fmt.Errorf("construct guest rate limiter: %w", err)
 	}
@@ -361,9 +359,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("construct group service: %w", err)
 	}
-	groupJoinLimiter, err := service.NewRateLimiter(service.RateLimitConfig{
-		Limit: 20, Window: time.Minute, MaxKeys: 10_000,
-	})
+	groupJoinLimiter, _, err := newSharedRateLimiter(database, "group-join", service.RateLimitConfig{Limit: 20, Window: time.Minute})
 	if err != nil {
 		return nil, fmt.Errorf("construct group join rate limiter: %w", err)
 	}
@@ -433,6 +429,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		service.MaintenanceJob{Name: service.MaintenanceJobTokenRetention, Run: retentionService.CleanupTokens},
 		service.MaintenanceJob{Name: service.MaintenanceJobLoginAttemptRetention, Run: retentionService.CleanupLoginAttempts},
 		service.MaintenanceJob{Name: service.MaintenanceJobUsageRetention, Run: retentionService.CleanupUsageEvents},
+		service.MaintenanceJob{Name: service.MaintenanceJobRateLimitRetention, Run: rateLimitStore.DeleteExpired},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("construct maintenance worker: %w", err)
@@ -541,4 +538,19 @@ func withRetentionDefaults(appConfig config.Config) config.Config {
 		appConfig.UsageRetention = config.DefaultUsageRetention
 	}
 	return appConfig
+}
+
+// newSharedRateLimiter builds a limiter whose counters live in the database,
+// so every instance of the app shares them. The returned store also owns the
+// table-wide cleanup of expired windows.
+func newSharedRateLimiter(database *sql.DB, scope string, config service.RateLimitConfig) (*service.RateLimiter, *postgresstore.RateLimitStore, error) {
+	store, err := postgresstore.NewRateLimitStore(database, scope)
+	if err != nil {
+		return nil, nil, err
+	}
+	limiter, err := service.NewRateLimiterWithStore(config, store)
+	if err != nil {
+		return nil, nil, err
+	}
+	return limiter, store, nil
 }

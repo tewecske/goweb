@@ -287,8 +287,8 @@ these settings:
 | `GOWEB_USAGE_RETENTION` | `2160h` | Removes old usage events. |
 
 The worker runs every six hours (`service.DefaultMaintenanceInterval`) and
-registers `guest_cleanup`, `token_retention`, `login_attempt_retention`, and
-`usage_retention`. Cleanup only removes expired, consumed, or over-age records,
+registers `guest_cleanup`, `token_retention`, `login_attempt_retention`,
+`usage_retention`, and `rate_limit_retention`. Cleanup only removes expired, consumed, or over-age records,
 and historical references are detached rather than cascading away. Current job
 status and a manual "run now" action are available on
 `/{language}/admin/system`; job status is live process state and never stores

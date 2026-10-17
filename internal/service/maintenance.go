@@ -17,6 +17,8 @@ const (
 	MaintenanceJobLoginAttemptRetention = "login_attempt_retention"
 	// MaintenanceJobUsageRetention removes old usage events.
 	MaintenanceJobUsageRetention = "usage_retention"
+	// MaintenanceJobRateLimitRetention removes expired rate-limit windows.
+	MaintenanceJobRateLimitRetention = "rate_limit_retention"
 	// DefaultMaintenanceInterval is the baseline delay between scheduled runs.
 	DefaultMaintenanceInterval = 6 * time.Hour
 	maxMaintenanceJobName      = 64

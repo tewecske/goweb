@@ -550,8 +550,12 @@ backed by what was run rather than assumed:
   expect them to follow them across apps.
 - **Admin roles across apps.** These stay per app by design. A future
   `roles` claim would need its own decision.
-- **Rate limits** remain in process memory per instance. This is unchanged
-  but matters more once the provider serves every app's sign-ins.
+- **Rate limits** were in process memory per instance, so a restart reset
+  them and N instances gave N times the budget. They are now shared through
+  PostgreSQL (`rate_limit_buckets`; the in-memory store remains for tests).
+  Each app has its own database, so budgets are per app; the provider's
+  budgets cover every app's sign-ins. A database outage refuses sign-in (fails
+  closed).
 
 ## Out of scope
 
