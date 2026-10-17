@@ -526,6 +526,16 @@ backed by what was run rather than assumed:
   plans). It stays manual (`scripts/oidc-conformance.sh`); results are in the
   Risks section.
 
+## Provider sign-in page names the app
+
+While a visitor is signing in to a client app, the provider's sign-in and
+sign-up pages say "Signing in to <app name>" (localized). The name is the
+Hydra client's `client_name`, read from Hydra's login request with the pending
+challenge cookie, so it cannot be forged from the browser. It is shown only
+when usable (at most 64 characters, no control characters) and never blocks
+signing in. A logo is not shown: the Content-Security-Policy allows images only
+from the provider's own origin, so a logo would need a deliberate policy change.
+
 ## Risks and open questions
 
 - **Lost back-channel calls.** Hydra makes 3 delivery attempts about 2 s

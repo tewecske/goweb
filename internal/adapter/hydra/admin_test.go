@@ -53,12 +53,12 @@ func TestNewAdminClientRejectsUnusableAddresses(t *testing.T) {
 }
 
 func TestLoginRequestAndAccept(t *testing.T) {
-	client, requests := fakeHydra(t, http.StatusOK, `{"skip":true,"subject":"42","session_id":"sid-1","redirect_to":"http://127.0.0.1:4444/oauth2/auth?login_verifier=v"}`)
+	client, requests := fakeHydra(t, http.StatusOK, `{"skip":true,"subject":"42","session_id":"sid-1","client":{"client_id":"notes","client_name":"Notes app"},"redirect_to":"http://127.0.0.1:4444/oauth2/auth?login_verifier=v"}`)
 	request, err := client.LoginRequest(context.Background(), "chal=")
 	if err != nil {
 		t.Fatalf("LoginRequest() error = %v", err)
 	}
-	if request != (service.SSOLoginRequest{Skip: true, Subject: "42", SessionID: "sid-1"}) {
+	if request != (service.SSOLoginRequest{Skip: true, Subject: "42", SessionID: "sid-1", ClientName: "Notes app"}) {
 		t.Fatalf("LoginRequest() = %+v", request)
 	}
 	target, err := client.AcceptLogin(context.Background(), "chal=", "42", 8*time.Hour)

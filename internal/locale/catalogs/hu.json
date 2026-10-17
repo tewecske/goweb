@@ -65,6 +65,7 @@
     "guest.upgrade.sso_submit": {"text": "Bejelentkezés a fiók megtartásához"},
     "guest.error.sso_taken": {"text": "Ehhez a bejelentkezéshez már tartozik fiók itt, és a fiókok nem vonhatók össze. Használja tovább ezt a vendégfiókot, vagy jelentkezzen ki, és lépjen be a másik fiókba."},
     "auth.sso.description": {"text": "A fiókját a szervezet bejelentkezési szolgáltatása kezeli."},
+    "auth.sso.signing_in_to": {"text": "Bejelentkezés ide:"},
     "auth.sso.submit": {"text": "Tovább a bejelentkezéshez"},
     "sso.error.generic": {"text": "A bejelentkezés nem sikerült. Próbálja újra."},
     "settings.sso.heading": {"text": "Fiók"},

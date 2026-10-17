@@ -66,6 +66,7 @@
     "guest.error.sso_taken": {"text": "That sign-in already has an account here, and accounts cannot be merged. Keep using this guest account, or sign out and sign in to the other account."},
     "auth.sso.description": {"text": "Your account is managed by the organization's sign-in service."},
     "auth.sso.submit": {"text": "Continue to sign in"},
+    "auth.sso.signing_in_to": {"text": "Signing in to"},
     "sso.error.generic": {"text": "Sign-in could not be completed. Try again."},
     "settings.sso.heading": {"text": "Account"},
     "settings.sso.help": {"text": "Your email address, name, and password are managed by your organization's sign-in service."},

@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // maxSSOChallenge bounds login, consent, and logout challenges. Hydra's
@@ -34,6 +36,8 @@ type SSOLoginRequest struct {
 	Skip      bool
 	Subject   string
 	SessionID string
+	// ClientName is the registered name of the app asking for the sign-in.
+	ClientName string
 }
 
 // SSOConsentRequest is the part of a Hydra consent request the provider uses.
@@ -149,6 +153,33 @@ func (s *SSOProviderService) BeginLogin(ctx context.Context, challenge string, c
 		return s.admin.AcceptLogin(ctx, challenge, ssoSubject(currentUserID), s.rememberFor)
 	}
 	return "", nil
+}
+
+// maxSSOClientNameRunes bounds the app name shown on the sign-in page.
+const maxSSOClientNameRunes = 64
+
+// LoginClientName returns the registered name of the app a pending login
+// challenge belongs to, so the sign-in page can say where the visitor is going.
+// It returns "" when the challenge is unusable or the app has no usable name:
+// the name is cosmetic and must never block signing in.
+func (s *SSOProviderService) LoginClientName(ctx context.Context, challenge string) string {
+	if s == nil || s.admin == nil || validateSSOChallenge(challenge) != nil {
+		return ""
+	}
+	request, err := s.admin.LoginRequest(ctx, challenge)
+	if err != nil {
+		return ""
+	}
+	name := strings.TrimSpace(request.ClientName)
+	if name == "" || utf8.RuneCountInString(name) > maxSSOClientNameRunes {
+		return ""
+	}
+	for _, r := range name {
+		if unicode.IsControl(r) {
+			return ""
+		}
+	}
+	return name
 }
 
 // CompleteLogin accepts a login challenge for an account that just signed in.

@@ -37,6 +37,12 @@ and never displays Hydra's description, hint, or debug text.
 Register each client app in Hydra (see `scripts/hydra-dev-client.sh` for the
 exact flags) with:
 
+- a client name (`--name`): the provider shows it on its sign-in and sign-up
+  pages as "Signing in to <name>" while a visitor is signing in to that app,
+  so use the name people know the app by (plain text, at most 64 characters;
+  anything longer, empty, or with control characters is not shown). The pages
+  show no logo, because the Content-Security-Policy allows images only from the
+  provider's own origin
 - redirect URI `<client public URL>/en/oauth/sso/callback`
 - post-logout redirect URI `<client public URL>/en/sign-in`
 - back-channel logout URI `<client public URL>/oauth/sso/backchannel-logout`

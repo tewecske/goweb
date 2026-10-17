@@ -12,6 +12,8 @@ const clientURL = (process.env.GOWEB_BROWSER_SSO_CLIENT_URL ?? process.env.SSO_D
 // Mail for the password-reset scenario: the provider must send through
 // Mailpit (GOWEB_MAIL_RELAY=smtp://localhost:1025) and this is its web API.
 const mailpitURL = (process.env.GOWEB_BROWSER_SSO_MAILPIT_URL ?? "").replace(/\/$/, "");
+// The name scripts/hydra-dev-client.sh registers for the development client.
+const clientName = process.env.GOWEB_BROWSER_SSO_CLIENT_NAME ?? "goweb development client";
 const adminEmail = process.env.GOWEB_BOOTSTRAP_ADMIN_EMAIL ?? "";
 const adminPassword = process.env.GOWEB_BOOTSTRAP_ADMIN_PASSWORD ?? "";
 
@@ -29,6 +31,7 @@ function uniquePassword(): string {
 // when a login challenge is pending, so signing up here finishes the flow.
 async function signUpAtProvider(page: Page, email: string, password: string): Promise<void> {
   await page.goto(`${providerURL}/en/sign-up`);
+  await expect(page.getByTestId("sso-client-name")).toContainText(clientName);
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: /create account/i }).click();
@@ -54,6 +57,8 @@ async function newClientUser(browser: Browser): Promise<{ context: BrowserContex
   const password = uniquePassword();
   await startClientSignIn(page);
   await expect(page).toHaveURL(`${providerURL}/en/sign-in`);
+  // The provider says which app the visitor is signing in to.
+  await expect(page.getByTestId("sso-client-name")).toContainText(clientName);
   await signUpAtProvider(page, email, password);
   await expect(page).toHaveURL(`${clientURL}/en/home`);
   return { context, page, email, password };

@@ -191,6 +191,9 @@ type AdminSuspiciousReporter interface {
 // an empty URL when the visitor must sign in first.
 type SSOProviderUseCases interface {
 	BeginLogin(ctx context.Context, challenge string, currentUserID int64) (string, error)
+	// LoginClientName names the app a pending login challenge belongs to, or
+	// returns "" when it cannot.
+	LoginClientName(ctx context.Context, challenge string) string
 	CompleteLogin(ctx context.Context, challenge string, userID int64) (string, error)
 	Consent(ctx context.Context, challenge string) (string, error)
 	Logout(ctx context.Context, challenge string) (string, error)

@@ -5,6 +5,7 @@
 {{define "auth-content"}}
   <div class="card card-border mt-6 w-full max-w-xl bg-base-100 shadow-sm">
     <div class="card-body">
+      {{if .SSOClientName}}<p class="font-medium" data-testid="sso-client-name">{{.Labels.sso_signing_in_to}} <strong>{{.SSOClientName}}</strong></p>{{end}}
       {{if .Description}}<p class="text-base-content/70">{{.Description}}</p>{{end}}
       {{if .SSOSignInURL}}
       <a class="btn btn-primary mt-4" href="{{.SSOSignInURL}}" data-testid="sso-sign-in">{{.SubmitLabel}}</a>

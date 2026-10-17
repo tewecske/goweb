@@ -130,6 +130,35 @@ func newSSOTestService(t *testing.T, admin *ssoAdminStub, store *ssoSessionStore
 	return service
 }
 
+func TestLoginClientNameIsOnlyShownWhenUsable(t *testing.T) {
+	tests := []struct {
+		name       string
+		clientName string
+		requestErr error
+		challenge  string
+		want       string
+	}{
+		{name: "registered name", clientName: "Notes app", challenge: "challenge", want: "Notes app"},
+		{name: "surrounding space is trimmed", clientName: "  Notes app \n", challenge: "challenge", want: "Notes app"},
+		{name: "exactly the length limit", clientName: strings.Repeat("é", 64), challenge: "challenge", want: strings.Repeat("é", 64)},
+		{name: "one past the length limit", clientName: strings.Repeat("é", 65), challenge: "challenge"},
+		{name: "control character", clientName: "Notes\x07app", challenge: "challenge"},
+		{name: "line break inside", clientName: "Notes\napp", challenge: "challenge"},
+		{name: "unnamed client", clientName: "   ", challenge: "challenge"},
+		{name: "hydra unavailable", clientName: "Notes app", requestErr: ErrSSOUnavailable, challenge: "challenge"},
+		{name: "malformed challenge", clientName: "Notes app", challenge: strings.Repeat("c", maxSSOChallenge+1)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			admin := &ssoAdminStub{login: SSOLoginRequest{ClientName: test.clientName}, requestErr: test.requestErr}
+			service := newSSOTestService(t, admin, &ssoSessionStoreStub{}, false)
+			if got := service.LoginClientName(context.Background(), test.challenge); got != test.want {
+				t.Fatalf("LoginClientName() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestSSOBeginLogin(t *testing.T) {
 	tests := []struct {
 		name         string

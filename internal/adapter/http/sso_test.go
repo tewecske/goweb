@@ -17,6 +17,7 @@ import (
 const testLoginChallenge = "eyJmbG93IjoiYWJjIn0_-xyz=="
 
 type httpSSOProviderStub struct {
+	clientName        string
 	beginTarget       string
 	beginErr          error
 	beginCurrentUser  int64
@@ -36,6 +37,10 @@ func (s *httpSSOProviderStub) BeginLogin(_ context.Context, _ string, currentUse
 	s.beginCalls++
 	s.beginCurrentUser = currentUserID
 	return s.beginTarget, s.beginErr
+}
+
+func (s *httpSSOProviderStub) LoginClientName(_ context.Context, _ string) string {
+	return s.clientName
 }
 
 func (s *httpSSOProviderStub) CompleteLogin(_ context.Context, challenge string, userID int64) (string, error) {
@@ -139,6 +144,43 @@ func TestSSOChallengeEndpointsRejectMalformedChallenges(t *testing.T) {
 	}
 	if provider.beginCalls != 0 {
 		t.Fatal("a malformed challenge reached the provider service")
+	}
+}
+
+func TestSignInAndSignUpNameTheAppDuringAnSSOFlow(t *testing.T) {
+	get := func(path string, withChallenge bool, clientName string) string {
+		t.Helper()
+		handler := NewRouterWithServices(ssoTestDependencies(t, &httpSSOProviderStub{clientName: clientName}))
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		if withChallenge {
+			request.AddCookie(&http.Cookie{Name: loginChallengeCookieName, Value: testLoginChallenge})
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("GET %s = %d, want 200", path, response.Code)
+		}
+		return response.Body.String()
+	}
+	for _, path := range []string{"/en/sign-in", "/en/sign-up"} {
+		body := get(path, true, "Notes app")
+		if !strings.Contains(body, `data-testid="sso-client-name"`) || !strings.Contains(body, "Signing in to <strong>Notes app</strong>") {
+			t.Fatalf("GET %s with a pending challenge does not name the app", path)
+		}
+		// The name is registered data, but it is still escaped.
+		if body := get(path, true, `<img src=x onerror=alert(1)>`); strings.Contains(body, "<img src=x") || !strings.Contains(body, "&lt;img src=x") {
+			t.Fatalf("GET %s rendered the app name unescaped", path)
+		}
+		// No pending challenge, or an app Hydra cannot name: no banner.
+		if body := get(path, false, "Notes app"); strings.Contains(body, "sso-client-name") {
+			t.Fatalf("GET %s without a pending challenge named an app", path)
+		}
+		if body := get(path, true, ""); strings.Contains(body, "sso-client-name") {
+			t.Fatalf("GET %s named an app Hydra could not name", path)
+		}
+	}
+	if body := get("/hu/sign-in", true, "Notes app"); !strings.Contains(body, "Bejelentkezés ide: <strong>Notes app</strong>") {
+		t.Fatal("the Hungarian sign-in page does not name the app in Hungarian")
 	}
 }
 

@@ -37,12 +37,15 @@ const (
 
 // PageData contains escaped, server-owned data for a full HTML document.
 type PageData struct {
-	Language         string
-	Title            string
-	Heading          string
-	Kind             string
-	Message          string
-	Description      string
+	Language    string
+	Title       string
+	Heading     string
+	Kind        string
+	Message     string
+	Description string
+	// SSOClientName names the app the visitor is signing in to, on the
+	// provider's sign-in and sign-up pages during a single sign-on flow.
+	SSOClientName    string
 	CSRFToken        string
 	Form             FormData
 	FormAction       string

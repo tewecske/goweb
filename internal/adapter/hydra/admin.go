@@ -59,11 +59,14 @@ func (c *AdminClient) LoginRequest(ctx context.Context, challenge string) (servi
 		Skip      bool   `json:"skip"`
 		Subject   string `json:"subject"`
 		SessionID string `json:"session_id"`
+		Client    struct {
+			Name string `json:"client_name"`
+		} `json:"client"`
 	}
 	if err := c.call(ctx, http.MethodGet, "/admin/oauth2/auth/requests/login", url.Values{"login_challenge": {challenge}}, nil, &payload); err != nil {
 		return service.SSOLoginRequest{}, err
 	}
-	return service.SSOLoginRequest{Skip: payload.Skip, Subject: payload.Subject, SessionID: payload.SessionID}, nil
+	return service.SSOLoginRequest{Skip: payload.Skip, Subject: payload.Subject, SessionID: payload.SessionID, ClientName: payload.Client.Name}, nil
 }
 
 // AcceptLogin accepts a login request for subject and asks Hydra to remember

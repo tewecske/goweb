@@ -259,6 +259,12 @@ func (h *authHandler) renderPasswordPageWithStatus(writer http.ResponseWriter, r
 	for _, provider := range h.oauthProviders(language) {
 		page.OAuthProviders = append(page.OAuthProviders, provider)
 	}
+	if h.dependencies.SSOProvider != nil {
+		// During a single sign-on flow, say which app the visitor is signing in to.
+		if cookie, err := request.Cookie(loginChallengeCookieName); err == nil && validLoginChallenge(cookie.Value) {
+			page.SSOClientName = h.dependencies.SSOProvider.LoginClientName(request.Context(), cookie.Value)
+		}
+	}
 	if kind == "sign-in" && request.URL.Query().Get("oauth") == "error" {
 		page.Alerts = append(page.Alerts, Alert{Level: "error", Message: h.translate(language, "oauth.error.generic")})
 	}
@@ -277,8 +283,9 @@ func (h *authHandler) formLabels(language locale.Code) map[string]string {
 		"or": "form.or", "transfer_code": "form.transfer_code", "save": "form.save", "request_transfer": "form.request_transfer",
 		"redeem": "form.redeem", "upgrade": "form.upgrade", "sign_in": "form.sign_in", "create_account": "form.create_account",
 		"already_account": "form.already_account", "need_account": "form.need_account",
-		"continue":     "form.continue",
-		"display_name": "form.display_name", "current_password": "form.current_password",
+		"continue":          "form.continue",
+		"sso_signing_in_to": "auth.sso.signing_in_to",
+		"display_name":      "form.display_name", "current_password": "form.current_password",
 		"settings_profile": "settings.profile.heading", "settings_profile_help": "settings.profile.help",
 		"settings_username_help": "settings.profile.username_help", "settings_label_help": "settings.profile.label_help",
 		"settings_password": "settings.password.heading", "settings_password_change_help": "settings.password.change_help",
