@@ -142,7 +142,11 @@ state, and revision-checked writes. None are trusted from the client.
 - The mail relay is referenced by host only and is required in production;
   `smtp://` relays upgrade with STARTTLS when offered and `smtps://` relays use
   implicit TLS. The application does not store SMTP
-  credentials and does not log message bodies.
+  credentials and does not log message bodies. With `GOWEB_RESEND_API_KEY`,
+  mail goes over HTTPS to the Resend API instead: the key is a redacted secret
+  that is sent only in the `Authorization` header of requests to
+  `api.resend.com`, redirects are never followed, and errors carry only the
+  status and Resend's short error code, never the key or the message.
 
 ## Threat analysis
 

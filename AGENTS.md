@@ -26,7 +26,8 @@ Package responsibilities:
 - `migrations/` stores ordered database schema changes.
 - `templates/` stores server-rendered HTML templates.
 - `static/` stores browser assets.
-- `deploy/` stores the Ory Hydra configuration (`docs/sso-hydra-plan.md`), container run scripts, and env templates for deployment (`docs/deployment.md`); it holds no real secrets. The `Dockerfile` at the repository root builds the single image used for every role.
+- `deploy/` stores the Ory Hydra configuration (`docs/sso-hydra-plan.md`), container run scripts, and env templates for deployment (`docs/deployment.md`); it holds no real secrets. The `Dockerfile` at the repository root builds the single image used for every role. `deploy/PREPARE.txt`, `deploy/SETUP.txt`, and `deploy/SETUP-nix.txt` are copy-paste runbooks (commands and values only); keep them in step with the scripts, env templates, and the module.
+- `flake.nix` and `nix/module.nix` are the NixOS module (`services.goweb`) that runs Hydra, the provider, and client apps as containers; the module reads `deploy/hydra/hydra.yml`, so keep one source of truth there.
 - `scripts/` stores shell scripts: developer tooling invoked from the `Makefile`, the Hydra contract test, and the read-only single sign-on conversion report operators run before converting an app (`docs/deployment.md`).
 - Keep tests beside packages they cover. Use `tests/` for cross-package or integration support.
 

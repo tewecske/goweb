@@ -1,0 +1,83 @@
+# PREPARE.txt - run before SETUP-nix.txt (or SETUP.txt).
+# Run in ONE shell on your workstation unless a step says [server].
+# Lines starting with "# EDIT" need your value. Everything else: paste as is.
+
+
+# ===== 1. Tools =====
+nix shell nixpkgs#cloudflared nixpkgs#jq nixpkgs#sops nixpkgs#age nixpkgs#ssh-to-age nixpkgs#openssl nixpkgs#openssh nixpkgs#curl nixpkgs#git
+
+
+# ===== 2. Variables =====
+# EDIT:
+export BASE_DOMAIN=example.com
+export SERVER_HOST=server.example.com
+export GOWEB_REPO=$HOME/goweb
+export TUNNEL_NAME=goweb
+export SSO_HOST=sso.$BASE_DOMAIN
+export AUTH_HOST=auth.$BASE_DOMAIN
+export APP_HOST=notes.$BASE_DOMAIN
+
+
+# ===== 3. Publish the image =====
+cd $GOWEB_REPO
+git push origin master
+# GitHub > Actions > CI > wait until the "image" job is green
+# GitHub > Profile > Packages > goweb > Package settings > Change visibility > Public
+export GOWEB_TAG=$(git rev-parse HEAD)
+echo ghcr.io/tewecske/goweb:$GOWEB_TAG
+# [server] verify the image can be pulled:
+# sudo podman pull ghcr.io/tewecske/goweb:<the tag printed above>
+
+
+# ===== 4. Cloudflare Tunnel =====
+cloudflared tunnel login
+cloudflared tunnel create $TUNNEL_NAME
+export TUNNEL_ID=$(cloudflared tunnel list -o json | jq -r ".[] | select(.name==\"$TUNNEL_NAME\") | .id")
+echo $TUNNEL_ID
+ls ~/.cloudflared/$TUNNEL_ID.json
+cloudflared tunnel route dns $TUNNEL_NAME $SSO_HOST
+cloudflared tunnel route dns $TUNNEL_NAME $AUTH_HOST
+cloudflared tunnel route dns $TUNNEL_NAME $APP_HOST
+# only for SETUP.txt (not NixOS): copy the tunnel credentials to the server
+scp ~/.cloudflared/$TUNNEL_ID.json $SERVER_HOST:
+
+
+# ===== 5. Resend =====
+# resend.com/domains > Add Domain > enter $BASE_DOMAIN
+# Cloudflare dashboard > $BASE_DOMAIN > DNS > add every record Resend shows (MX, SPF TXT, DKIM TXT)
+# resend.com/domains > Verify DNS Records > wait for "Verified"
+# resend.com/api-keys > Create API Key > Permission "Sending access" > Domain $BASE_DOMAIN
+# EDIT:
+export RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+export MAIL_FROM=no-reply@$BASE_DOMAIN
+curl -sS -X POST https://api.resend.com/emails -H "Authorization: Bearer $RESEND_API_KEY" -H 'Content-Type: application/json' -d "{\"from\":\"$MAIL_FROM\",\"to\":[\"delivered@resend.dev\"],\"subject\":\"goweb test\",\"text\":\"ok\"}"
+# expected output: {"id":"..."}
+
+
+# ===== 6. sops keys =====
+mkdir -p ~/.config/sops/age
+test -f ~/.config/sops/age/keys.txt || age-keygen -o ~/.config/sops/age/keys.txt
+export AGE_ADMIN=$(age-keygen -y ~/.config/sops/age/keys.txt)
+export AGE_SERVER=$(ssh-keyscan -t ed25519 $SERVER_HOST 2>/dev/null | ssh-to-age)
+export AGE_RECIPIENTS="$AGE_ADMIN,$AGE_SERVER"
+echo $AGE_RECIPIENTS
+# the server flake needs: inputs.sops-nix, module sops-nix.nixosModules.sops,
+# sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
+
+
+# ===== 7. Server configuration (add to the server's configuration.nix) =====
+# services.postgresql.enable = true;
+# services.postgresql.package = pkgs.postgresql_17;   # same package and dataDir as the existing PostgreSQL
+# virtualisation.oci-containers.backend = "podman";
+# then, with the existing PostgreSQL definition removed from the other app's flake:
+# [server] sudo nixos-rebuild switch --flake <your server flake>#<host>
+
+
+# ===== 8. [server] Checks =====
+ssh $SERVER_HOST 'ss -ltn | grep -E ":(24444|24445|28080|28081) " || echo "ports free"'
+ssh $SERVER_HOST 'sudo -u postgres psql -tAc "select version()"'
+ssh $SERVER_HOST 'sudo podman info --format "{{.Host.OS}}"'
+
+
+# ===== 9. Keep for SETUP-nix.txt =====
+echo "GOWEB_TAG=$GOWEB_TAG TUNNEL_ID=$TUNNEL_ID AGE_RECIPIENTS=$AGE_RECIPIENTS"

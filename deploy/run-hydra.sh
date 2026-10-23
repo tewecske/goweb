@@ -8,9 +8,10 @@
 #   deploy/run-hydra.sh stop               stop and remove it
 #
 # ENV_FILE holds the settings and secrets; start from deploy/env/hydra.env.example
-# and keep the real file out of Git (mode 600). Hydra listens on 127.0.0.1:4444
-# (public API, reached through your tunnel or proxy) and 127.0.0.1:4445 (admin
-# API, which can sign anyone in: never expose it). See docs/deployment.md.
+# and keep the real file out of Git (mode 600). Hydra listens on 127.0.0.1:24444
+# (public API, reached through your tunnel or proxy) and 127.0.0.1:24445 (admin
+# API, which can sign anyone in: never expose it); the ports come from
+# SERVE_PUBLIC_PORT and SERVE_ADMIN_PORT in the env file. See docs/deployment.md.
 set -eu
 
 ENGINE="${CONTAINER_ENGINE:-docker}"

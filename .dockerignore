@@ -13,3 +13,5 @@ deploy
 scripts
 tests
 *.md
+nix
+flake.nix

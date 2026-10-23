@@ -12,6 +12,7 @@ set -eu
 
 ENGINE="${CONTAINER_ENGINE:-docker}"
 HYDRA="${HYDRA_CONTAINER:-goweb-hydra}"
+ADMIN_URL="${HYDRA_ADMIN_URL:-http://127.0.0.1:24445}"
 
 [ "$#" -eq 3 ] || { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 id="$1"
@@ -22,7 +23,7 @@ case "$url" in https://*) ;; http://*) [ "${ALLOW_HTTP:-}" = 1 ] || { echo "the 
 [ -n "$name" ] || { echo "Display name must not be empty" >&2; exit 2; }
 
 secret="$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n')"
-hydra() { "$ENGINE" exec "$HYDRA" hydra --endpoint http://127.0.0.1:4445 "$@"; }
+hydra() { "$ENGINE" exec "$HYDRA" hydra --endpoint "$ADMIN_URL" "$@"; }
 
 hydra delete oauth2-client "$id" >/dev/null 2>&1 || true
 hydra create oauth2-client \

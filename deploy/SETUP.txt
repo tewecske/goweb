@@ -1,0 +1,229 @@
+# SETUP.txt - any Linux server with Docker or Podman, PostgreSQL, systemd.
+# Requires: docker or podman, psql access to PostgreSQL, curl, jq, openssl, git,
+# cloudflared, and everything in PREPARE.txt (Cloudflare tunnel and its
+# credentials file copied to this server, Resend, image).
+# Run in ONE shell on the server. Lines starting with "# EDIT" need your value.
+# Everything else: paste as is.
+
+
+# ===== 0. Variables =====
+# EDIT:
+export BASE_DOMAIN=example.com
+export ADMIN_EMAIL=you@example.com
+export APP_NAME=notes
+export APP_DISPLAY="Notes app"
+export GOWEB_IMAGE=ghcr.io/tewecske/goweb:REPLACE_WITH_COMMIT_SHA
+export RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+export TUNNEL_ID=00000000-0000-0000-0000-000000000000
+export CONTAINER_ENGINE=docker
+export PSQL="sudo -u postgres psql -X -v ON_ERROR_STOP=1"
+export PG_HOST=127.0.0.1
+export PG_PORT=5432
+# no edit needed:
+export SSO_HOST=sso.$BASE_DOMAIN
+export AUTH_HOST=auth.$BASE_DOMAIN
+export APP_HOST=$APP_NAME.$BASE_DOMAIN
+export APP_DB=goweb_$(echo $APP_NAME | tr - _)
+export MAIL_FROM=no-reply@$BASE_DOMAIN
+export ENV_DIR=$HOME/.goweb
+
+
+# ===== 1. Code and secret directory =====
+git clone https://github.com/tewecske/goweb.git $HOME/goweb
+cd $HOME/goweb
+install -d -m 700 $ENV_DIR
+umask 077
+
+
+# ===== 2. Generate secrets (run steps 2, 3, 4 without closing the shell) =====
+export HYDRA_DB_PW=$(openssl rand -hex 24)
+export PROVIDER_DB_PW=$(openssl rand -hex 24)
+export APP_DB_PW=$(openssl rand -hex 24)
+export HYDRA_SECRETS_SYSTEM=$(openssl rand -hex 32)
+export HYDRA_SECRETS_COOKIE=$(openssl rand -hex 32)
+export PROVIDER_SESSION_SECRET=$(openssl rand -hex 32)
+export APP_SESSION_SECRET=$(openssl rand -hex 32)
+
+
+# ===== 3. PostgreSQL roles and databases =====
+$PSQL -d postgres <<SQL
+CREATE ROLE hydra LOGIN PASSWORD '$HYDRA_DB_PW';
+CREATE DATABASE hydra OWNER hydra;
+REVOKE CONNECT ON DATABASE hydra FROM PUBLIC;
+CREATE ROLE goweb_provider LOGIN PASSWORD '$PROVIDER_DB_PW';
+CREATE DATABASE goweb_provider OWNER goweb_provider;
+REVOKE CONNECT ON DATABASE goweb_provider FROM PUBLIC;
+CREATE ROLE $APP_DB LOGIN PASSWORD '$APP_DB_PW';
+CREATE DATABASE $APP_DB OWNER $APP_DB;
+REVOKE CONNECT ON DATABASE $APP_DB FROM PUBLIC;
+SQL
+
+
+# ===== 4. Environment files =====
+cat > $ENV_DIR/hydra.env <<EOF
+DSN=postgres://hydra:$HYDRA_DB_PW@$PG_HOST:$PG_PORT/hydra?sslmode=disable
+SECRETS_SYSTEM=$HYDRA_SECRETS_SYSTEM
+SECRETS_COOKIE=$HYDRA_SECRETS_COOKIE
+SERVE_PUBLIC_HOST=127.0.0.1
+SERVE_PUBLIC_PORT=24444
+SERVE_ADMIN_PORT=24445
+URLS_SELF_ISSUER=https://$SSO_HOST
+URLS_LOGIN=https://$AUTH_HOST/sso/login
+URLS_CONSENT=https://$AUTH_HOST/sso/consent
+URLS_LOGOUT=https://$AUTH_HOST/sso/logout
+URLS_POST_LOGOUT_REDIRECT=https://$AUTH_HOST/en/sign-in
+URLS_ERROR=https://$AUTH_HOST/sso/error
+EOF
+cat > $ENV_DIR/provider.env <<EOF
+GOWEB_ENV=production
+GOWEB_AUTH_MODE=provider
+GOWEB_HTTP_ADDR=127.0.0.1:28080
+GOWEB_PUBLIC_URL=https://$AUTH_HOST
+GOWEB_SESSION_COOKIE_SECURE=true
+GOWEB_TRUSTED_PROXY=127.0.0.1
+GOWEB_DATABASE_URL=postgres://goweb_provider:$PROVIDER_DB_PW@$PG_HOST:$PG_PORT/goweb_provider?sslmode=disable
+GOWEB_SESSION_SECRET=$PROVIDER_SESSION_SECRET
+GOWEB_HYDRA_ADMIN_URL=http://127.0.0.1:24445
+GOWEB_SSO_ISSUER_URL=https://$SSO_HOST
+GOWEB_RESEND_API_KEY=$RESEND_API_KEY
+GOWEB_MAIL_FROM=$MAIL_FROM
+GOWEB_EMAIL_CONFIRMATION_REQUIRED=true
+EOF
+chmod 600 $ENV_DIR/*.env
+
+
+# ===== 5. Hydra =====
+deploy/run-hydra.sh migrate $ENV_DIR/hydra.env
+deploy/run-hydra.sh start $ENV_DIR/hydra.env
+sleep 5
+curl -sS -H 'X-Forwarded-Proto: https' http://127.0.0.1:24444/.well-known/openid-configuration | jq -r .issuer
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:24445/health/ready
+# expected: https://sso.<your domain> and 200
+
+
+# ===== 6. Provider =====
+deploy/run-provider.sh start $ENV_DIR/provider.env
+sleep 5
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:28080/healthz
+# expected: 200
+
+
+# ===== 7. Cloudflare Tunnel =====
+sudo install -d /etc/cloudflared
+sudo cp $HOME/$TUNNEL_ID.json /etc/cloudflared/$TUNNEL_ID.json
+sudo tee /etc/cloudflared/config.yml >/dev/null <<EOF
+tunnel: $TUNNEL_ID
+credentials-file: /etc/cloudflared/$TUNNEL_ID.json
+ingress:
+  - hostname: $SSO_HOST
+    service: http://127.0.0.1:24444
+  - hostname: $AUTH_HOST
+    service: http://127.0.0.1:28080
+  - hostname: $APP_HOST
+    service: http://127.0.0.1:28081
+  - service: http_status:404
+EOF
+sudo cloudflared service install
+sleep 5
+curl -sS https://$SSO_HOST/.well-known/openid-configuration | jq -r .issuer
+curl -s -o /dev/null -w '%{http_code}\n' https://$AUTH_HOST/healthz
+# expected: https://sso.<your domain> and 200
+
+
+# ===== 8. First administrator =====
+echo https://$AUTH_HOST/en/sign-up
+# open that URL, register $ADMIN_EMAIL, open the link in the confirmation mail
+$PSQL -d goweb_provider -c "UPDATE users SET is_admin = TRUE, version = version + 1 WHERE email = lower(btrim('$ADMIN_EMAIL')) AND is_admin = FALSE;"
+# expected: UPDATE 1
+
+
+# ===== 9. Register and start the client app =====
+deploy/register-client.sh goweb-$APP_NAME "$APP_DISPLAY" https://$APP_HOST > $ENV_DIR/$APP_NAME.creds
+cat > $ENV_DIR/client-$APP_NAME.env <<EOF
+GOWEB_ENV=production
+GOWEB_AUTH_MODE=client
+GOWEB_HTTP_ADDR=127.0.0.1:28081
+GOWEB_PUBLIC_URL=https://$APP_HOST
+GOWEB_SESSION_COOKIE_SECURE=true
+GOWEB_TRUSTED_PROXY=127.0.0.1
+GOWEB_DATABASE_URL=postgres://$APP_DB:$APP_DB_PW@$PG_HOST:$PG_PORT/$APP_DB?sslmode=disable
+GOWEB_SESSION_SECRET=$APP_SESSION_SECRET
+GOWEB_SESSION_LIFETIME=8h
+GOWEB_SSO_ISSUER_URL=https://$SSO_HOST
+GOWEB_SSO_ACCOUNT_URL=https://$AUTH_HOST/en/account/settings
+GOWEB_RESEND_API_KEY=$RESEND_API_KEY
+GOWEB_MAIL_FROM=$MAIL_FROM
+$(cat $ENV_DIR/$APP_NAME.creds)
+EOF
+chmod 600 $ENV_DIR/*
+deploy/run-client.sh start $APP_NAME $ENV_DIR/client-$APP_NAME.env
+sleep 5
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:28081/healthz
+# expected: 200
+echo https://$APP_HOST/en/sign-in
+# open that URL, click sign in, sign in at the provider, you land back in the app
+$PSQL -d $APP_DB -c "UPDATE users SET is_admin = TRUE, version = version + 1 WHERE email = lower(btrim('$ADMIN_EMAIL')) AND is_admin = FALSE;"
+# expected: UPDATE 1
+
+
+# ===== 10. Checks =====
+curl -sS -X POST https://api.resend.com/emails -H "Authorization: Bearer $RESEND_API_KEY" -H 'Content-Type: application/json' -d "{\"from\":\"$MAIL_FROM\",\"to\":[\"delivered@resend.dev\"],\"subject\":\"goweb test\",\"text\":\"ok\"}"
+$CONTAINER_ENGINE logs --tail 20 goweb-provider
+$CONTAINER_ENGINE logs --tail 20 goweb-client-$APP_NAME
+$CONTAINER_ENGINE logs --tail 20 goweb-hydra
+
+
+# ===== ADD ANOTHER CLIENT APP =====
+# EDIT:
+export APP_NAME=tasks
+export APP_DISPLAY="Tasks app"
+export APP_PORT=28082
+# no edit needed:
+export APP_HOST=$APP_NAME.$BASE_DOMAIN
+export APP_DB=goweb_$(echo $APP_NAME | tr - _)
+export APP_DB_PW=$(openssl rand -hex 24)
+export APP_SESSION_SECRET=$(openssl rand -hex 32)
+$PSQL -d postgres <<SQL
+CREATE ROLE $APP_DB LOGIN PASSWORD '$APP_DB_PW';
+CREATE DATABASE $APP_DB OWNER $APP_DB;
+REVOKE CONNECT ON DATABASE $APP_DB FROM PUBLIC;
+SQL
+deploy/register-client.sh goweb-$APP_NAME "$APP_DISPLAY" https://$APP_HOST > $ENV_DIR/$APP_NAME.creds
+cat > $ENV_DIR/client-$APP_NAME.env <<EOF
+GOWEB_ENV=production
+GOWEB_AUTH_MODE=client
+GOWEB_HTTP_ADDR=127.0.0.1:$APP_PORT
+GOWEB_PUBLIC_URL=https://$APP_HOST
+GOWEB_SESSION_COOKIE_SECURE=true
+GOWEB_TRUSTED_PROXY=127.0.0.1
+GOWEB_DATABASE_URL=postgres://$APP_DB:$APP_DB_PW@$PG_HOST:$PG_PORT/$APP_DB?sslmode=disable
+GOWEB_SESSION_SECRET=$APP_SESSION_SECRET
+GOWEB_SESSION_LIFETIME=8h
+GOWEB_SSO_ISSUER_URL=https://$SSO_HOST
+GOWEB_SSO_ACCOUNT_URL=https://$AUTH_HOST/en/account/settings
+GOWEB_RESEND_API_KEY=$RESEND_API_KEY
+GOWEB_MAIL_FROM=$MAIL_FROM
+$(cat $ENV_DIR/$APP_NAME.creds)
+EOF
+chmod 600 $ENV_DIR/*
+deploy/run-client.sh start $APP_NAME $ENV_DIR/client-$APP_NAME.env
+# on the workstation: cloudflared tunnel route dns goweb $APP_HOST
+sudo sed -i "s#  - service: http_status:404#  - hostname: $APP_HOST\n    service: http://127.0.0.1:$APP_PORT\n  - service: http_status:404#" /etc/cloudflared/config.yml
+sudo systemctl restart cloudflared
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:$APP_PORT/healthz
+
+
+# ===== UPDATE TO A NEW IMAGE =====
+# EDIT:
+export GOWEB_IMAGE=ghcr.io/tewecske/goweb:NEW_COMMIT_SHA
+cd $HOME/goweb
+git pull
+deploy/run-provider.sh start $ENV_DIR/provider.env
+deploy/run-client.sh start $APP_NAME $ENV_DIR/client-$APP_NAME.env
+
+
+# ===== UPDATE HYDRA =====
+# EDIT: HYDRA_IMAGE=oryd/hydra:<new tag>
+export HYDRA_IMAGE=oryd/hydra:v26.2.0
+deploy/run-hydra.sh migrate $ENV_DIR/hydra.env
+deploy/run-hydra.sh start $ENV_DIR/hydra.env

@@ -13,9 +13,11 @@ these is true:
 - `GOWEB_PUBLIC_URL` does not use `https`.
 - `GOWEB_DATABASE_URL` is unset.
 - `GOWEB_SESSION_SECRET` is unset (and it must be at least 32 characters).
-- `GOWEB_MAIL_RELAY` is unset. Confirmation and password-reset mail is
-  delivered through this credential-free `smtp://` or `smtps://` relay;
-  `GOWEB_MAIL_FROM` sets the sender (default `no-reply@` plus the public host).
+- Neither `GOWEB_MAIL_RELAY` nor `GOWEB_RESEND_API_KEY` is set (in every mode,
+  client apps included). Mail goes through a credential-free `smtp://` or
+  `smtps://` relay, or through the Resend HTTP API when the key is set (set only
+  one). `GOWEB_MAIL_FROM` sets the sender (default `no-reply@` plus the public
+  host); with Resend it is required and must be on a domain verified in Resend.
 - Google sign-in is configured with a non-HTTPS `GOWEB_GOOGLE_REDIRECT_URL`.
 - `GOWEB_AUTH_MODE=provider` with a non-HTTPS `GOWEB_SSO_ISSUER_URL`.
 - `GOWEB_AUTH_MODE=client` with a non-HTTPS `GOWEB_SSO_ISSUER_URL`,
@@ -104,9 +106,9 @@ differs as follows.
 - **Version.** Pin an exact image tag (the plan records `oryd/hydra:v26.2.0`)
   and read the release notes before upgrading. Do not run `--dev`.
 - **Network.** Terminate TLS at a load balancer or gateway in front of Hydra's
-  public port (4444). The issuer URL must be the public HTTPS address clients
+  public port (`SERVE_PUBLIC_PORT`, 24444 in `deploy/`). The issuer URL must be the public HTTPS address clients
   and browsers use, exactly as configured in `GOWEB_SSO_ISSUER_URL`. The admin
-  port (4445) must never be reachable from the internet or from client
+  port (`SERVE_ADMIN_PORT`, 24445) must never be reachable from the internet or from client
   networks: anyone who can call it can sign in as any user. Only the provider
   deployment reaches it, through `GOWEB_HYDRA_ADMIN_URL` on a private network.
 - **Database.** Give Hydra its own PostgreSQL role and database, never the
@@ -246,9 +248,9 @@ script in `deploy/` (set `CONTAINER_ENGINE=podman` for Podman):
 
 | Script | Runs | Listens on |
 | --- | --- | --- |
-| `deploy/run-hydra.sh migrate\|start ENV_FILE` | Hydra | `127.0.0.1:4444` public, `127.0.0.1:4445` admin |
-| `deploy/run-provider.sh start ENV_FILE` | the provider | `GOWEB_HTTP_ADDR`, for example `127.0.0.1:8080` |
-| `deploy/run-client.sh start NAME ENV_FILE` | one client app | its own `GOWEB_HTTP_ADDR`, for example `127.0.0.1:8081` |
+| `deploy/run-hydra.sh migrate\|start ENV_FILE` | Hydra | `127.0.0.1:24444` public, `127.0.0.1:24445` admin |
+| `deploy/run-provider.sh start ENV_FILE` | the provider | `GOWEB_HTTP_ADDR`, for example `127.0.0.1:28080` |
+| `deploy/run-client.sh start NAME ENV_FILE` | one client app | its own `GOWEB_HTTP_ADDR`, for example `127.0.0.1:28081` |
 | `deploy/register-client.sh ID "Name" URL` | nothing; registers an app in Hydra | |
 
 Everything binds to loopback. A tunnel or reverse proxy on the same host is the
@@ -259,12 +261,17 @@ Containers run read-only with all capabilities dropped. Start from the
 templates in `deploy/env/`, keep the real env files outside Git (mode 600), and
 supply secrets from your secret store.
 
+Step-by-step, copy-paste instructions: `deploy/PREPARE.txt` (accounts and
+one-time preparation), then `deploy/SETUP.txt` (any Linux with Docker or
+Podman) or `deploy/SETUP-nix.txt` (NixOS, using the flake in the repository
+root: `nixosModules.default`, options under `services.goweb`).
+
 Order of a first deployment:
 
 1. **PostgreSQL**: one role and database per service: the provider, each client
    app, and Hydra (never a superuser, and `REVOKE CONNECT ... FROM PUBLIC`).
 2. **Hydra**: fill in `hydra.env`, run `run-hydra.sh migrate`, then `start`.
-   Check `curl -H 'X-Forwarded-Proto: https' http://127.0.0.1:4444/.well-known/openid-configuration`
+   Check `curl -H 'X-Forwarded-Proto: https' http://127.0.0.1:24444/.well-known/openid-configuration`
    returns your https issuer.
 3. **Provider**: fill in `provider.env` and run `run-provider.sh start`. It
    applies its migrations at startup.
@@ -273,9 +280,9 @@ Order of a first deployment:
    `register-client.sh goweb-notes "Notes app" https://notes.example.com > notes.client.env`
    (the display name appears on the provider's sign-in page), add those two
    lines to the app's env file, and run `run-client.sh start notes ...`.
-6. **Tunnel or proxy**: route the Hydra issuer host to `127.0.0.1:4444`, the
+6. **Tunnel or proxy**: route the Hydra issuer host to `127.0.0.1:24444`, the
    provider host to the provider port, and each app host to its port. Never
-   route `4445`.
+   route `24445`.
 
 Behind Cloudflare Tunnel: TLS ends at Cloudflare, so the apps need no
 certificates. Cloudflare's bot or WAF rules can block Hydra's server-to-server

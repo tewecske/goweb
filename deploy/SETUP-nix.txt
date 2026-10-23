@@ -1,0 +1,204 @@
+# SETUP-nix.txt - NixOS server, using the flake in the goweb repository.
+# Requires everything in PREPARE.txt, and passwordless sudo for your ssh user on
+# the server. Run in ONE shell on the workstation that holds your server flake. Lines starting with "# EDIT" need your value.
+# Everything else: paste as is.
+
+
+# ===== 0. Tools and variables =====
+nix shell nixpkgs#sops nixpkgs#jq nixpkgs#openssl nixpkgs#curl nixpkgs#git nixpkgs#age
+# EDIT:
+export FLAKE_DIR=$HOME/nixos
+export HOST=myserver
+export SERVER_HOST=server.example.com
+export BASE_DOMAIN=example.com
+export ADMIN_EMAIL=you@example.com
+export APP_NAME=notes
+export APP_DISPLAY="Notes app"
+export APP_PORT=28081
+export GOWEB_TAG=REPLACE_WITH_COMMIT_SHA
+export TUNNEL_ID=00000000-0000-0000-0000-000000000000
+export AGE_RECIPIENTS="age1workstationkey...,age1serverkey..."
+export RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# no edit needed:
+export SSO_HOST=sso.$BASE_DOMAIN
+export AUTH_HOST=auth.$BASE_DOMAIN
+export APP_HOST=$APP_NAME.$BASE_DOMAIN
+export APP_DB=goweb_$(echo $APP_NAME | tr - _)
+export MAIL_FROM=no-reply@$BASE_DOMAIN
+enc() { sops --encrypt --age "$AGE_RECIPIENTS" --input-type binary --output-type binary "$1" > "$1.enc" && rm "$1"; }
+
+
+# ===== 1. Secrets for Hydra and the provider =====
+umask 077
+mkdir -p $FLAKE_DIR/secrets/goweb
+cd $FLAKE_DIR/secrets/goweb
+export HYDRA_DB_PW=$(openssl rand -hex 24)
+export PROVIDER_DB_PW=$(openssl rand -hex 24)
+printf %s "$HYDRA_DB_PW" > hydra.dbpw
+printf %s "$PROVIDER_DB_PW" > provider.dbpw
+cat > hydra.env <<EOF
+DSN=postgres://hydra:$HYDRA_DB_PW@127.0.0.1:5432/hydra?sslmode=disable
+SECRETS_SYSTEM=$(openssl rand -hex 32)
+SECRETS_COOKIE=$(openssl rand -hex 32)
+EOF
+cat > provider.env <<EOF
+GOWEB_DATABASE_URL=postgres://goweb_provider:$PROVIDER_DB_PW@127.0.0.1:5432/goweb_provider?sslmode=disable
+GOWEB_SESSION_SECRET=$(openssl rand -hex 32)
+GOWEB_RESEND_API_KEY=$RESEND_API_KEY
+EOF
+cp ~/.cloudflared/$TUNNEL_ID.json cloudflared.json
+enc hydra.dbpw
+enc provider.dbpw
+enc hydra.env
+enc provider.env
+enc cloudflared.json
+ls
+
+
+# ===== 2. NixOS module file =====
+cd $FLAKE_DIR
+cat > goweb.nix <<'EOF'
+{ config, ... }:
+let
+  secret = file: { sopsFile = ./secrets/goweb/${file}.enc; format = "binary"; };
+in
+{
+  sops.secrets.goweb-hydra-env = secret "hydra.env";
+  sops.secrets.goweb-hydra-dbpw = secret "hydra.dbpw";
+  sops.secrets.goweb-provider-env = secret "provider.env";
+  sops.secrets.goweb-provider-dbpw = secret "provider.dbpw";
+  sops.secrets.goweb-cloudflared = secret "cloudflared.json";
+
+  services.goweb = {
+    image = "ghcr.io/tewecske/goweb:GOWEB_TAG";
+    issuerUrl = "https://sso.BASE_DOMAIN";
+    providerUrl = "https://auth.BASE_DOMAIN";
+    mailFrom = "no-reply@BASE_DOMAIN";
+    database.manage = true;
+    hydra = {
+      enable = true;
+      environmentFile = config.sops.secrets.goweb-hydra-env.path;
+      databasePasswordFile = config.sops.secrets.goweb-hydra-dbpw.path;
+    };
+    provider = {
+      enable = true;
+      environmentFile = config.sops.secrets.goweb-provider-env.path;
+      databasePasswordFile = config.sops.secrets.goweb-provider-dbpw.path;
+    };
+    cloudflared = {
+      enable = true;
+      tunnelId = "TUNNEL_ID";
+      credentialsFile = config.sops.secrets.goweb-cloudflared.path;
+    };
+  };
+}
+EOF
+sed -i "s#GOWEB_TAG#$GOWEB_TAG#; s#BASE_DOMAIN#$BASE_DOMAIN#g; s#TUNNEL_ID#$TUNNEL_ID#" goweb.nix
+
+
+# ===== 3. EDIT the server flake.nix: add these two lines =====
+# inputs:   goweb.url = "github:tewecske/goweb";
+# modules:  goweb.nixosModules.default  ./goweb.nix
+# (and add goweb to the outputs function arguments)
+
+
+# ===== 4. Build and switch =====
+cd $FLAKE_DIR
+git add -A
+nix flake update goweb
+nixos-rebuild switch --flake .#$HOST --target-host $SERVER_HOST --sudo
+# on the server itself instead: sudo nixos-rebuild switch --flake .#$HOST
+
+
+# ===== 5. Check Hydra and the provider (run on the server) =====
+ssh $SERVER_HOST 'systemctl is-active goweb-db-init goweb-hydra-migrate podman-goweb-hydra podman-goweb-provider'
+ssh $SERVER_HOST "curl -sS -H 'X-Forwarded-Proto: https' http://127.0.0.1:24444/.well-known/openid-configuration" | jq -r .issuer
+ssh $SERVER_HOST "curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:28080/healthz"
+curl -sS https://$SSO_HOST/.well-known/openid-configuration | jq -r .issuer
+curl -s -o /dev/null -w '%{http_code}\n' https://$AUTH_HOST/healthz
+# expected: active x4, https://sso.<your domain>, 200, https://sso.<your domain>, 200
+
+
+# ===== 6. First administrator =====
+echo https://$AUTH_HOST/en/sign-up
+# open that URL, register $ADMIN_EMAIL, open the link in the confirmation mail
+ssh $SERVER_HOST "sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d goweb_provider -c \"UPDATE users SET is_admin = TRUE, version = version + 1 WHERE email = lower(btrim('$ADMIN_EMAIL')) AND is_admin = FALSE;\""
+# expected: UPDATE 1
+
+
+# ===== 7. Register the client app in Hydra =====
+ssh $SERVER_HOST 'test -d goweb || git clone https://github.com/tewecske/goweb.git goweb'
+ssh $SERVER_HOST "cd goweb && sudo env CONTAINER_ENGINE=podman deploy/register-client.sh goweb-$APP_NAME '$APP_DISPLAY' https://$APP_HOST" > /tmp/$APP_NAME.creds
+cat /tmp/$APP_NAME.creds | sed 's/SECRET=.*/SECRET=(hidden)/'
+
+
+# ===== 8. Secrets and module file for the client app =====
+cd $FLAKE_DIR/secrets/goweb
+export APP_DB_PW=$(openssl rand -hex 24)
+printf %s "$APP_DB_PW" > $APP_NAME.dbpw
+cat > $APP_NAME.env <<EOF
+GOWEB_DATABASE_URL=postgres://$APP_DB:$APP_DB_PW@127.0.0.1:5432/$APP_DB?sslmode=disable
+GOWEB_SESSION_SECRET=$(openssl rand -hex 32)
+GOWEB_RESEND_API_KEY=$RESEND_API_KEY
+$(cat /tmp/$APP_NAME.creds)
+EOF
+enc $APP_NAME.dbpw
+enc $APP_NAME.env
+shred -u /tmp/$APP_NAME.creds
+cd $FLAKE_DIR
+cat > goweb-$APP_NAME.nix <<'EOF'
+{ config, ... }:
+let
+  secret = file: { sopsFile = ./secrets/goweb/${file}.enc; format = "binary"; };
+in
+{
+  sops.secrets.goweb-APP_NAME-env = secret "APP_NAME.env";
+  sops.secrets.goweb-APP_NAME-dbpw = secret "APP_NAME.dbpw";
+
+  services.goweb.clients.APP_NAME = {
+    publicUrl = "https://APP_HOST";
+    port = APP_PORT;
+    environmentFile = config.sops.secrets.goweb-APP_NAME-env.path;
+    databasePasswordFile = config.sops.secrets.goweb-APP_NAME-dbpw.path;
+  };
+}
+EOF
+sed -i "s#APP_NAME#$APP_NAME#g; s#APP_HOST#$APP_HOST#; s#APP_PORT#$APP_PORT#" goweb-$APP_NAME.nix
+# EDIT the server flake.nix modules list: add  ./goweb-$APP_NAME.nix
+git add -A
+nixos-rebuild switch --flake .#$HOST --target-host $SERVER_HOST --sudo
+
+
+# ===== 9. Check the client app =====
+ssh $SERVER_HOST "systemctl is-active podman-goweb-client-$APP_NAME"
+ssh $SERVER_HOST "curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:$APP_PORT/healthz"
+echo https://$APP_HOST/en/sign-in
+# open that URL, click sign in, sign in at the provider, you land back in the app
+ssh $SERVER_HOST "sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d $APP_DB -c \"UPDATE users SET is_admin = TRUE, version = version + 1 WHERE email = lower(btrim('$ADMIN_EMAIL')) AND is_admin = FALSE;\""
+# expected: active, 200, UPDATE 1
+
+
+# ===== 10. Logs =====
+ssh $SERVER_HOST 'sudo journalctl -u podman-goweb-provider -n 20 --no-pager'
+ssh $SERVER_HOST "sudo journalctl -u podman-goweb-client-$APP_NAME -n 20 --no-pager"
+ssh $SERVER_HOST 'sudo journalctl -u podman-goweb-hydra -n 20 --no-pager'
+
+
+# ===== ADD ANOTHER CLIENT APP =====
+# EDIT:
+export APP_NAME=tasks
+export APP_DISPLAY="Tasks app"
+export APP_PORT=28082
+# then: set APP_HOST and APP_DB again, run steps 7 and 8 and 9 again
+export APP_HOST=$APP_NAME.$BASE_DOMAIN
+export APP_DB=goweb_$(echo $APP_NAME | tr - _)
+# on the workstation: cloudflared tunnel route dns goweb $APP_HOST
+
+
+# ===== UPDATE TO A NEW IMAGE =====
+# EDIT:
+export GOWEB_TAG=NEW_COMMIT_SHA
+cd $FLAKE_DIR
+sed -i "s#ghcr.io/tewecske/goweb:[0-9a-f]*#ghcr.io/tewecske/goweb:$GOWEB_TAG#" goweb.nix
+git add -A
+nixos-rebuild switch --flake .#$HOST --target-host $SERVER_HOST --sudo
