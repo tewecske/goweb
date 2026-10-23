@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/tewecske/goweb/internal/locale"
 )
@@ -36,6 +37,9 @@ const (
 	UsageRetentionEnv = "GOWEB_USAGE_RETENTION"
 	// MailRelayEnv names the optional outgoing mail relay.
 	MailRelayEnv = "GOWEB_MAIL_RELAY"
+	// ResendAPIKeyEnv names the optional Resend API key. Setting it delivers
+	// mail through the Resend HTTP API instead of an SMTP relay.
+	ResendAPIKeyEnv = "GOWEB_RESEND_API_KEY"
 	// MailFromEnv names the optional sender address for outgoing mail.
 	MailFromEnv = "GOWEB_MAIL_FROM"
 	// TrustedProxyEnv names the optional trusted proxy address or network.
@@ -201,23 +205,33 @@ type Config struct {
 	BootstrapAdminEmail       string
 	BootstrapAdminPassword    Secret
 	MailRelay                 Secret
+	ResendAPIKey              Secret
 	MailFrom                  string
-	TrustedProxy              string
-	GoogleClientID            string
-	GoogleClientSecret        Secret
-	GoogleRedirectURL         string
-	AuthMode                  AuthMode
-	HydraAdminURL             string
-	SSOIssuerURL              string
-	SSOClientID               string
-	SSOClientSecret           Secret
-	SSORedirectURL            string
-	SSOAccountURL             string
+	// mailFromConfigured records that MailFrom was set explicitly rather than
+	// derived from the public URL.
+	mailFromConfigured bool
+	TrustedProxy       string
+	GoogleClientID     string
+	GoogleClientSecret Secret
+	GoogleRedirectURL  string
+	AuthMode           AuthMode
+	HydraAdminURL      string
+	SSOIssuerURL       string
+	SSOClientID        string
+	SSOClientSecret    Secret
+	SSORedirectURL     string
+	SSOAccountURL      string
 }
 
 // GoogleOAuthConfigured reports whether Google sign-in has complete settings.
 func (c Config) GoogleOAuthConfigured() bool {
 	return strings.TrimSpace(c.GoogleClientID) != "" && c.GoogleClientSecret.IsSet() && strings.TrimSpace(c.GoogleRedirectURL) != ""
+}
+
+// MailConfigured reports whether outgoing mail is delivered, through an SMTP
+// relay or the Resend API.
+func (c Config) MailConfigured() bool {
+	return c.MailRelay.IsSet() || c.ResendAPIKey.IsSet()
 }
 
 // BootstrapAdminConfigured reports whether both bootstrap administrator values
@@ -229,7 +243,7 @@ func (c Config) BootstrapAdminConfigured() bool {
 // String returns a safe diagnostic summary without secret values.
 func (c Config) String() string {
 	return fmt.Sprintf(
-		"environment=%s http_address=%s public_url=%s session_cookie_secure=%t email_confirmation_required=%t session_lifetime=%s guest_retention=%s login_attempt_retention=%s usage_retention=%s database_configured=%t session_secret_configured=%t bootstrap_admin_configured=%t mail_relay_configured=%t trusted_proxy_configured=%t google_oauth_configured=%t auth_mode=%s hydra_admin_configured=%t sso_client_configured=%t",
+		"environment=%s http_address=%s public_url=%s session_cookie_secure=%t email_confirmation_required=%t session_lifetime=%s guest_retention=%s login_attempt_retention=%s usage_retention=%s database_configured=%t session_secret_configured=%t bootstrap_admin_configured=%t mail_relay_configured=%t resend_configured=%t trusted_proxy_configured=%t google_oauth_configured=%t auth_mode=%s hydra_admin_configured=%t sso_client_configured=%t",
 		c.Environment,
 		c.HTTPAddress,
 		c.PublicURL.String(),
@@ -243,6 +257,7 @@ func (c Config) String() string {
 		c.SessionSecret.IsSet(),
 		c.BootstrapAdminConfigured(),
 		c.MailRelay.IsSet(),
+		c.ResendAPIKey.IsSet(),
 		c.TrustedProxy != "",
 		c.GoogleOAuthConfigured(),
 		c.AuthMode,
@@ -325,7 +340,17 @@ func Load(getenv func(string) string) (Config, error) {
 			return Config{}, fmt.Errorf("%w: %s must be an smtp:// or smtps:// host address without credentials", ErrInvalidMailRelay, MailRelayEnv)
 		}
 	}
+	resendAPIKey := Secret{value: strings.TrimSpace(getenv(ResendAPIKeyEnv))}
+	if resendAPIKey.IsSet() {
+		if mailRelay.IsSet() {
+			return Config{}, fmt.Errorf("%w: set only one of %s and %s", ErrInvalidMailRelay, MailRelayEnv, ResendAPIKeyEnv)
+		}
+		if len(resendAPIKey.value) > 256 || strings.ContainsFunc(resendAPIKey.value, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
+			return Config{}, fmt.Errorf("%w: %s must be a single token without whitespace", ErrInvalidMailRelay, ResendAPIKeyEnv)
+		}
+	}
 	mailFrom := strings.TrimSpace(getenv(MailFromEnv))
+	mailFromConfigured := mailFrom != ""
 	if mailFrom == "" {
 		mailFrom = "no-reply@" + publicURL.Hostname()
 		if !plainEmailAddress(mailFrom) {
@@ -374,7 +399,9 @@ func Load(getenv func(string) string) (Config, error) {
 		BootstrapAdminEmail:       bootstrapEmail,
 		BootstrapAdminPassword:    bootstrapPassword,
 		MailRelay:                 mailRelay,
+		ResendAPIKey:              resendAPIKey,
 		MailFrom:                  mailFrom,
+		mailFromConfigured:        mailFromConfigured,
 		TrustedProxy:              trustedProxy,
 		GoogleClientID:            googleClientID,
 		GoogleClientSecret:        googleClientSecret,
@@ -408,8 +435,13 @@ func validateProduction(cfg Config) error {
 	if !cfg.SessionSecret.IsSet() {
 		problems = append(problems, SessionSecretEnv+" must be set")
 	}
-	if !cfg.MailRelay.IsSet() {
-		problems = append(problems, MailRelayEnv+" must be set so password reset and confirmation mail is delivered")
+	if !cfg.MailConfigured() {
+		problems = append(problems, MailRelayEnv+" or "+ResendAPIKeyEnv+" must be set so password reset and confirmation mail is delivered")
+	}
+	// Resend only sends from a verified domain, so the derived default sender
+	// (no-reply@ the app's host) would be refused at send time.
+	if cfg.ResendAPIKey.IsSet() && !cfg.mailFromConfigured {
+		problems = append(problems, MailFromEnv+" must be set to an address on a domain verified in Resend")
 	}
 	if cfg.GoogleOAuthConfigured() {
 		if parsed, err := url.Parse(cfg.GoogleRedirectURL); err != nil || parsed.Scheme != "https" {

@@ -598,3 +598,62 @@ func TestLoadRejectsInvalidAuthMode(t *testing.T) {
 		})
 	}
 }
+
+func TestResendAPIKeyReplacesTheRelayAndStaysSecret(t *testing.T) {
+	const key = "re_test_1234567890abcdef"
+	production := map[string]string{
+		EnvironmentEnv:   string(EnvironmentProduction),
+		PublicURLEnv:     "https://notes.example.test",
+		DatabaseURLEnv:   "postgres://user:password@example.test/app",
+		SessionSecretEnv: "01234567890123456789012345678901",
+	}
+	load := func(extra map[string]string) (Config, error) {
+		values := map[string]string{}
+		for name, value := range production {
+			values[name] = value
+		}
+		for name, value := range extra {
+			values[name] = value
+		}
+		return Load(func(name string) string { return values[name] })
+	}
+
+	// A Resend key satisfies the production mail requirement, given an
+	// explicit sender on a verified domain.
+	config, err := load(map[string]string{ResendAPIKeyEnv: " " + key + "\n", MailFromEnv: "no-reply@example.test"})
+	if err != nil {
+		t.Fatalf("Load(production with Resend) error = %v", err)
+	}
+	if !config.MailConfigured() || config.MailRelay.IsSet() || config.ResendAPIKey.Reveal() != key {
+		t.Fatalf("mail = relay %t, resend %q; want only the trimmed Resend key", config.MailRelay.IsSet(), config.ResendAPIKey.Reveal())
+	}
+	for _, text := range []string{config.String(), fmt.Sprintf("%v", config.ResendAPIKey), fmt.Sprintf("%+v", config.ResendAPIKey)} {
+		if strings.Contains(text, key) {
+			t.Fatalf("diagnostic text leaks the Resend key: %s", text)
+		}
+	}
+
+	// The derived default sender is on the app's own host, which Resend would
+	// refuse, so production demands an explicit one.
+	if _, err := load(map[string]string{ResendAPIKeyEnv: key}); !errors.Is(err, ErrUnsafeProductionConfig) || !strings.Contains(err.Error(), MailFromEnv) {
+		t.Fatalf("Load(production, Resend without sender) error = %v, want %v mentioning %s", err, ErrUnsafeProductionConfig, MailFromEnv)
+	}
+	// Neither mail setting is still unsafe, and the message names both.
+	if _, err := load(nil); !errors.Is(err, ErrUnsafeProductionConfig) || !strings.Contains(err.Error(), ResendAPIKeyEnv) {
+		t.Fatalf("Load(production, no mail) error = %v, want %v naming both settings", err, ErrUnsafeProductionConfig)
+	}
+	// One provider at a time, and no key that could break a header.
+	for name, values := range map[string]map[string]string{
+		"relay and key":  {MailRelayEnv: "smtp://mail.example.test:587", ResendAPIKeyEnv: key, MailFromEnv: "no-reply@example.test"},
+		"key with space": {ResendAPIKeyEnv: "re_abc def", MailFromEnv: "no-reply@example.test"},
+		"oversized key":  {ResendAPIKeyEnv: "re_" + strings.Repeat("a", 300), MailFromEnv: "no-reply@example.test"},
+	} {
+		if _, err := load(values); !errors.Is(err, ErrInvalidMailRelay) {
+			t.Fatalf("Load(%s) error = %v, want %v", name, err, ErrInvalidMailRelay)
+		}
+	}
+	// Development needs neither.
+	if _, err := Load(func(name string) string { return map[string]string{ResendAPIKeyEnv: key}[name] }); err != nil {
+		t.Fatalf("Load(development with Resend) error = %v", err)
+	}
+}

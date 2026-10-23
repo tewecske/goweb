@@ -148,7 +148,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	if database == nil {
 		return nil, ErrNilDatabase
 	}
-	if appConfig.Environment == config.EnvironmentProduction && !appConfig.MailRelay.IsSet() {
+	if appConfig.Environment == config.EnvironmentProduction && !appConfig.MailConfigured() {
 		return nil, ErrMailDeliveryNotConfigured
 	}
 	if appConfig.AuthMode == "" {
@@ -244,7 +244,14 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 	// Without a relay, development keeps mail in memory; set GOWEB_MAIL_RELAY
 	// to a local catcher such as Mailpit to read messages.
 	var mailSender service.MailSender = &mailadapter.DevelopmentSender{}
-	if appConfig.MailRelay.IsSet() {
+	switch {
+	case appConfig.ResendAPIKey.IsSet():
+		resendSender, err := mailadapter.NewResendSender(appConfig.ResendAPIKey.Reveal(), appConfig.MailFrom)
+		if err != nil {
+			return nil, fmt.Errorf("construct resend sender: %w", err)
+		}
+		mailSender = resendSender
+	case appConfig.MailRelay.IsSet():
 		smtpSender, err := mailadapter.NewSMTPSender(appConfig.MailRelay.Reveal(), appConfig.MailFrom)
 		if err != nil {
 			return nil, fmt.Errorf("construct smtp sender: %w", err)
@@ -442,8 +449,8 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		EmailConfirmationRequired: appConfig.EmailConfirmationRequired,
 		SecureSessionCookies:      appConfig.SessionCookieSecure,
 		Providers:                 providers.Names(),
-		MailConfigured:            appConfig.MailRelay.IsSet(),
-		MailRelay:                 appConfig.MailRelay.Reveal(),
+		MailConfigured:            appConfig.MailConfigured(),
+		MailRelay:                 mailRelayLabel(appConfig),
 		SessionLifetime:           appConfig.SessionLifetime,
 		GuestRetention:            appConfig.GuestRetention,
 		LoginAttemptRetention:     appConfig.LoginAttemptRetention,
@@ -553,4 +560,13 @@ func newSharedRateLimiter(database *sql.DB, scope string, config service.RateLim
 		return nil, nil, err
 	}
 	return limiter, store, nil
+}
+
+// mailRelayLabel names where mail goes for the administrator system page: the
+// SMTP relay's host, or the Resend API. It never includes a credential.
+func mailRelayLabel(appConfig config.Config) string {
+	if appConfig.ResendAPIKey.IsSet() {
+		return "https://api.resend.com"
+	}
+	return appConfig.MailRelay.Reveal()
 }
