@@ -231,6 +231,66 @@ above.
    browser specs (`make sso-e2e`) against a staging stack, before each Hydra
    upgrade.
 
+## Container deployment
+
+One image serves every role: `GOWEB_AUTH_MODE` selects `provider`, `client`, or
+`local`. The `Dockerfile` builds a static binary into a distroless, non-root
+image of about 27 MB (templates, assets, translations, and migrations are
+embedded). CI builds it on every run and, on pushes to `master`, publishes
+`ghcr.io/<owner>/<repo>:<commit sha>` and `:latest`; pin the commit tag in
+production. Hydra uses its official image (`oryd/hydra`, pinned in
+`deploy/run-hydra.sh`).
+
+Each service runs as its own container on the host network, started by a
+script in `deploy/` (set `CONTAINER_ENGINE=podman` for Podman):
+
+| Script | Runs | Listens on |
+| --- | --- | --- |
+| `deploy/run-hydra.sh migrate\|start ENV_FILE` | Hydra | `127.0.0.1:4444` public, `127.0.0.1:4445` admin |
+| `deploy/run-provider.sh start ENV_FILE` | the provider | `GOWEB_HTTP_ADDR`, for example `127.0.0.1:8080` |
+| `deploy/run-client.sh start NAME ENV_FILE` | one client app | its own `GOWEB_HTTP_ADDR`, for example `127.0.0.1:8081` |
+| `deploy/register-client.sh ID "Name" URL` | nothing; registers an app in Hydra | |
+
+Everything binds to loopback. A tunnel or reverse proxy on the same host is the
+only way in, which is why `GOWEB_TRUSTED_PROXY=127.0.0.1` is set (otherwise all
+visitors share one client address and one rate-limit budget). Host networking
+also lets the containers reach a PostgreSQL that listens on `127.0.0.1`.
+Containers run read-only with all capabilities dropped. Start from the
+templates in `deploy/env/`, keep the real env files outside Git (mode 600), and
+supply secrets from your secret store.
+
+Order of a first deployment:
+
+1. **PostgreSQL**: one role and database per service: the provider, each client
+   app, and Hydra (never a superuser, and `REVOKE CONNECT ... FROM PUBLIC`).
+2. **Hydra**: fill in `hydra.env`, run `run-hydra.sh migrate`, then `start`.
+   Check `curl -H 'X-Forwarded-Proto: https' http://127.0.0.1:4444/.well-known/openid-configuration`
+   returns your https issuer.
+3. **Provider**: fill in `provider.env` and run `run-provider.sh start`. It
+   applies its migrations at startup.
+4. **First administrator**: [bootstrap-admin.md](bootstrap-admin.md).
+5. **Each client app**: run
+   `register-client.sh goweb-notes "Notes app" https://notes.example.com > notes.client.env`
+   (the display name appears on the provider's sign-in page), add those two
+   lines to the app's env file, and run `run-client.sh start notes ...`.
+6. **Tunnel or proxy**: route the Hydra issuer host to `127.0.0.1:4444`, the
+   provider host to the provider port, and each app host to its port. Never
+   route `4445`.
+
+Behind Cloudflare Tunnel: TLS ends at Cloudflare, so the apps need no
+certificates. Cloudflare's bot or WAF rules can block Hydra's server-to-server
+back-channel logout call to an app; if logout stops reaching apps, skip those
+rules for `/oauth/sso/backchannel-logout`. The provider's `/admin` pages are
+reachable from the internet, so consider a Cloudflare Access policy for them.
+Add `Strict-Transport-Security` at Cloudflare; the app does not send it.
+
+Checked locally: the image builds and runs; Hydra without `--dev` serves an
+https issuer behind a plain-HTTP listener (it needs no extra TLS setting) and
+sets `Secure` cookies; `register-client.sh` registers a client with the
+expected URIs; a provider and a client container start in production mode
+against scratch databases and serve their pages. The publishing job has not
+run on GitHub yet.
+
 ## Startup migrations
 
 - Migrations live in `migrations/` with sortable

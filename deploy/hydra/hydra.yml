@@ -1,10 +1,12 @@
-# Ory Hydra configuration for local development. See docs/sso-hydra-plan.md.
+# Ory Hydra configuration, used for local development (compose.yaml) and for
+# production (deploy/run-hydra.sh). See docs/sso-hydra-plan.md.
 #
 # Hydra stores no users and renders no pages: it redirects the browser to the
 # provider deployment's /sso/* routes. The public listen address, the issuer,
-# and the provider URLs come from compose.yaml, which derives them from the
-# SSO_DEV_* variables in .env (defaults: loopback only). Secrets and the
-# database DSN come from environment variables too.
+# and the provider URLs come from environment variables: from compose.yaml in
+# development (derived from the SSO_DEV_* variables in .env) and from the env
+# file in production (deploy/env/hydra.env.example). Secrets and the database
+# DSN come from environment variables too.
 
 serve:
   public:
@@ -16,7 +18,6 @@ serve:
     port: 4445
   cookies:
     same_site_mode: Lax
-
 oidc:
   subject_identifiers:
     supported_types:
