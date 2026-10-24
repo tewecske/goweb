@@ -164,6 +164,12 @@ return signed in to the client. With the same `GOWEB_BOOTSTRAP_ADMIN_EMAIL`,
 both apps seed that administrator, and signing in to the client as the
 provider's confirmed administrator links the two.
 
+`make run-provider` raises the shared sign-in and sign-up limit to
+`GOWEB_AUTH_RATE_LIMIT=600` attempts per minute (the default is 10), because
+browser suites from several checkouts sign up many accounts a minute from one
+address. Set `GOWEB_AUTH_RATE_LIMIT` in the environment or `.env` to override
+it.
+
 ### Testing from another machine (for example over Tailscale)
 
 The browser talks to all three processes, and Hydra redirects it to the exact

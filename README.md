@@ -35,6 +35,7 @@ Configuration comes from environment variables. Defaults keep local development 
 | `GOWEB_GUEST_RETENTION` | `720h` (30 days) |
 | `GOWEB_LOGIN_ATTEMPT_RETENTION` | `720h` (30 days) |
 | `GOWEB_USAGE_RETENTION` | `2160h` (90 days) |
+| `GOWEB_AUTH_RATE_LIMIT` | `10`; sign-in and sign-up attempts per minute, per identifier and per client origin (1 to 10000). Production rejects values above `10`; `make run-provider` uses `600` unless set |
 | `GOWEB_MAIL_RELAY` | unset; credential-free `smtp://` or `smtps://` relay that delivers confirmation and password-reset mail. Required in production unless `GOWEB_RESEND_API_KEY` is set; without either, development keeps mail in memory |
 | `GOWEB_RESEND_API_KEY` | unset; delivers mail through the Resend HTTP API instead of an SMTP relay (set only one of the two). In production it needs `GOWEB_MAIL_FROM` on a domain verified in Resend |
 | `GOWEB_MAIL_FROM` | `no-reply@` plus the public URL host; sender address for outgoing mail |

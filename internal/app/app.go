@@ -258,7 +258,7 @@ func New(database *sql.DB, appConfig config.Config) (*Graph, error) {
 		}
 		mailSender = smtpSender
 	}
-	signInLimiter, rateLimitStore, err := newSharedRateLimiter(database, "signin", service.DefaultAuthenticationRateLimitConfig)
+	signInLimiter, rateLimitStore, err := newSharedRateLimiter(database, "signin", authenticationRateLimitConfig(appConfig))
 	if err != nil {
 		return nil, fmt.Errorf("construct signin rate limiter: %w", err)
 	}
@@ -545,6 +545,17 @@ func withRetentionDefaults(appConfig config.Config) config.Config {
 		appConfig.UsageRetention = config.DefaultUsageRetention
 	}
 	return appConfig
+}
+
+// authenticationRateLimitConfig is the shared sign-in and sign-up budget:
+// the service default with the configured per-window limit. A partial
+// configuration in tests or tooling keeps the default limit.
+func authenticationRateLimitConfig(appConfig config.Config) service.RateLimitConfig {
+	limits := service.DefaultAuthenticationRateLimitConfig
+	if appConfig.AuthRateLimit > 0 {
+		limits.Limit = appConfig.AuthRateLimit
+	}
+	return limits
 }
 
 // newSharedRateLimiter builds a limiter whose counters live in the database,

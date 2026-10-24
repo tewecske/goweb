@@ -35,6 +35,9 @@ const (
 	LoginAttemptRetentionEnv = "GOWEB_LOGIN_ATTEMPT_RETENTION"
 	// UsageRetentionEnv names how long usage events are retained.
 	UsageRetentionEnv = "GOWEB_USAGE_RETENTION"
+	// AuthRateLimitEnv names the per-minute attempt budget of the shared
+	// sign-in and sign-up limiter.
+	AuthRateLimitEnv = "GOWEB_AUTH_RATE_LIMIT"
 	// MailRelayEnv names the optional outgoing mail relay.
 	MailRelayEnv = "GOWEB_MAIL_RELAY"
 	// ResendAPIKeyEnv names the optional Resend API key. Setting it delivers
@@ -92,6 +95,11 @@ const (
 	DefaultLoginAttemptRetention = 30 * 24 * time.Hour
 	// DefaultUsageRetention is used when UsageRetentionEnv is not set.
 	DefaultUsageRetention = 90 * 24 * time.Hour
+	// DefaultAuthRateLimit is used when AuthRateLimitEnv is not set. It is
+	// also the most production accepts, so production never loosens it.
+	DefaultAuthRateLimit = 10
+	// MaximumAuthRateLimit bounds AuthRateLimitEnv in every environment.
+	MaximumAuthRateLimit = 10_000
 	// MinimumSessionSecretLength prevents weak configured session secrets.
 	MinimumSessionSecretLength = 32
 )
@@ -107,6 +115,8 @@ var (
 	ErrInvalidBoolean = errors.New("config: invalid boolean")
 	// ErrInvalidDuration identifies a malformed or out-of-range duration.
 	ErrInvalidDuration = errors.New("config: invalid duration")
+	// ErrInvalidRateLimit identifies a malformed or out-of-range rate limit.
+	ErrInvalidRateLimit = errors.New("config: invalid rate limit")
 	// ErrWeakSecret identifies a configured secret that is too short.
 	ErrWeakSecret = errors.New("config: weak secret")
 	// ErrInvalidBootstrapAdmin identifies unusable bootstrap administrator settings.
@@ -200,6 +210,7 @@ type Config struct {
 	GuestRetention            time.Duration
 	LoginAttemptRetention     time.Duration
 	UsageRetention            time.Duration
+	AuthRateLimit             int
 	DatabaseURL               Secret
 	SessionSecret             Secret
 	BootstrapAdminEmail       string
@@ -243,7 +254,7 @@ func (c Config) BootstrapAdminConfigured() bool {
 // String returns a safe diagnostic summary without secret values.
 func (c Config) String() string {
 	return fmt.Sprintf(
-		"environment=%s http_address=%s public_url=%s session_cookie_secure=%t email_confirmation_required=%t session_lifetime=%s guest_retention=%s login_attempt_retention=%s usage_retention=%s database_configured=%t session_secret_configured=%t bootstrap_admin_configured=%t mail_relay_configured=%t resend_configured=%t trusted_proxy_configured=%t google_oauth_configured=%t auth_mode=%s hydra_admin_configured=%t sso_client_configured=%t",
+		"environment=%s http_address=%s public_url=%s session_cookie_secure=%t email_confirmation_required=%t session_lifetime=%s guest_retention=%s login_attempt_retention=%s usage_retention=%s auth_rate_limit=%d database_configured=%t session_secret_configured=%t bootstrap_admin_configured=%t mail_relay_configured=%t resend_configured=%t trusted_proxy_configured=%t google_oauth_configured=%t auth_mode=%s hydra_admin_configured=%t sso_client_configured=%t",
 		c.Environment,
 		c.HTTPAddress,
 		c.PublicURL.String(),
@@ -253,6 +264,7 @@ func (c Config) String() string {
 		c.GuestRetention,
 		c.LoginAttemptRetention,
 		c.UsageRetention,
+		c.AuthRateLimit,
 		c.DatabaseURL.IsSet(),
 		c.SessionSecret.IsSet(),
 		c.BootstrapAdminConfigured(),
@@ -310,6 +322,10 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, err
 	}
 	usageRetention, err := parseRetention(UsageRetentionEnv, getenv(UsageRetentionEnv), DefaultUsageRetention)
+	if err != nil {
+		return Config{}, err
+	}
+	authRateLimit, err := parseAuthRateLimit(getenv(AuthRateLimitEnv))
 	if err != nil {
 		return Config{}, err
 	}
@@ -394,6 +410,7 @@ func Load(getenv func(string) string) (Config, error) {
 		GuestRetention:            guestRetention,
 		LoginAttemptRetention:     loginAttemptRetention,
 		UsageRetention:            usageRetention,
+		AuthRateLimit:             authRateLimit,
 		DatabaseURL:               Secret{value: getenv(DatabaseURLEnv)},
 		SessionSecret:             sessionSecret,
 		BootstrapAdminEmail:       bootstrapEmail,
@@ -437,6 +454,11 @@ func validateProduction(cfg Config) error {
 	}
 	if !cfg.MailConfigured() {
 		problems = append(problems, MailRelayEnv+" or "+ResendAPIKeyEnv+" must be set so password reset and confirmation mail is delivered")
+	}
+	// Production keeps the authentication budget at least as strict as the
+	// default; higher budgets are for local test suites only.
+	if cfg.AuthRateLimit > DefaultAuthRateLimit {
+		problems = append(problems, fmt.Sprintf("%s must be at most %d", AuthRateLimitEnv, DefaultAuthRateLimit))
 	}
 	// Resend only sends from a verified domain, so the derived default sender
 	// (no-reply@ the app's host) would be refused at send time.
@@ -533,6 +555,17 @@ func parseRetention(name, raw string, fallback time.Duration) (time.Duration, er
 		return 0, fmt.Errorf("%w: %s must be a positive duration", ErrInvalidDuration, name)
 	}
 	return period, nil
+}
+
+func parseAuthRateLimit(raw string) (int, error) {
+	if strings.TrimSpace(raw) == "" {
+		return DefaultAuthRateLimit, nil
+	}
+	limit, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || limit < 1 || limit > MaximumAuthRateLimit {
+		return 0, fmt.Errorf("%w: %s must be an integer between 1 and %d", ErrInvalidRateLimit, AuthRateLimitEnv, MaximumAuthRateLimit)
+	}
+	return limit, nil
 }
 
 // validateHTTPURL requires an absolute http or https URL without credentials,

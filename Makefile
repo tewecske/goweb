@@ -59,10 +59,13 @@ sso-e2e:
 	npx playwright test tests/browser/m10-sso.spec.ts
 
 # The single sign-on provider (GOWEB_AUTH_MODE=provider) at SSO_DEV_PROVIDER_URL
-# (default http://localhost:8080), using the main database from .env.
+# (default http://localhost:8080), using the main database from .env. Browser
+# suites sign up many accounts a minute, so the sign-in/sign-up limit defaults
+# to 600 here unless GOWEB_AUTH_RATE_LIMIT is set in the environment or .env.
 run-provider:
 	@set -a; if [ -f .env ]; then . ./.env; fi; set +a; \
 	url="$${SSO_DEV_PROVIDER_URL:-http://localhost:8080}"; \
+	GOWEB_AUTH_RATE_LIMIT="$${GOWEB_AUTH_RATE_LIMIT:-600}" \
 	GOWEB_AUTH_MODE=provider GOWEB_PUBLIC_URL="$$url" GOWEB_HTTP_ADDR="$${SSO_DEV_BIND:-127.0.0.1}:$${url##*:}" \
 	GOWEB_HYDRA_ADMIN_URL=http://127.0.0.1:4445 GOWEB_SSO_ISSUER_URL="$${SSO_DEV_ISSUER_URL:-http://127.0.0.1:4444}" \
 	$(GO) run ./cmd/web

@@ -19,6 +19,8 @@ these is true:
   one). `GOWEB_MAIL_FROM` sets the sender (default `no-reply@` plus the public
   host); with Resend it is required and must be on a domain verified in Resend.
 - Google sign-in is configured with a non-HTTPS `GOWEB_GOOGLE_REDIRECT_URL`.
+- `GOWEB_AUTH_RATE_LIMIT` is above the default `10` sign-in and sign-up
+  attempts per minute. Production may lower it, never raise it.
 - `GOWEB_AUTH_MODE=provider` with a non-HTTPS `GOWEB_SSO_ISSUER_URL`.
 - `GOWEB_AUTH_MODE=client` with a non-HTTPS `GOWEB_SSO_ISSUER_URL`,
   `GOWEB_SSO_REDIRECT_URL`, or `GOWEB_SSO_ACCOUNT_URL`. The provider's

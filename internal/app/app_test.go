@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/tewecske/goweb/internal/config"
+	"github.com/tewecske/goweb/internal/service"
 )
 
 func TestNewRejectsNilDatabase(t *testing.T) {
@@ -213,5 +214,45 @@ func TestEnsureBootstrapAdminRejectsMissingDependencies(t *testing.T) {
 func TestNewMigrationStatusProviderRejectsNilRunner(t *testing.T) {
 	if provider := NewMigrationStatusProvider(nil); provider != nil {
 		t.Fatalf("NewMigrationStatusProvider(nil) = %v, want nil", provider)
+	}
+}
+
+func TestAuthenticationRateLimitConfigUsesConfiguredLimit(t *testing.T) {
+	if config.DefaultAuthRateLimit != service.DefaultAuthenticationRateLimitConfig.Limit {
+		t.Fatalf("config.DefaultAuthRateLimit = %d, service default = %d; keep them equal", config.DefaultAuthRateLimit, service.DefaultAuthenticationRateLimitConfig.Limit)
+	}
+	tests := map[string]struct {
+		configured int
+		want       int
+	}{
+		"unset keeps default": {configured: 0, want: service.DefaultAuthenticationRateLimitConfig.Limit},
+		"configured lower":    {configured: 3, want: 3},
+		"configured higher":   {configured: 600, want: 600},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := authenticationRateLimitConfig(config.Config{AuthRateLimit: test.configured})
+			if got.Limit != test.want {
+				t.Fatalf("Limit = %d, want %d", got.Limit, test.want)
+			}
+			if got.Window != service.DefaultAuthenticationRateLimitConfig.Window || got.MaxKeys != service.DefaultAuthenticationRateLimitConfig.MaxKeys {
+				t.Fatalf("window/max keys changed: %+v", got)
+			}
+		})
+	}
+}
+
+func TestNewBuildsGraphWithConfiguredAuthRateLimit(t *testing.T) {
+	appConfig := config.Config{
+		PublicURL:       url.URL{Scheme: "https", Host: "example.test"},
+		SessionLifetime: time.Hour,
+		AuthRateLimit:   600,
+	}
+	graph, err := New(&sql.DB{}, appConfig)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if graph.SignIn == nil || graph.SignUp == nil {
+		t.Fatal("rate-limited sign-in or sign-up service is nil")
 	}
 }
