@@ -211,3 +211,38 @@ func TestNonProductionEnvironmentsAllowDevelopmentSettings(t *testing.T) {
 		})
 	}
 }
+
+func TestProductionAuthRateLimitStaysAtMostDefault(t *testing.T) {
+	for _, raw := range []string{"", "1", "10"} {
+		t.Run("accepts="+raw, func(t *testing.T) {
+			values := safeProductionValues()
+			values[AuthRateLimitEnv] = raw
+			if _, err := loadValues(values); err != nil {
+				t.Fatalf("Load(production, %s=%q) error = %v, want nil", AuthRateLimitEnv, raw, err)
+			}
+		})
+	}
+	for _, raw := range []string{"11", "600"} {
+		t.Run("rejects="+raw, func(t *testing.T) {
+			values := safeProductionValues()
+			values[AuthRateLimitEnv] = raw
+			_, err := loadValues(values)
+			if !errors.Is(err, ErrUnsafeProductionConfig) {
+				t.Fatalf("Load(production, %s=%q) error = %v, want %v", AuthRateLimitEnv, raw, err, ErrUnsafeProductionConfig)
+			}
+			if !strings.Contains(err.Error(), AuthRateLimitEnv) {
+				t.Fatalf("error %q does not name %s", err, AuthRateLimitEnv)
+			}
+		})
+	}
+	for _, environment := range []string{"development", "test"} {
+		t.Run("allows high in "+environment, func(t *testing.T) {
+			values := safeProductionValues()
+			values[EnvironmentEnv] = environment
+			values[AuthRateLimitEnv] = "600"
+			if _, err := loadValues(values); err != nil {
+				t.Fatalf("Load(%s, %s=600) error = %v, want nil", environment, AuthRateLimitEnv, err)
+			}
+		})
+	}
+}

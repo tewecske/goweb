@@ -657,3 +657,51 @@ func TestResendAPIKeyReplacesTheRelayAndStaysSecret(t *testing.T) {
 		t.Fatalf("Load(development with Resend) error = %v", err)
 	}
 }
+
+func TestLoadAuthRateLimitDefault(t *testing.T) {
+	config, err := Load(func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if config.AuthRateLimit != DefaultAuthRateLimit {
+		t.Fatalf("AuthRateLimit = %d, want %d", config.AuthRateLimit, DefaultAuthRateLimit)
+	}
+}
+
+func TestLoadConfiguredAuthRateLimit(t *testing.T) {
+	for raw, want := range map[string]int{"1": 1, "600": 600, " 25 ": 25, "10000": MaximumAuthRateLimit} {
+		t.Run(raw, func(t *testing.T) {
+			config, err := Load(func(name string) string {
+				if name == AuthRateLimitEnv {
+					return raw
+				}
+				return ""
+			})
+			if err != nil {
+				t.Fatalf("Load(%q) error = %v", raw, err)
+			}
+			if config.AuthRateLimit != want {
+				t.Fatalf("AuthRateLimit = %d, want %d", config.AuthRateLimit, want)
+			}
+			if !strings.Contains(config.String(), fmt.Sprintf("auth_rate_limit=%d", want)) {
+				t.Fatalf("String() = %q, want auth_rate_limit=%d", config.String(), want)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsInvalidAuthRateLimit(t *testing.T) {
+	for _, raw := range []string{"0", "-5", "10001", "1.5", "ten", "1e3"} {
+		t.Run(raw, func(t *testing.T) {
+			_, err := Load(func(name string) string {
+				if name == AuthRateLimitEnv {
+					return raw
+				}
+				return ""
+			})
+			if !errors.Is(err, ErrInvalidRateLimit) {
+				t.Fatalf("Load(%q) error = %v, want %v", raw, err, ErrInvalidRateLimit)
+			}
+		})
+	}
+}

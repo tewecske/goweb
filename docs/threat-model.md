@@ -74,6 +74,10 @@ state, and revision-checked writes. None are trusted from the client.
   as SHA-256 hashes plus a redacted hint.
 - **Sign-up limits**: a `signup.origin` budget bounds account creation and
   probing for registered emails.
+- Sign-in and sign-up share one limiter whose budget is
+  `GOWEB_AUTH_RATE_LIMIT` attempts per minute (default 10). Production startup
+  rejects a higher value through `config.ErrUnsafeProductionConfig`; only local
+  development (`make run-provider` uses 600) raises it for browser suites.
 - **Password hashing**: concurrent Argon2id derivations are capped so floods
   of sign-in, sign-up, or reset requests cannot exhaust memory; password reset
   hashes only after its token is consumed.
